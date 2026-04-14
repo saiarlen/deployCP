@@ -1,0 +1,15 @@
+<div class="page-top">
+  <div style="display:flex;gap:var(--space-2);flex-wrap:wrap">
+    <a class="btn" href="/settings"><i data-lucide="arrow-left"></i> Back</a>
+    <a class="btn" href="?lines=200">200 lines</a>
+    <a class="btn" href="?lines=500">500 lines</a>
+    <a class="btn {{ if Lines == 1000 }}btn-primary{{ end }}" href="?lines=1000">1000 lines</a>
+  </div>
+</div>
+
+<div class="section-shell">
+  <div style="padding:var(--space-4)">
+    <pre class="log">{{ Logs }}</pre>
+  </div>
+</div>
+<script>if (typeof lucide !== 'undefined') lucide.createIcons();</script>

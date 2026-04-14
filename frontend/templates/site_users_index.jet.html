@@ -1,0 +1,31 @@
+<div class="page-top">
+  <a class="btn btn-primary" href="/site-users/new"><i data-lucide="plus"></i> Create Site User</a>
+</div>
+
+<div class="section-shell">
+  <div class="table-shell" style="border:0;border-radius:0">
+    <table>
+      <thead><tr><th>Username</th><th>Home</th><th>Allowed Root</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody>
+        {{ range _, item := Items }}
+        <tr>
+          <td><a class="link-accent" href="/site-users/{{ item.ID }}" style="font-weight:600">{{ item.Username }}</a></td>
+          <td style="font-family:var(--mono);font-size:12px;color:var(--text-sec)">{{ item.HomeDirectory }}</td>
+          <td style="font-family:var(--mono);font-size:12px;color:var(--text-sec)">{{ item.AllowedRoot }}</td>
+          <td>{{ if item.IsActive }}<span class="badge badge-ok">active</span>{{ else }}<span class="badge badge-danger">disabled</span>{{ end }}</td>
+          <td>
+            <div style="display:flex;gap:var(--space-2)">
+              <a class="btn" href="/site-users/{{ item.ID }}">View</a>
+              <form action="/site-users/{{ item.ID }}/delete" method="post" data-confirm-message="Delete user {{ item.Username }}?">
+                <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+                <button class="btn btn-danger" type="submit">Delete</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {{ end }}
+      </tbody>
+    </table>
+  </div>
+</div>
+<script>if (typeof lucide !== 'undefined') lucide.createIcons();</script>

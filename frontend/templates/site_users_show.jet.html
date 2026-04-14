@@ -1,0 +1,35 @@
+<div style="display:grid;gap:var(--space-4);grid-template-columns:1fr" class="sm:grid-cols-[1fr_280px]">
+  <div class="content-card">
+    <h3 class="content-card-title">Site User Details</h3>
+    <div class="property-grid">
+      <div class="property-card"><p class="property-label">Username</p><p class="property-value">{{ Item.Username }}</p></div>
+      <div class="property-card"><p class="property-label">Status</p><p class="property-value">{{ if Item.IsActive }}<span class="badge badge-ok">active</span>{{ else }}<span class="badge badge-danger">disabled</span>{{ end }}</p></div>
+      <div class="property-card"><p class="property-label">Home</p><p class="property-value property-value--mono">{{ Item.HomeDirectory }}</p></div>
+      <div class="property-card"><p class="property-label">Allowed Root</p><p class="property-value property-value--mono">{{ Item.AllowedRoot }}</p></div>
+      <div class="property-card"><p class="property-label">Shell</p><p class="property-value property-value--mono">{{ Item.Shell }}</p></div>
+    </div>
+  </div>
+
+  <div>
+    <div class="content-card" style="margin-bottom:var(--space-4)">
+      <h3 class="content-card-title">Reset Password</h3>
+      <form action="/site-users/{{ Item.ID }}/reset-password" method="post" style="display:flex;flex-direction:column;gap:var(--space-3)">
+        <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+        <label style="font-size:0.875rem;font-weight:500;color:var(--text-sec)">New Password (blank auto-generates)
+          <input class="field" style="margin-top:6px" name="password" type="password" autocomplete="new-password">
+        </label>
+        <div><button class="btn btn-primary" type="submit">Reset Password</button></div>
+      </form>
+    </div>
+
+    <div class="content-card">
+      <h3 class="content-card-title">Account State</h3>
+      <form action="/site-users/{{ Item.ID }}/toggle" method="post" {{ if Item.IsActive }}data-confirm-message="Disable this user account?"{{ end }}>
+        <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+        <input type="hidden" name="enabled" value="{{ if Item.IsActive }}false{{ else }}true{{ end }}">
+        <button class="btn {{ if Item.IsActive }}btn-warning{{ else }}btn-success{{ end }}" type="submit">{{ if Item.IsActive }}Disable{{ else }}Enable{{ end }} User</button>
+      </form>
+    </div>
+  </div>
+</div>
+<script>if (typeof lucide !== 'undefined') lucide.createIcons();</script>

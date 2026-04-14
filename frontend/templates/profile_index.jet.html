@@ -1,0 +1,216 @@
+<div class="profile-shell">
+  <section class="surface p-5 sm:p-6 profile-hero">
+    <div class="profile-hero-main">
+      <span class="profile-hero-avatar" aria-hidden="true">
+        <i data-lucide="user-round"></i>
+      </span>
+      <div>
+        <h2 class="profile-hero-title">{{ if AuthUser && AuthUser.Name != "" }}{{ AuthUser.Name }}{{ else if AuthUser }}{{ AuthUser.Username }}{{ else }}Profile{{ end }}</h2>
+        <p class="profile-hero-sub">
+          {{ if AuthUser }}@{{ AuthUser.Username }}{{ end }}
+          {{ if AuthUser && AuthUser.Role != "" }}<span class="profile-hero-dot"></span>{{ AuthUser.Role }}{{ end }}
+        </p>
+      </div>
+    </div>
+    <div class="profile-hero-badges">
+      <span class="badge {{ if AuthUser && AuthUser.IsActive }}badge-ok{{ else }}badge-danger{{ end }}">{{ if AuthUser && AuthUser.IsActive }}active{{ else }}notactive{{ end }}</span>
+    </div>
+  </section>
+
+  <div class="profile-body-grid">
+    <section class="surface p-5 sm:p-6 profile-panel">
+      <h3 class="profile-panel-title"><i data-lucide="user-round-cog"></i> Account Details</h3>
+      <p class="profile-panel-copy">Update your name and email for this panel account.</p>
+
+      <div class="profile-meta-grid">
+        <article class="profile-item">
+          <p class="metric-label"><i data-lucide="at-sign"></i> Username</p>
+          <p class="metric-value">{{ if AuthUser }}{{ AuthUser.Username }}{{ else }}-{{ end }}</p>
+        </article>
+        <article class="profile-item">
+          <p class="metric-label"><i data-lucide="shield-check"></i> Role</p>
+          <p class="metric-value">{{ if AuthUser }}{{ AuthUser.Role }}{{ else }}-{{ end }}</p>
+        </article>
+      </div>
+
+      <form id="profile-details-form" action="/profile" method="post" class="profile-form" novalidate>
+        <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+        <div class="profile-form-grid">
+          <label class="pw-field">
+            <span class="pw-label">Name <span class="pw-required">*</span></span>
+            <input class="field" type="text" name="name" value="{{ if AuthUser }}{{ AuthUser.Name }}{{ end }}" required maxlength="150" autocomplete="name">
+            <span class="pw-error" data-error-for="name" aria-live="polite"></span>
+          </label>
+          <label class="pw-field">
+            <span class="pw-label">Email <span class="pw-required">*</span></span>
+            <input class="field" type="email" name="email" value="{{ if AuthUser }}{{ AuthUser.Email }}{{ end }}" required maxlength="150" autocomplete="email">
+            <span class="pw-error" data-error-for="email" aria-live="polite"></span>
+          </label>
+        </div>
+        <div class="profile-actions">
+          <button class="btn btn-primary" type="submit"><i data-lucide="save"></i><span>Save Profile</span></button>
+        </div>
+      </form>
+    </section>
+
+    <section class="surface p-5 sm:p-6 profile-panel">
+      <h3 class="profile-panel-title"><i data-lucide="key-round"></i> Change Password</h3>
+      <p class="profile-panel-copy">Use a strong password with at least 10 characters.</p>
+
+      <form id="profile-password-form" action="/profile/password" method="post" class="profile-form" novalidate>
+        <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+        <div class="profile-form-grid">
+          <label class="pw-field pw-field-span-2">
+            <span class="pw-label">Current Password <span class="pw-required">*</span></span>
+            <input class="field" type="password" name="current_password" required autocomplete="current-password">
+            <span class="pw-error" data-error-for="current_password" aria-live="polite"></span>
+          </label>
+          <label class="pw-field">
+            <span class="pw-label">New Password <span class="pw-required">*</span></span>
+            <input class="field" type="password" name="new_password" required minlength="10" autocomplete="new-password">
+            <span class="pw-error" data-error-for="new_password" aria-live="polite"></span>
+          </label>
+          <label class="pw-field">
+            <span class="pw-label">Confirm New Password <span class="pw-required">*</span></span>
+            <input class="field" type="password" name="confirm_password" required minlength="10" autocomplete="new-password">
+            <span class="pw-error" data-error-for="confirm_password" aria-live="polite"></span>
+          </label>
+        </div>
+        <div class="profile-actions">
+          <button class="btn btn-primary" type="submit"><i data-lucide="check"></i><span>Update Password</span></button>
+        </div>
+      </form>
+
+      <div class="profile-security-note">
+        <i data-lucide="shield"></i>
+        <span>Password changes are applied immediately for the current panel user.</span>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+$(function () {
+  function fieldError($field) {
+    return $field.closest('.pw-field').find('.pw-error').first();
+  }
+
+  function setFieldError($field, msg) {
+    var $err = fieldError($field);
+    if (msg) {
+      $field.addClass('pw-input-error').attr('aria-invalid', 'true');
+      $err.text(msg);
+    } else {
+      $field.removeClass('pw-input-error').removeAttr('aria-invalid');
+      $err.text('');
+    }
+  }
+
+  function validateRequired($field, label) {
+    if (!$field.length) return true;
+    if (String($field.val() || '').trim() === '') {
+      setFieldError($field, label + ' is required.');
+      return false;
+    }
+    setFieldError($field, '');
+    return true;
+  }
+
+  function validateDetailsForm() {
+    var $name = $('#profile-details-form [name="name"]');
+    var $email = $('#profile-details-form [name="email"]');
+    if (!validateRequired($name, 'Name')) return false;
+    if (!validateRequired($email, 'Email')) return false;
+    var email = String($email.val() || '').trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setFieldError($email, 'Enter a valid email address.');
+      return false;
+    }
+    setFieldError($email, '');
+    return true;
+  }
+
+  function validateNewPasswordField($next) {
+    if (!validateRequired($next, 'New Password')) return false;
+    if (String($next.val() || '').length < 10) {
+      setFieldError($next, 'New Password must be at least 10 characters.');
+      return false;
+    }
+    setFieldError($next, '');
+    return true;
+  }
+
+  function validatePasswordConfirmField() {
+    var $next = $('#profile-password-form [name="new_password"]');
+    var $confirm = $('#profile-password-form [name="confirm_password"]');
+    if (!validateRequired($confirm, 'Confirm New Password')) return false;
+    if (String($confirm.val() || '') !== String($next.val() || '')) {
+      setFieldError($confirm, 'Password confirmation does not match.');
+      return false;
+    }
+    setFieldError($confirm, '');
+    return true;
+  }
+
+  function validatePasswordForm() {
+    var $current = $('#profile-password-form [name="current_password"]');
+    var $next = $('#profile-password-form [name="new_password"]');
+    return validateRequired($current, 'Current Password') &&
+      validateNewPasswordField($next) &&
+      validatePasswordConfirmField();
+  }
+
+  $('#profile-details-form input').on('input blur', function () {
+    var $field = $(this);
+    var name = String($field.attr('name') || '');
+    if (name === 'name') {
+      validateRequired($field, 'Name');
+      return;
+    }
+    if (name === 'email') {
+      if (!validateRequired($field, 'Email')) return;
+      var email = String($field.val() || '').trim();
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        setFieldError($field, 'Enter a valid email address.');
+      } else {
+        setFieldError($field, '');
+      }
+      return;
+    }
+  });
+
+  $('#profile-password-form input').on('input blur', function () {
+    var $field = $(this);
+    var name = String($field.attr('name') || '');
+    if (name === 'current_password') {
+      validateRequired($field, 'Current Password');
+      return;
+    }
+    if (name === 'new_password') {
+      validateNewPasswordField($field);
+      var confirmVal = String($('#profile-password-form [name="confirm_password"]').val() || '');
+      if (confirmVal !== '') {
+        validatePasswordConfirmField();
+      }
+      return;
+    }
+    if (name === 'confirm_password') {
+      validatePasswordConfirmField();
+    }
+  });
+
+  $('#profile-details-form').on('submit', function (e) {
+    if (!validateDetailsForm()) {
+      e.preventDefault();
+    }
+  });
+
+  $('#profile-password-form').on('submit', function (e) {
+    if (!validatePasswordForm()) {
+      e.preventDefault();
+    }
+  });
+
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+});
+</script>

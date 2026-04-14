@@ -1,0 +1,839 @@
+<div>
+  <div class="surface p-5 sm:p-6 mb-5">
+    <div class="flex flex-wrap items-center justify-between gap-4">
+      <div>
+        <h1 class="text-xl font-semibold">Panel Settings</h1>
+        <p class="text-sm opacity-70 mt-1">Manage users, events, runtime catalogs, firewall rules, and panel access controls.</p>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <span class="badge badge-neutral">Services: {{ TotalCount }}</span>
+        <span class="badge badge-ok">Running: {{ RunningCount }}</span>
+        <span class="badge badge-neutral">Users: {{ len(Users) }}</span>
+        <span class="badge badge-neutral">Rules: {{ len(FirewallRules) }}</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="settings-tabs" role="tablist" style="margin-bottom:var(--space-5)">
+    <button type="button" class="settings-tab {{ if ActiveTab == "general" }}settings-tab-active{{ end }}" data-tab="general" role="tab"><i data-lucide="sliders-horizontal"></i><span>General</span></button>
+    <button type="button" class="settings-tab {{ if ActiveTab == "users" }}settings-tab-active{{ end }}" data-tab="users" role="tab"><i data-lucide="users"></i><span>Users</span></button>
+    <button type="button" class="settings-tab {{ if ActiveTab == "events" }}settings-tab-active{{ end }}" data-tab="events" role="tab"><i data-lucide="history"></i><span>Events</span></button>
+    <button type="button" class="settings-tab {{ if ActiveTab == "services" }}settings-tab-active{{ end }}" data-tab="services" role="tab"><i data-lucide="server-cog"></i><span>Services</span></button>
+    <button type="button" class="settings-tab {{ if ActiveTab == "firewall" }}settings-tab-active{{ end }}" data-tab="firewall" role="tab"><i data-lucide="shield"></i><span>Firewall</span></button>
+  </div>
+
+  <div id="panel-general" class="settings-panel {{ if ActiveTab == "general" }}settings-panel-active{{ end }}">
+    <div class="grid gap-5 lg:grid-cols-2">
+      <section class="surface p-5 sm:p-6">
+        <h2 class="text-lg font-semibold">General</h2>
+        <p class="text-sm opacity-70 mt-1">Panel identity and access controls.</p>
+        <form action="/settings/general" method="post" class="space-y-4 mt-4">
+          <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+          <label class="block text-sm font-medium">DeployCP Custom Domain
+            <input class="field mt-2" name="panel_custom_domain" value="{{ CustomDomain }}" placeholder="panel.example.com">
+          </label>
+          <label class="block text-sm font-medium">MasqueradeAddress (proftpd)
+            <input class="field mt-2" name="proftpd_masquerade_address" value="{{ ProftpdMasqueradeAddress }}" placeholder="203.0.113.10">
+          </label>
+          <label class="block text-sm font-medium">Timezone
+            <select class="field mt-2" id="panel-timezone" name="panel_timezone" required>
+              {{ range _, tz := SupportedTimezones }}
+              <option value="{{ tz }}" {{ if PanelTimezone == tz }}selected{{ end }}>{{ tz }}</option>
+              {{ end }}
+            </select>
+          </label>
+          <div class="rounded-lg border border-[var(--border)] p-4">
+            <label class="inline-flex items-center gap-2 text-sm font-medium">
+              <input type="checkbox" name="panel_basic_auth_enabled" value="on" {{ if PanelBasicEnabled }}checked{{ end }}>
+              Enable Basic Auth for Panel
+            </label>
+            <div class="grid gap-4 sm:grid-cols-2 mt-3">
+              <label class="block text-sm font-medium">Username
+                <input class="field mt-2" id="panel-basic-auth-username" name="panel_basic_auth_username" value="{{ PanelBasicUser }}" placeholder="admin">
+              </label>
+              <label class="block text-sm font-medium">Password
+                <div class="flex gap-2 mt-2">
+                  <input class="field flex-1" type="text" name="panel_basic_auth_password" id="panel-basic-auth-password" autocomplete="new-password" placeholder="Leave blank to keep current">
+                  <button type="button" class="btn" onclick="document.getElementById('panel-basic-auth-password').value=settingsGeneratePassword()">Generate</button>
+                </div>
+              </label>
+            </div>
+          </div>
+          <div class="flex justify-end">
+            <button class="btn btn-primary" type="submit">Save General Settings</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="surface p-5 sm:p-6">
+        <h2 class="text-lg font-semibold">Runtime Version Catalogs</h2>
+        <p class="text-sm opacity-70 mt-1">These versions are available in platform create and update runtime selectors.</p>
+        <div class="space-y-4 mt-4">
+          <div class="rounded-lg border border-[var(--border)] p-4">
+            <div class="font-medium text-sm mb-2">Go</div>
+            <div class="flex flex-wrap gap-2">
+              {{ range _, v := GoVersions }}<span class="badge badge-neutral">{{ v }}</span>{{ end }}
+            </div>
+          </div>
+          <div class="rounded-lg border border-[var(--border)] p-4">
+            <div class="font-medium text-sm mb-2">Python</div>
+            <div class="flex flex-wrap gap-2">
+              {{ range _, v := PythonVersions }}<span class="badge badge-neutral">{{ v }}</span>{{ end }}
+            </div>
+          </div>
+          <div class="rounded-lg border border-[var(--border)] p-4">
+            <div class="font-medium text-sm mb-2">Node.js</div>
+            <div class="flex flex-wrap gap-2">
+              {{ range _, v := NodeVersions }}<span class="badge badge-neutral">{{ v }}</span>{{ end }}
+            </div>
+          </div>
+          <div class="rounded-lg border border-[var(--border)] p-4">
+            <div class="font-medium text-sm mb-2">PHP</div>
+            <div class="flex flex-wrap gap-2">
+              {{ range _, v := PHPVersions }}<span class="badge badge-neutral">{{ v }}</span>{{ end }}
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div id="panel-users" class="settings-panel {{ if ActiveTab == "users" }}settings-panel-active{{ end }}">
+    <section class="surface p-5 sm:p-6 mb-5">
+      <h2 class="text-lg font-semibold">Create User</h2>
+      <p class="text-sm opacity-70 mt-1">Create panel users, assign role, and map platform visibility for role user.</p>
+      <form action="/settings/users" method="post" class="grid gap-4 lg:grid-cols-2 mt-4" data-user-form>
+        <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+        <label class="block text-sm font-medium">Username *
+          <input class="field mt-2" name="username" required>
+        </label>
+        <label class="block text-sm font-medium">Email *
+          <input class="field mt-2" type="email" name="email" required>
+        </label>
+        <label class="block text-sm font-medium">Name *
+          <input class="field mt-2" name="name" required>
+        </label>
+        <label class="block text-sm font-medium">Status *
+          <select class="field mt-2" name="status" required>
+            <option value="active" selected>active</option>
+            <option value="notactive">notactive</option>
+          </select>
+        </label>
+        <label class="block text-sm font-medium lg:col-span-2">Password *
+          <div class="flex gap-2 mt-2">
+            <input class="field flex-1" type="text" name="password" id="create-user-password" autocomplete="new-password" required>
+            <button type="button" class="btn" onclick="document.getElementById('create-user-password').value=settingsGeneratePassword()">Generate</button>
+          </div>
+        </label>
+        <label class="block text-sm font-medium">Role *
+          <select class="field mt-2" name="role" data-role-select required>
+            <option value="site_manager">site manager</option>
+            <option value="user">user</option>
+            <option value="admin">admin</option>
+          </select>
+        </label>
+        <div class="block text-sm font-medium settings-user-platforms-wrap hidden" data-msd data-selected="">
+          <span>Allowed Platforms *</span>
+          <button type="button" class="field mt-2 settings-msd-toggle" data-msd-toggle>Choose Platforms</button>
+          <div class="settings-msd-menu hidden" data-msd-menu>
+            <input class="field settings-msd-search" type="text" placeholder="Search platforms..." data-msd-search>
+            <div class="settings-msd-options">
+              {{ range _, p := PlatformOptions }}
+              <label class="settings-msd-option" data-msd-label="{{ p.Label }}">
+                <input type="checkbox" name="platform_ids" value="{{ p.ID }}" data-msd-check>
+                <span>{{ p.Label }}</span>
+              </label>
+              {{ end }}
+            </div>
+          </div>
+          <span class="text-xs opacity-70 mt-1 block">Only role user is restricted by selected platforms.</span>
+          <span class="pw-error settings-platform-error" aria-live="polite"></span>
+        </div>
+        <div class="lg:col-span-2 flex justify-end">
+          <button class="btn btn-primary" type="submit">Create User</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="surface p-5 sm:p-6">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <h2 class="text-lg font-semibold">Manage Users</h2>
+        <span class="text-xs opacity-70">Default bootstrap admin cannot be deleted.</span>
+      </div>
+      <div class="settings-user-list mt-4">
+        {{ range _, u := Users }}
+        <details class="settings-user-card">
+          <summary class="settings-user-summary">
+            <div class="settings-user-meta">
+              <div class="settings-user-primary">
+                <span class="settings-user-name">{{ u.Name }}</span>
+                <span class="settings-user-username">@{{ u.Username }}</span>
+              </div>
+              <div class="settings-user-secondary">{{ u.Email }}</div>
+            </div>
+            <div class="settings-user-badges">
+              <span class="badge badge-neutral">{{ u.Role }}</span>
+              {{ if u.IsActive }}<span class="badge badge-ok">active</span>{{ else }}<span class="badge badge-danger">notactive</span>{{ end }}
+              {{ if u.IsProtected }}<span class="badge badge-neutral">default user</span>{{ end }}
+            </div>
+          </summary>
+
+          <form id="user-update-form-{{ u.ID }}" action="/settings/users/{{ u.ID }}" method="post" class="grid gap-4 lg:grid-cols-2 mt-4" data-user-form>
+            <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+            <label class="block text-sm font-medium">Username *
+              <input class="field mt-2" name="username" value="{{ u.Username }}" required>
+            </label>
+            <label class="block text-sm font-medium">Email *
+              <input class="field mt-2" type="email" name="email" value="{{ u.Email }}" required>
+            </label>
+            <label class="block text-sm font-medium">Name *
+              <input class="field mt-2" name="name" value="{{ u.Name }}" required>
+            </label>
+            <label class="block text-sm font-medium">Status *
+              <select class="field mt-2" name="status" required>
+                <option value="active" {{ if u.IsActive }}selected{{ end }}>active</option>
+                <option value="notactive" {{ if !u.IsActive }}selected{{ end }}>notactive</option>
+              </select>
+            </label>
+            <label class="block text-sm font-medium lg:col-span-2">Password *
+              <div class="flex gap-2 mt-2">
+                <input class="field flex-1" type="text" name="password" id="user-password-{{ u.ID }}" autocomplete="new-password" required>
+                <button type="button" class="btn" onclick="document.getElementById('user-password-{{ u.ID }}').value=settingsGeneratePassword()">Generate</button>
+              </div>
+            </label>
+            <label class="block text-sm font-medium">Role *
+              <select class="field mt-2" name="role" data-role-select required>
+                <option value="site_manager" {{ if u.Role == "site_manager" }}selected{{ end }}>site manager</option>
+                <option value="user" {{ if u.Role == "user" }}selected{{ end }}>user</option>
+                <option value="admin" {{ if u.Role == "admin" }}selected{{ end }}>admin</option>
+              </select>
+            </label>
+            <div class="block text-sm font-medium settings-user-platforms-wrap {{ if u.Role != "user" }}hidden{{ end }}" data-msd data-selected="{{ u.PlatformCSV }}">
+              <span>Allowed Platforms *</span>
+              <button type="button" class="field mt-2 settings-msd-toggle" data-msd-toggle>Choose Platforms</button>
+              <div class="settings-msd-menu hidden" data-msd-menu>
+                <input class="field settings-msd-search" type="text" placeholder="Search platforms..." data-msd-search>
+                <div class="settings-msd-options">
+                  {{ range _, p := PlatformOptions }}
+                  <label class="settings-msd-option" data-msd-label="{{ p.Label }}">
+                    <input type="checkbox" name="platform_ids" value="{{ p.ID }}" data-msd-check>
+                    <span>{{ p.Label }}</span>
+                  </label>
+                  {{ end }}
+                </div>
+              </div>
+              <span class="text-xs opacity-70 mt-1 block">User sees only selected platforms after login.</span>
+              <span class="pw-error settings-platform-error" aria-live="polite"></span>
+            </div>
+          </form>
+          <div class="settings-split-actions mt-3">
+            <div class="settings-split-actions-start">
+              {{ if !u.IsProtected }}
+              <form action="/settings/users/{{ u.ID }}/delete" method="post" data-confirm-message="Delete this panel user?" data-confirm-input-match="DELETE" data-confirm-input-label="Type DELETE to confirm user deletion">
+                <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+                <button class="btn btn-danger" type="submit">Delete User</button>
+              </form>
+              {{ end }}
+            </div>
+            <div class="settings-split-actions-end">
+              <button class="btn btn-primary" type="submit" form="user-update-form-{{ u.ID }}">Update User</button>
+            </div>
+          </div>
+        </details>
+        {{ end }}
+      </div>
+    </section>
+  </div>
+
+  <div id="panel-events" class="settings-panel {{ if ActiveTab == "events" }}settings-panel-active{{ end }}">
+    <section class="surface p-5 sm:p-6">
+      <h2 class="text-lg font-semibold">Application Events</h2>
+      <p class="text-sm opacity-70 mt-1">Latest audit trail across panel actions ({{ EventsStart }}-{{ EventsEnd }} of {{ EventsTotal }}).</p>
+      <div class="overflow-x-auto mt-4">
+        <table class="w-full text-sm text-left">
+          <thead>
+            <tr class="text-xs uppercase tracking-wide opacity-70">
+              <th class="py-2 pr-4">Event Time</th>
+              <th class="py-2 pr-4">Username</th>
+              <th class="py-2 pr-4">Event</th>
+              <th class="py-2">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{ range i, e := Events }}
+            <tr class="border-b">
+              <td class="py-2 pr-4">{{ e.Time }}</td>
+              <td class="py-2 pr-4">{{ e.Username }}</td>
+              <td class="py-2 pr-4">{{ e.Event }}</td>
+              <td class="py-2">
+                <button type="button" class="btn event-detail-toggle" data-target="event-details-{{ i }}">View Details</button>
+              </td>
+            </tr>
+            <tr id="event-details-{{ i }}" class="event-details-row" style="display:none">
+              <td colspan="4" class="py-2">
+                <pre class="log">{{ e.Details }}</pre>
+              </td>
+            </tr>
+            {{ end }}
+          </tbody>
+        </table>
+      </div>
+      <div class="mt-4 flex flex-wrap items-center justify-between gap-2">
+        <div class="text-xs opacity-70">Page {{ EventsPage }} of {{ EventsPages }}</div>
+        <div class="flex flex-wrap gap-2">
+          {{ if EventsPage > 1 }}
+          <a class="btn" href="/settings?tab=events&events_page={{ EventsPage - 1 }}">Previous</a>
+          {{ end }}
+          {{ if EventsPage < EventsPages }}
+          <a class="btn" href="/settings?tab=events&events_page={{ EventsPage + 1 }}">Next</a>
+          {{ end }}
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div id="panel-services" class="settings-panel {{ if ActiveTab == "services" }}settings-panel-active{{ end }}">
+    <section class="surface p-5 sm:p-6 mb-5">
+      <h2 class="text-lg font-semibold">Runtime Version Management</h2>
+      <p class="text-sm opacity-70 mt-1">Define supported versions for each runtime. These feed the platform create/update dropdowns.</p>
+      <div class="grid gap-4 lg:grid-cols-2 mt-4">
+        <div class="rounded-lg border border-[var(--border)] p-4">
+          <h3 class="font-semibold mb-2">Go Versions</h3>
+          <div class="runtime-version-list mb-3">
+            {{ range _, v := GoVersions }}
+            <div class="runtime-version-chip">
+              <span class="badge badge-neutral runtime-version-badge">{{ v }}</span>
+              <form action="/settings/runtime-versions/go/remove" method="post" class="runtime-version-remove-form" data-confirm-message="Remove {{ v }} from Go versions? If any platform uses this version, removal will be blocked.">
+                <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+                <input type="hidden" name="version" value="{{ v }}">
+                <button class="runtime-version-remove-btn" type="submit" aria-label="Remove {{ v }} from Go versions">
+                  <i data-lucide="x"></i>
+                </button>
+              </form>
+            </div>
+            {{ end }}
+          </div>
+          <form action="/settings/runtime-versions/go/add" method="post" class="flex gap-2">
+            <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+            <input class="field flex-1" name="version" placeholder="go1.26" required>
+            <button class="btn btn-primary" type="submit">Add Version</button>
+          </form>
+        </div>
+        <div class="rounded-lg border border-[var(--border)] p-4">
+          <h3 class="font-semibold mb-2">Node Versions</h3>
+          <div class="runtime-version-list mb-3">
+            {{ range _, v := NodeVersions }}
+            <div class="runtime-version-chip">
+              <span class="badge badge-neutral runtime-version-badge">{{ v }}</span>
+              <form action="/settings/runtime-versions/node/remove" method="post" class="runtime-version-remove-form" data-confirm-message="Remove {{ v }} from Node versions? If any platform uses this version, removal will be blocked.">
+                <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+                <input type="hidden" name="version" value="{{ v }}">
+                <button class="runtime-version-remove-btn" type="submit" aria-label="Remove {{ v }} from Node versions">
+                  <i data-lucide="x"></i>
+                </button>
+              </form>
+            </div>
+            {{ end }}
+          </div>
+          <form action="/settings/runtime-versions/node/add" method="post" class="flex gap-2">
+            <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+            <input class="field flex-1" name="version" placeholder="node26" required>
+            <button class="btn btn-primary" type="submit">Add Version</button>
+          </form>
+        </div>
+        <div class="rounded-lg border border-[var(--border)] p-4">
+          <h3 class="font-semibold mb-2">Python Versions</h3>
+          <div class="runtime-version-list mb-3">
+            {{ range _, v := PythonVersions }}
+            <div class="runtime-version-chip">
+              <span class="badge badge-neutral runtime-version-badge">{{ v }}</span>
+              <form action="/settings/runtime-versions/python/remove" method="post" class="runtime-version-remove-form" data-confirm-message="Remove {{ v }} from Python versions? If any platform uses this version, removal will be blocked.">
+                <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+                <input type="hidden" name="version" value="{{ v }}">
+                <button class="runtime-version-remove-btn" type="submit" aria-label="Remove {{ v }} from Python versions">
+                  <i data-lucide="x"></i>
+                </button>
+              </form>
+            </div>
+            {{ end }}
+          </div>
+          <form action="/settings/runtime-versions/python/add" method="post" class="flex gap-2">
+            <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+            <input class="field flex-1" name="version" placeholder="python3.14" required>
+            <button class="btn btn-primary" type="submit">Add Version</button>
+          </form>
+        </div>
+        <div class="rounded-lg border border-[var(--border)] p-4">
+          <h3 class="font-semibold mb-2">PHP Versions</h3>
+          <div class="runtime-version-list mb-3">
+            {{ range _, v := PHPVersions }}
+            <div class="runtime-version-chip">
+              <span class="badge badge-neutral runtime-version-badge">{{ v }}</span>
+              <form action="/settings/runtime-versions/php/remove" method="post" class="runtime-version-remove-form" data-confirm-message="Remove {{ v }} from PHP versions? If any platform uses this version, removal will be blocked.">
+                <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+                <input type="hidden" name="version" value="{{ v }}">
+                <button class="runtime-version-remove-btn" type="submit" aria-label="Remove {{ v }} from PHP versions">
+                  <i data-lucide="x"></i>
+                </button>
+              </form>
+            </div>
+            {{ end }}
+          </div>
+          <form action="/settings/runtime-versions/php/add" method="post" class="flex gap-2">
+            <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+            <input class="field flex-1" name="version" placeholder="8.5" required>
+            <button class="btn btn-primary" type="submit">Add Version</button>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <section class="surface p-5 sm:p-6 mb-5">
+      <h2 class="text-lg font-semibold">Add Custom Service</h2>
+      <p class="text-sm opacity-70 mt-1">Use this when a required system-level service is not in the default managed list.</p>
+      <form action="/services" method="post" class="grid gap-4 md:grid-cols-2 mt-4">
+        <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+        <label class="block text-sm font-medium">Service Identifier *
+          <input class="field mt-2" name="name" required placeholder="nginx or custom.service">
+        </label>
+        <label class="block text-sm font-medium">Category *
+          <select class="field mt-2" name="type" required>
+            {{ range _, t := Types }}<option value="{{ t }}">{{ t }}</option>{{ end }}
+          </select>
+        </label>
+        <label class="block text-sm font-medium">Platform
+          <input class="field mt-2" name="platform_name" value="{{ PlatformName }}">
+        </label>
+        <label class="block text-sm font-medium">Unit Path (optional)
+          <input class="field mt-2" name="unit_path" placeholder="/etc/systemd/system/custom.service">
+        </label>
+        <label class="block text-sm font-medium">Tags (optional)
+          <input class="field mt-2" name="tags" placeholder="cache,queue,internal">
+          <span class="text-xs opacity-70 mt-1 block">Comma-separated. Letters, numbers, dash, underscore.</span>
+        </label>
+        <label class="block text-sm font-medium md:col-span-2">Description (optional)
+          <textarea class="field mt-2" name="description" rows="3" maxlength="500" placeholder="Short service purpose or notes"></textarea>
+        </label>
+        <label class="inline-flex items-center gap-2 text-sm md:col-span-2">
+          <input type="checkbox" name="enabled" value="on" checked>
+          Track as enabled/autostart
+        </label>
+        <div class="md:col-span-2 flex justify-end">
+          <button class="btn btn-primary" type="submit">Save Custom Service</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="surface p-5 sm:p-6">
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <h2 class="text-lg font-semibold">Managed System Services</h2>
+        <input class="field" id="service-search" placeholder="Search by service name, type, tag" style="max-width:320px">
+      </div>
+      <div id="service-control-list" class="space-y-3">
+        {{ range _, item := SvcItems }}
+        <article class="service-item"
+          data-service-name="{{ item.Record.Name }}"
+          data-service-type="{{ item.Record.Type }}"
+          data-service-platform="{{ item.Record.PlatformName }}"
+          data-service-tags="{{ item.Record.Tags }}">
+          <div class="service-item-top">
+            <div class="service-item-head">
+              <div>
+                <p class="service-item-name">{{ item.Record.Name }}</p>
+                <p class="service-item-sub">{{ item.Record.Type }}{{ if item.Record.UnitPath }} • {{ item.Record.UnitPath }}{{ end }}</p>
+                {{ if item.Record.Description }}<p class="service-item-sub">{{ item.Record.Description }}</p>{{ end }}
+                {{ if item.Record.Tags }}<p class="service-item-sub">tags: {{ item.Record.Tags }}</p>{{ end }}
+              </div>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              {{ if item.Status.Active }}<span class="badge badge-ok">running</span>{{ else }}<span class="badge badge-danger">stopped</span>{{ end }}
+              {{ if item.Record.Enabled }}<span class="badge badge-ok">enabled</span>{{ else }}<span class="badge badge-neutral">disabled</span>{{ end }}
+              {{ if item.Record.ID == 0 }}<span class="badge badge-neutral">default</span>{{ end }}
+            </div>
+          </div>
+          <div class="service-actions-grid">
+            <form action="/services/{{ if item.Record.ID > 0 }}{{ item.Record.ID }}{{ else }}{{ item.Record.Name }}{{ end }}/actions/start" method="post"><input type="hidden" name="_csrf" value="{{ CSRFToken }}"><button class="btn btn-success" type="submit">Start</button></form>
+            <form action="/services/{{ if item.Record.ID > 0 }}{{ item.Record.ID }}{{ else }}{{ item.Record.Name }}{{ end }}/actions/stop" method="post" data-confirm-message="Stop this service now?"><input type="hidden" name="_csrf" value="{{ CSRFToken }}"><button class="btn btn-danger" type="submit">Stop</button></form>
+            <form action="/services/{{ if item.Record.ID > 0 }}{{ item.Record.ID }}{{ else }}{{ item.Record.Name }}{{ end }}/actions/restart" method="post"><input type="hidden" name="_csrf" value="{{ CSRFToken }}"><button class="btn" type="submit">Restart</button></form>
+            {{ if item.Record.ID > 0 }}
+            <form action="/services/{{ item.Record.ID }}/delete" method="post" data-confirm-message="Delete tracked service {{ item.Record.Name }}?" data-confirm-input-match="DELETE" data-confirm-input-label="Type DELETE to remove this service record"><input type="hidden" name="_csrf" value="{{ CSRFToken }}"><button class="btn btn-danger" type="submit">Delete</button></form>
+            {{ end }}
+          </div>
+        </article>
+        {{ end }}
+      </div>
+    </section>
+  </div>
+
+  <div id="panel-firewall" class="settings-panel {{ if ActiveTab == "firewall" }}settings-panel-active{{ end }}">
+    <section class="surface p-5 sm:p-6 mb-5">
+      <h2 class="text-lg font-semibold">Add Firewall Rule</h2>
+      <p class="text-sm opacity-70 mt-1">Create panel-managed firewall rules metadata.</p>
+      <form action="/settings/firewall" method="post" class="grid gap-4 md:grid-cols-2 mt-4">
+        <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+        <label class="block text-sm font-medium">Rule Name *
+          <input class="field mt-2" name="name" required>
+        </label>
+        <label class="block text-sm font-medium">Protocol *
+          <select class="field mt-2" name="protocol" required>
+            <option value="tcp">tcp</option>
+            <option value="udp">udp</option>
+            <option value="icmp">icmp</option>
+            <option value="any">any</option>
+          </select>
+        </label>
+        <label class="block text-sm font-medium">Port *
+          <input class="field mt-2" name="port" placeholder="80 or 8000-8100 or any" required>
+        </label>
+        <label class="block text-sm font-medium">Source *
+          <input class="field mt-2" name="source" value="0.0.0.0/0" required>
+        </label>
+        <label class="block text-sm font-medium">Action *
+          <select class="field mt-2" name="action" required>
+            <option value="allow">allow</option>
+            <option value="deny">deny</option>
+          </select>
+        </label>
+        <label class="block text-sm font-medium">Status *
+          <select class="field mt-2" name="status" required>
+            <option value="active">active</option>
+            <option value="notactive">notactive</option>
+          </select>
+        </label>
+        <label class="block text-sm font-medium md:col-span-2">Description
+          <textarea class="field mt-2" name="description" rows="3"></textarea>
+        </label>
+        <div class="md:col-span-2 flex justify-end">
+          <button class="btn btn-primary" type="submit">Add Firewall Rule</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="surface p-5 sm:p-6">
+      <h2 class="text-lg font-semibold">Manage Firewall Rules</h2>
+      <div class="space-y-3 mt-4">
+        {{ range _, r := FirewallRules }}
+        <details class="rounded-lg border border-[var(--border)] p-4">
+          <summary class="cursor-pointer flex flex-wrap items-center justify-between gap-2">
+            <span class="font-semibold">{{ r.Name }}</span>
+            <span class="flex flex-wrap gap-2">
+              <span class="badge badge-neutral">{{ r.Protocol }}</span>
+              <span class="badge badge-neutral">{{ r.Port }}</span>
+              <span class="badge {{ if r.Enabled }}badge-ok{{ else }}badge-danger{{ end }}">{{ if r.Enabled }}active{{ else }}notactive{{ end }}</span>
+              <span class="badge {{ if r.Action == "allow" }}badge-ok{{ else }}badge-danger{{ end }}">{{ r.Action }}</span>
+            </span>
+          </summary>
+          <form id="firewall-update-form-{{ r.ID }}" action="/settings/firewall/{{ r.ID }}" method="post" class="grid gap-4 md:grid-cols-2 mt-4">
+            <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+            <label class="block text-sm font-medium">Rule Name *
+              <input class="field mt-2" name="name" value="{{ r.Name }}" required>
+            </label>
+            <label class="block text-sm font-medium">Protocol *
+              <select class="field mt-2" name="protocol" required>
+                <option value="tcp" {{ if r.Protocol == "tcp" }}selected{{ end }}>tcp</option>
+                <option value="udp" {{ if r.Protocol == "udp" }}selected{{ end }}>udp</option>
+                <option value="icmp" {{ if r.Protocol == "icmp" }}selected{{ end }}>icmp</option>
+                <option value="any" {{ if r.Protocol == "any" }}selected{{ end }}>any</option>
+              </select>
+            </label>
+            <label class="block text-sm font-medium">Port *
+              <input class="field mt-2" name="port" value="{{ r.Port }}" required>
+            </label>
+            <label class="block text-sm font-medium">Source *
+              <input class="field mt-2" name="source" value="{{ r.Source }}" required>
+            </label>
+            <label class="block text-sm font-medium">Action *
+              <select class="field mt-2" name="action" required>
+                <option value="allow" {{ if r.Action == "allow" }}selected{{ end }}>allow</option>
+                <option value="deny" {{ if r.Action == "deny" }}selected{{ end }}>deny</option>
+              </select>
+            </label>
+            <label class="block text-sm font-medium">Status *
+              <select class="field mt-2" name="status" required>
+                <option value="active" {{ if r.Enabled }}selected{{ end }}>active</option>
+                <option value="notactive" {{ if !r.Enabled }}selected{{ end }}>notactive</option>
+              </select>
+            </label>
+            <label class="block text-sm font-medium md:col-span-2">Description
+              <textarea class="field mt-2" name="description" rows="3">{{ r.Description }}</textarea>
+            </label>
+          </form>
+          <div class="settings-split-actions mt-3">
+            <div class="settings-split-actions-start">
+              <form action="/settings/firewall/{{ r.ID }}/delete" method="post" data-confirm-message="Delete firewall rule {{ r.Name }}?" data-confirm-input-match="DELETE" data-confirm-input-label="Type DELETE to remove this firewall rule">
+                <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+                <button class="btn btn-danger" type="submit">Delete</button>
+              </form>
+            </div>
+            <div class="settings-split-actions-end">
+              <button class="btn btn-primary" type="submit" form="firewall-update-form-{{ r.ID }}">Update Rule</button>
+            </div>
+          </div>
+        </details>
+        {{ end }}
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+$(function () {
+  var activeTab = '{{ ActiveTab }}' || 'general';
+
+  function switchTab(tab) {
+    $('.settings-tab').removeClass('settings-tab-active');
+    $('.settings-tab[data-tab="' + tab + '"]').addClass('settings-tab-active');
+    $('.settings-panel').removeClass('settings-panel-active');
+    $('#panel-' + tab).addClass('settings-panel-active');
+  }
+
+  $('.settings-tab').on('click', function () {
+    var tab = $(this).data('tab');
+    var url = new URL(window.location.href);
+    url.searchParams.set('tab', tab);
+    window.history.replaceState({}, '', url.toString());
+    switchTab(tab);
+  });
+
+  switchTab(activeTab);
+
+  $('.event-detail-toggle').on('click', function () {
+    var target = $(this).data('target');
+    var $row = $('#' + target);
+    var shown = $row.is(':visible');
+    $row.toggle(!shown);
+    $(this).text(shown ? 'View Details' : 'Hide Details');
+  });
+
+  $('#service-search').on('input', function () {
+    var term = ($(this).val() || '').toLowerCase().trim();
+    $('.service-item').each(function () {
+      var $item = $(this);
+      var hay = [
+        $item.data('serviceName'),
+        $item.data('serviceType'),
+        $item.data('serviceTags')
+      ].join(' ').toLowerCase();
+      $item.toggle(!term || hay.indexOf(term) >= 0);
+    });
+  });
+
+  function settingsLabel($field) {
+    var fallback = ($field.attr('name') || 'This field').replace(/_/g, ' ');
+    var $label = $field.closest('label');
+    if (!$label.length) return fallback;
+    var txt = $.trim($label.clone().children().remove().end().text().replace(/\*/g, ''));
+    return txt || fallback;
+  }
+
+  function settingsErrorEl($field) {
+    var $label = $field.closest('label');
+    if ($label.length) {
+      var $labelErr = $label.children('.settings-field-error');
+      if (!$labelErr.length) {
+        $labelErr = $('<span class="pw-error settings-field-error" aria-live="polite"></span>');
+        $label.append($labelErr);
+      }
+      return $labelErr.first();
+    }
+    var $nextErr = $field.next('.settings-field-error');
+    if ($nextErr.length) return $nextErr.first();
+    var $newErr = $('<span class="pw-error settings-field-error" aria-live="polite"></span>');
+    $field.after($newErr);
+    return $newErr;
+  }
+
+  function settingsSetError($field, msg) {
+    if (msg) {
+      $field.addClass('pw-input-error').attr('aria-invalid', 'true');
+    } else {
+      $field.removeClass('pw-input-error').removeAttr('aria-invalid');
+    }
+    settingsErrorEl($field).text(msg || '');
+  }
+
+  function settingsValidateField($field) {
+    if (!$field.length || $field.prop('disabled')) return true;
+    var type = ($field.attr('type') || '').toLowerCase();
+    if (type === 'hidden' || type === 'checkbox' || type === 'radio') return true;
+
+    var label = settingsLabel($field);
+    var isMulti = $field.is('select[multiple]');
+    var rawVal = $field.val();
+    var hasValue = false;
+    if (isMulti) {
+      hasValue = $.isArray(rawVal) ? rawVal.length > 0 : !!String(rawVal || '').trim();
+    } else {
+      hasValue = !!String(rawVal || '').trim();
+    }
+
+    if ($field.prop('required') && !hasValue) {
+      settingsSetError($field, label + ' is required.');
+      return false;
+    }
+
+    if (hasValue && type === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(rawVal))) {
+      settingsSetError($field, 'Enter a valid email address.');
+      return false;
+    }
+
+    settingsSetError($field, '');
+    return true;
+  }
+
+  function syncGeneralConditionalRules() {
+    var basicEnabled = $('input[name="panel_basic_auth_enabled"]').is(':checked');
+    $('#panel-basic-auth-username').prop('required', basicEnabled);
+  }
+
+  function updatePlatformPickerSummary($wrap) {
+    if (!$wrap || !$wrap.length) return;
+    var $checks = $wrap.find('[data-msd-check]');
+    var count = $checks.filter(':checked').length;
+    var $toggle = $wrap.find('[data-msd-toggle]');
+    if ($toggle.length) {
+      $toggle.text(count > 0 ? (count + ' platform' + (count > 1 ? 's selected' : ' selected')) : 'Choose Platforms');
+    }
+  }
+
+  function validatePlatformPicker($form, withFocus) {
+    var $role = $form.find('[data-role-select]').first();
+    var role = String($role.val() || '').toLowerCase();
+    var $wrap = $form.find('.settings-user-platforms-wrap').first();
+    if (!$wrap.length || role !== 'user') {
+      return true;
+    }
+    var $checks = $wrap.find('[data-msd-check]:enabled');
+    var checked = $checks.filter(':checked').length;
+    var $err = $wrap.find('.settings-platform-error').first();
+    if (checked === 0) {
+      $err.text('Allowed Platforms is required.');
+      $wrap.addClass('pw-group-error');
+      if (withFocus) {
+        var $toggle = $wrap.find('[data-msd-toggle]').first();
+        if ($toggle.length) $toggle.trigger('focus');
+      }
+      return false;
+    }
+    $err.text('');
+    $wrap.removeClass('pw-group-error');
+    return true;
+  }
+
+  function setupPlatformPicker($wrap) {
+    if (!$wrap.length) return;
+    var selectedAttr = String($wrap.attr('data-selected') || '');
+    if (selectedAttr) {
+      var selected = selectedAttr.split(',').map(function (v) { return $.trim(v); }).filter(Boolean);
+      $wrap.find('[data-msd-check]').each(function () {
+        var $c = $(this);
+        $c.prop('checked', selected.indexOf(String($c.val())) >= 0);
+      });
+      $wrap.removeAttr('data-selected');
+    }
+    updatePlatformPickerSummary($wrap);
+  }
+
+  function syncUserRolePlatforms($scope) {
+    var $role = $scope.find('[data-role-select]').first();
+    if (!$role.length) return;
+    var role = String($role.val() || '').toLowerCase();
+    var $wrap = $scope.find('.settings-user-platforms-wrap').first();
+    var $checks = $wrap.find('[data-msd-check]');
+    var show = role === 'user';
+    $wrap.toggleClass('hidden', !show);
+    if ($checks.length) {
+      $checks.prop('disabled', !show);
+      if (!show) {
+        $wrap.removeClass('pw-group-error');
+        $wrap.find('.settings-platform-error').text('');
+      }
+    }
+    updatePlatformPickerSummary($wrap);
+  }
+
+  $('.settings-panel form').attr('novalidate', 'novalidate');
+  syncGeneralConditionalRules();
+  $('.settings-user-platforms-wrap[data-msd]').each(function () { setupPlatformPicker($(this)); });
+  $('[data-user-form]').each(function () { syncUserRolePlatforms($(this)); });
+
+  $(document).on('change', 'input[name="panel_basic_auth_enabled"]', syncGeneralConditionalRules);
+  $(document).on('change', '[data-role-select]', function () {
+    syncUserRolePlatforms($(this).closest('form'));
+  });
+  $(document).on('click', '[data-msd-toggle]', function (e) {
+    e.preventDefault();
+    var $wrap = $(this).closest('[data-msd]');
+    if ($wrap.hasClass('hidden')) return;
+    var $menu = $wrap.find('[data-msd-menu]').first();
+    $('[data-msd-menu]').not($menu).addClass('hidden');
+    $menu.toggleClass('hidden');
+    if (!$menu.hasClass('hidden')) {
+      $wrap.find('[data-msd-search]').first().trigger('focus');
+    }
+  });
+  $(document).on('input', '[data-msd-search]', function () {
+    var term = String($(this).val() || '').toLowerCase().trim();
+    $(this).closest('[data-msd-menu]').find('[data-msd-option]').each(function () {
+      var label = String($(this).data('msdLabel') || '').toLowerCase();
+      $(this).toggle(!term || label.indexOf(term) >= 0);
+    });
+  });
+  $(document).on('change', '[data-msd-check]', function () {
+    var $wrap = $(this).closest('[data-msd]');
+    updatePlatformPickerSummary($wrap);
+    validatePlatformPicker($(this).closest('form'), false);
+  });
+  $(document).on('click', function (e) {
+    if (!$(e.target).closest('[data-msd]').length) {
+      $('[data-msd-menu]').addClass('hidden');
+    }
+  });
+
+  $(document).on('input change', '.settings-panel form input, .settings-panel form select, .settings-panel form textarea', function () {
+    settingsValidateField($(this));
+  });
+
+  $(document).on('submit', '.settings-panel form', function (e) {
+    var $form = $(this);
+    var firstInvalid = null;
+    var valid = true;
+    $form.find('input, select, textarea').each(function () {
+      var $field = $(this);
+      var type = ($field.attr('type') || '').toLowerCase();
+      var shouldValidate = $field.prop('required') || type === 'email';
+      if (!shouldValidate) return;
+      if (!settingsValidateField($field)) {
+        valid = false;
+        if (!firstInvalid) firstInvalid = $field;
+      }
+    });
+    if (!validatePlatformPicker($form, !firstInvalid)) {
+      valid = false;
+      if (!firstInvalid) {
+        firstInvalid = $form.find('.settings-user-platforms-wrap [data-msd-toggle]').first();
+      }
+    }
+    if (!valid) {
+      e.preventDefault();
+      if (firstInvalid && firstInvalid.length) {
+        firstInvalid.trigger('focus');
+        if (firstInvalid.get(0) && firstInvalid.get(0).scrollIntoView) {
+          firstInvalid.get(0).scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }
+    }
+  });
+});
+
+function settingsGeneratePassword() {
+  var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%';
+  var out = '';
+  for (var i = 0; i < 20; i++) {
+    out += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return out;
+}
+
+if (typeof lucide !== 'undefined') lucide.createIcons();
+</script>

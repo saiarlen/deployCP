@@ -1,0 +1,2561 @@
+{{ if PlatformKind == "app" }}
+<div class="manage-shell">
+
+<div class="manage-header">
+  <div class="manage-header-top">
+    <a href="/platforms" class="btn"><i data-lucide="arrow-left"></i> Back to Platforms</a>
+  </div>
+  <div class="manage-header-grid">
+    <div class="manage-header-item manage-header-primary">
+      <span class="manage-header-label">Platform</span>
+      <span class="manage-header-value">{{ Status.App.Name }}</span>
+    </div>
+    <div class="manage-header-item">
+      <span class="manage-header-label">Domain</span>
+      {{ if PrimaryDomain != "" }}
+      <a class="manage-header-domain-link" href="https://{{ PrimaryDomain }}/" target="_blank" rel="noopener noreferrer">
+        <i data-lucide="globe"></i>
+        <span>{{ PrimaryDomain }}</span>
+        <i data-lucide="external-link"></i>
+      </a>
+      {{ else }}
+      <span class="manage-header-value">No domain</span>
+      {{ end }}
+    </div>
+    <div class="manage-header-item">
+      <span class="manage-header-label">Runtime</span>
+      <span class="manage-header-value">{{ Status.App.Runtime }}</span>
+    </div>
+    <div class="manage-header-item">
+      <span class="manage-header-label">Bind</span>
+      <span class="manage-header-value manage-header-value--mono">{{ Status.App.Host }}:{{ Status.App.Port }}</span>
+    </div>
+    <div class="manage-header-item">
+      <span class="manage-header-label">Server IP</span>
+      <button type="button" class="manage-header-copy" data-copy-value="{{ ServerAddress }}" aria-label="Copy server IP">
+        <span class="manage-header-value manage-header-value--mono">{{ ServerAddress }}</span>
+        <i data-lucide="copy"></i>
+      </button>
+    </div>
+    <div class="manage-header-item">
+      <span class="manage-header-label">Service</span>
+      <span class="manage-header-value">{{ if Status.Service.Active }}<span class="badge badge-ok">running</span>{{ else }}<span class="badge badge-danger">stopped</span>{{ end }}</span>
+    </div>
+    <div class="manage-header-item">
+      <span class="manage-header-label">Manager</span>
+      <span class="manage-header-value">{{ if Status.App.ProcessManager }}{{ Status.App.ProcessManager }}{{ else }}systemd{{ end }}</span>
+    </div>
+  </div>
+</div>
+
+<div class="manage-tabs" id="manage-tabs">
+  <button class="manage-tab manage-tab-active" data-tab="settings"><i data-lucide="settings"></i><span>Settings</span></button>
+  <button class="manage-tab" data-tab="runtime"><i data-lucide="activity"></i><span>Runtime</span></button>
+  <button class="manage-tab" data-tab="databases"><i data-lucide="database"></i><span>Databases</span></button>
+  <button class="manage-tab" data-tab="ssl"><i data-lucide="shield-check"></i><span>SSL/TLS</span></button>
+  <button class="manage-tab" data-tab="ssh"><i data-lucide="key"></i><span>SSH/FTP</span></button>
+  <button class="manage-tab" data-tab="logs"><i data-lucide="file-text"></i><span>Logs</span></button>
+</div>
+
+<!-- ═══════════ Settings ═══════════ -->
+<div class="manage-panel manage-panel-active" data-panel="settings">
+  <div class="surface p-5 mb-5">
+    <h3 class="text-sm font-semibold mb-4">Definition</h3>
+    {{ if Status.App.WebsiteID }}
+    <div class="app-form-hint mb-4 rounded-lg border border-[var(--border)] p-3 text-sm">
+      Reverse proxy is linked and points to <span class="font-mono">http://{{ Status.App.Host }}:{{ Status.App.Port }}</span>.
+    </div>
+    {{ end }}
+    <div class="grid gap-3 text-sm sm:grid-cols-2">
+      <div class="rounded-md border border-[var(--border)] p-3">
+        <p class="text-xs uppercase tracking-wide opacity-70">Exec Path</p>
+        <p class="mt-1 font-mono text-xs ">{{ Status.App.BinaryPath }}</p>
+      </div>
+      <div class="rounded-md border border-[var(--border)] p-3">
+        <p class="text-xs uppercase tracking-wide opacity-70">Entry Point</p>
+        <p class="mt-1 font-mono text-xs ">{{ Status.App.EntryPoint }}</p>
+      </div>
+      <div class="rounded-md border border-[var(--border)] p-3">
+        <p class="text-xs uppercase tracking-wide opacity-70">Workdir</p>
+        <p class="mt-1 font-mono text-xs ">{{ Status.App.WorkingDirectory }}</p>
+      </div>
+      <div class="rounded-md border border-[var(--border)] p-3">
+        <p class="text-xs uppercase tracking-wide opacity-70">Args</p>
+        <p class="mt-1 font-mono text-xs ">{{ Status.App.StartArgs }}</p>
+      </div>
+      <div class="rounded-md border border-[var(--border)] p-3 sm:col-span-2">
+        <p class="text-xs uppercase tracking-wide opacity-70">Health Path</p>
+        <p class="mt-1 font-mono text-xs ">{{ Status.App.HealthPath }}</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete App -->
+  <div class="surface p-5 border border-[var(--border)]">
+    <h3 class="text-sm font-semibold mb-2">Delete Platform</h3>
+    <p class="text-sm opacity-70 mb-4">Deleting this platform will remove runtime, users, database connections, configs, and files. This cannot be undone.</p>
+    <form action="/apps/{{ Status.App.ID }}/delete" method="post" data-confirm-message="Are you sure you want to delete this platform?" data-confirm-input-match="DELETE" data-confirm-input-label="Type DELETE to permanently remove this platform" data-confirm-input-hint="This removes users, database connections, runtime, and files.">
+      <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+      <button class="btn btn-danger" type="submit">Delete Platform</button>
+    </form>
+  </div>
+</div>
+
+<!-- ═══════════ Runtime ═══════════ -->
+<div class="manage-panel" data-panel="runtime">
+  <!-- Service Controls -->
+  <div class="surface p-5 mb-5">
+    <h3 class="text-sm font-semibold mb-4">Service Controls</h3>
+    <div class="flex flex-wrap gap-2 mb-5">
+      <form action="/apps/{{ Status.App.ID }}/actions/start" method="post">
+        <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+        <button class="btn btn-success" type="submit">Start</button>
+      </form>
+      <form action="/apps/{{ Status.App.ID }}/actions/stop" method="post" data-confirm-message="Stop this service now?">
+        <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+        <button class="btn btn-danger" type="submit">Stop</button>
+      </form>
+      <form action="/apps/{{ Status.App.ID }}/actions/restart" method="post">
+        <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+        <button class="btn" type="submit">Restart</button>
+      </form>
+      <form action="/apps/{{ Status.App.ID }}/actions/enable" method="post">
+        <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+        <button class="btn btn-primary" type="submit">Enable</button>
+      </form>
+      <form action="/apps/{{ Status.App.ID }}/actions/disable" method="post" data-confirm-message="Disable autostart for this app unit?">
+        <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+        <button class="btn btn-warning" type="submit">Disable</button>
+      </form>
+    </div>
+
+    <div class="grid gap-3 text-sm sm:grid-cols-2">
+      <div class="rounded-md border border-[var(--border)] p-3">
+        <p class="text-xs uppercase tracking-wide opacity-70">Service</p>
+        <p class="mt-1 font-mono text-xs ">{{ Status.App.ServiceName }}</p>
+      </div>
+      <div class="rounded-md border border-[var(--border)] p-3">
+        <p class="text-xs uppercase tracking-wide opacity-70">Execution Mode</p>
+        <p class="mt-1"><span class="badge {{ if Status.App.ExecutionMode == "compiled" }}badge-ok{{ else }}badge-warn{{ end }}">{{ Status.App.ExecutionMode }}</span></p>
+      </div>
+      <div class="rounded-md border border-[var(--border)] p-3">
+        <p class="text-xs uppercase tracking-wide opacity-70">Process Manager</p>
+        <p class="mt-1"><span class="badge badge-neutral">{{ if Status.App.ProcessManager }}{{ Status.App.ProcessManager }}{{ else }}systemd{{ end }}</span></p>
+      </div>
+      <div class="rounded-md border border-[var(--border)] p-3">
+        <p class="text-xs uppercase tracking-wide opacity-70">Service State</p>
+        <p class="mt-1">{{ if Status.Service.Active }}<span class="badge badge-ok">running</span>{{ else }}<span class="badge badge-danger">stopped</span>{{ end }}</p>
+      </div>
+      <div class="rounded-md border border-[var(--border)] p-3 sm:col-span-2">
+        <p class="text-xs uppercase tracking-wide opacity-70">Health</p>
+        <p class="mt-1">{{ if Status.HealthOK }}<span class="badge badge-ok">healthy</span>{{ else }}<span class="badge badge-warn">degraded</span>{{ end }}</p>
+      </div>
+      {{ if Status.HealthError != "" }}
+      <div class="rounded-xl border border-[var(--border)] p-3 text-sm sm:col-span-2">{{ Status.HealthError }}</div>
+      {{ end }}
+    </div>
+  </div>
+
+  <!-- Runtime Settings -->
+  <div class="surface p-5">
+    <h3 class="text-sm font-semibold mb-4">Runtime Settings</h3>
+    <form id="runtime-settings-form" action="/apps/{{ Status.App.ID }}/manage/runtime-settings" method="post">
+      <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+        <label class="block text-sm font-medium">Process Manager
+          <select class="field mt-2" name="process_manager" id="rt-pm" data-runtime="{{ Status.App.Runtime }}">
+            <option value="systemd" {{ if Status.App.ProcessManager == "systemd" || Status.App.ProcessManager == "" }}selected{{ end }}>systemd</option>
+            <option value="pm2" {{ if Status.App.ProcessManager == "pm2" }}selected{{ end }}>pm2</option>
+            <option value="gunicorn" {{ if Status.App.ProcessManager == "gunicorn" }}selected{{ end }}>gunicorn</option>
+            <option value="uwsgi" {{ if Status.App.ProcessManager == "uwsgi" }}selected{{ end }}>uwsgi</option>
+          </select>
+        </label>
+
+        <label class="block text-sm font-medium">Workers
+          <input class="field mt-2" type="number" name="workers" min="0" value="{{ Status.App.Workers }}" placeholder="0 = auto/default">
+          <span class="text-xs opacity-50 mt-1">0 = use process manager default</span>
+        </label>
+
+        <label class="block text-sm font-medium">Timeout (seconds)
+          <input class="field mt-2" type="number" name="timeout" min="0" value="{{ Status.App.Timeout }}" placeholder="0 = default">
+          <span class="text-xs opacity-50 mt-1">0 = use process manager default</span>
+        </label>
+
+        <label class="block text-sm font-medium">Proxy Port
+          <input class="field mt-2" type="number" name="port" min="1" max="65535" value="{{ Status.App.Port }}" placeholder="e.g. 8080">
+          <span class="text-xs opacity-50 mt-1">Updates bind/proxy port and reloads runtime config.</span>
+        </label>
+
+        <label class="block text-sm font-medium">Runtime Version
+          {{ if Status.App.Runtime == "node" }}
+          <select class="field mt-2" name="runtime_version">
+            {{ if RuntimeVersion != "" }}
+            <option value="{{ RuntimeVersion }}" selected>{{ RuntimeVersion }} (current)</option>
+            {{ end }}
+            {{ range _, v := NodeVersions }}
+            {{ if RuntimeVersion != v }}<option value="{{ v }}">{{ v }}</option>{{ end }}
+            {{ end }}
+          </select>
+          {{ else if Status.App.Runtime == "python" }}
+          <select class="field mt-2" name="runtime_version">
+            {{ if RuntimeVersion != "" }}
+            <option value="{{ RuntimeVersion }}" selected>{{ RuntimeVersion }} (current)</option>
+            {{ end }}
+            {{ range _, v := PythonVersions }}
+            {{ if RuntimeVersion != v }}<option value="{{ v }}">{{ v }}</option>{{ end }}
+            {{ end }}
+          </select>
+          {{ else if Status.App.Runtime == "go" }}
+          <select class="field mt-2" name="runtime_version">
+            {{ if RuntimeVersion != "" }}
+            <option value="{{ RuntimeVersion }}" selected>{{ RuntimeVersion }} (current)</option>
+            {{ end }}
+            {{ range _, v := GoVersions }}
+            {{ if RuntimeVersion != v }}<option value="{{ v }}">{{ v }}</option>{{ end }}
+            {{ end }}
+          </select>
+          {{ else if Status.App.Runtime == "php" }}
+          <select class="field mt-2" name="runtime_version">
+            {{ if RuntimeVersion != "" }}
+            <option value="{{ RuntimeVersion }}" selected>{{ RuntimeVersion }} (current)</option>
+            {{ end }}
+            {{ range _, v := PHPVersions }}
+            {{ if RuntimeVersion != v }}<option value="{{ v }}">{{ v }}</option>{{ end }}
+            {{ end }}
+          </select>
+          {{ else }}
+          <input type="hidden" name="runtime_version" value="{{ RuntimeVersion }}">
+          <input class="field mt-2" type="text" value="Not applicable for this runtime" readonly>
+          {{ end }}
+          <span class="text-xs opacity-50 mt-1">Version is stored as <span class="font-mono">RUNTIME_VERSION</span>.</span>
+        </label>
+
+        <label class="block text-sm font-medium">Max Memory
+          <input class="field mt-2" type="text" name="max_memory" value="{{ Status.App.MaxMemory }}" placeholder="e.g. 512M">
+          <span class="text-xs opacity-50 mt-1">PM2: --max-memory-restart &middot; Systemd: MemoryMax</span>
+        </label>
+
+        <label class="block text-sm font-medium">Restart Policy
+          <select class="field mt-2" name="restart_policy">
+            <option value="on-failure" {{ if Status.App.RestartPolicy == "on-failure" }}selected{{ end }}>on-failure</option>
+            <option value="always" {{ if Status.App.RestartPolicy == "always" }}selected{{ end }}>always</option>
+            <option value="no" {{ if Status.App.RestartPolicy == "no" }}selected{{ end }}>no</option>
+            <option value="on-abnormal" {{ if Status.App.RestartPolicy == "on-abnormal" }}selected{{ end }}>on-abnormal</option>
+          </select>
+        </label>
+
+        <label class="block text-sm font-medium rt-pm-field rt-pm-gunicorn rt-pm-uwsgi">Worker Class
+          <select class="field mt-2" name="worker_class">
+            <option value="" {{ if Status.App.WorkerClass == "" }}selected{{ end }}>default (sync)</option>
+            <option value="sync" {{ if Status.App.WorkerClass == "sync" }}selected{{ end }}>sync</option>
+            <option value="gevent" {{ if Status.App.WorkerClass == "gevent" }}selected{{ end }}>gevent</option>
+            <option value="uvicorn.workers.UvicornWorker" {{ if Status.App.WorkerClass == "uvicorn.workers.UvicornWorker" }}selected{{ end }}>uvicorn.workers.UvicornWorker</option>
+            <option value="gthread" {{ if Status.App.WorkerClass == "gthread" }}selected{{ end }}>gthread</option>
+          </select>
+        </label>
+
+        <label class="block text-sm font-medium rt-pm-field rt-pm-pm2">Exec Mode
+          <select class="field mt-2" name="exec_mode">
+            <option value="fork" {{ if Status.App.ExecMode == "fork" || Status.App.ExecMode == "" }}selected{{ end }}>fork</option>
+            <option value="cluster" {{ if Status.App.ExecMode == "cluster" }}selected{{ end }}>cluster</option>
+          </select>
+        </label>
+
+      </div>
+      <div class="mt-4 flex flex-wrap justify-end gap-2">
+        <button class="btn btn-primary" type="submit" name="runtime_apply" value="reconfigure">Reconfigure Runtime</button>
+        <button class="btn" type="submit" name="runtime_apply" value="reset">Reset Runtime Process</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ═══════════ Databases ═══════════ -->
+<div class="manage-panel" data-panel="databases">
+
+  <!-- ── MariaDB / MySQL ── -->
+  <div class="surface p-5 mb-5">
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+      <div>
+        <h3 class="text-sm font-semibold">MariaDB / MySQL</h3>
+        <p class="text-xs opacity-70 mt-1">Host: 127.0.0.1 &nbsp; Port: 3306</p>
+      </div>
+      <a class="btn" href="{{ AdminerURL }}" target="_blank" rel="noreferrer">Open Adminer</a>
+    </div>
+    {{ if MariaDBItems }}
+    <div class="overflow-x-auto mb-4">
+      <table class="w-full text-sm text-left">
+        <thead>
+          <tr class="text-xs uppercase tracking-wide">
+            <th class="py-2 pr-4">Label</th>
+            <th class="py-2 pr-4">Database</th>
+            <th class="py-2 pr-4">Username</th>
+            <th class="py-2">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{ range _, db := MariaDBItems }}
+          <tr class="border-b">
+            <td class="py-2.5 pr-4 font-medium">{{ db.Label }}</td>
+            <td class="py-2.5 pr-4 font-mono text-xs ">{{ db.Database }}</td>
+            <td class="py-2.5 pr-4 ">{{ db.Username }}</td>
+            <td class="py-2.5">
+              <form action="/databases/connections/{{ db.ID }}/delete" method="post" style="display:inline" data-confirm-message="Delete this connection?">
+                <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+                <button class="text-xs hover:underline" type="submit">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {{ end }}
+        </tbody>
+      </table>
+    </div>
+    {{ else }}
+    <p class="text-sm opacity-70 mb-4">No MariaDB databases found.</p>
+    {{ end }}
+    <details class="pt-3 border-t border-[var(--border)]">
+      <summary class="cursor-pointer text-sm font-semibold hover:underline">Add MariaDB Database</summary>
+      <form class="mt-4 space-y-3" action="/apps/{{ Status.App.ID }}/manage/database" method="post">
+        <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+        <input type="hidden" name="engine" value="mariadb">
+        <div class="form-grid">
+          <label class="block text-sm font-medium">Label
+            <input class="field mt-2" name="label" value="{{ Status.App.Name }}-db">
+          </label>
+          <label class="block text-sm font-medium">Host
+            <input class="field mt-2" name="host" value="127.0.0.1">
+          </label>
+          <label class="block text-sm font-medium">Port
+            <input class="field mt-2" name="port" value="3306">
+          </label>
+          <label class="block text-sm font-medium">Database
+            <input class="field mt-2" name="database" placeholder="app_db" required>
+          </label>
+          <label class="block text-sm font-medium">Username
+            <input class="field mt-2" name="username" placeholder="app_user" required>
+          </label>
+          <label class="block text-sm font-medium">Password
+            <div class="flex gap-2 mt-2">
+              <input class="field flex-1" type="text" name="password" autocomplete="new-password" required>
+              <button type="button" class="btn" onclick="this.previousElementSibling.value=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>String.fromCharCode(33+b%93)).join('')">Generate</button>
+            </div>
+          </label>
+        </div>
+        <div class="flex justify-end">
+          <button class="btn btn-primary" type="submit">Add Database</button>
+        </div>
+      </form>
+    </details>
+  </div>
+
+  <!-- ── PostgreSQL ── -->
+  <div class="surface p-5 mb-5">
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+      <div>
+        <h3 class="text-sm font-semibold">PostgreSQL</h3>
+        <p class="text-xs opacity-70 mt-1">Host: 127.0.0.1 &nbsp; Port: 5432</p>
+      </div>
+    </div>
+    {{ if PostgresItems }}
+    <div class="overflow-x-auto mb-4">
+      <table class="w-full text-sm text-left">
+        <thead>
+          <tr class="text-xs uppercase tracking-wide">
+            <th class="py-2 pr-4">Label</th>
+            <th class="py-2 pr-4">Database</th>
+            <th class="py-2 pr-4">Username</th>
+            <th class="py-2">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{ range _, db := PostgresItems }}
+          <tr class="border-b">
+            <td class="py-2.5 pr-4 font-medium">{{ db.Label }}</td>
+            <td class="py-2.5 pr-4 font-mono text-xs ">{{ db.Database }}</td>
+            <td class="py-2.5 pr-4 ">{{ db.Username }}</td>
+            <td class="py-2.5 flex gap-2">
+              <a class="text-xs hover:underline" href="/databases/connections/{{ db.ID }}/postgres-gui" target="_blank">Open pgweb</a>
+              <form action="/databases/connections/{{ db.ID }}/delete" method="post" style="display:inline" data-confirm-message="Delete this connection?">
+                <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+                <button class="text-xs hover:underline" type="submit">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {{ end }}
+        </tbody>
+      </table>
+    </div>
+    {{ else }}
+    <p class="text-sm opacity-70 mb-4">No PostgreSQL databases found.</p>
+    {{ end }}
+    <details class="pt-3 border-t border-[var(--border)]">
+      <summary class="cursor-pointer text-sm font-semibold hover:underline">Add PostgreSQL Database</summary>
+      <form class="mt-4 space-y-3" action="/apps/{{ Status.App.ID }}/manage/database" method="post">
+        <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+        <input type="hidden" name="engine" value="postgres">
+        <div class="form-grid">
+          <label class="block text-sm font-medium">Label
+            <input class="field mt-2" name="label" value="{{ Status.App.Name }}-pg">
+          </label>
+          <label class="block text-sm font-medium">Host
+            <input class="field mt-2" name="host" value="127.0.0.1">
+          </label>
+          <label class="block text-sm font-medium">Port
+            <input class="field mt-2" name="port" value="5432">
+          </label>
+          <label class="block text-sm font-medium">Database
+            <input class="field mt-2" name="database" placeholder="app_db" required>
+          </label>
+          <label class="block text-sm font-medium">Username
+            <input class="field mt-2" name="username" placeholder="app_user" required>
+          </label>
+          <label class="block text-sm font-medium">Password
+            <div class="flex gap-2 mt-2">
+              <input class="field flex-1" type="text" name="password" autocomplete="new-password" required>
+              <button type="button" class="btn" onclick="this.previousElementSibling.value=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>String.fromCharCode(33+b%93)).join('')">Generate</button>
+            </div>
+          </label>
+        </div>
+        <div class="flex justify-end">
+          <button class="btn btn-primary" type="submit">Add Database</button>
+        </div>
+      </form>
+    </details>
+  </div>
+
+  <!-- ── Redis ── -->
+  <div class="surface p-5">
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+      <div>
+        <h3 class="text-sm font-semibold">Redis</h3>
+        <p class="text-xs opacity-70 mt-1">Host: 127.0.0.1 &nbsp; Port: 6379</p>
+      </div>
+    </div>
+    {{ if RedisItems }}
+    <div class="overflow-x-auto mb-4">
+      <table class="w-full text-sm text-left">
+        <thead>
+          <tr class="text-xs uppercase tracking-wide">
+            <th class="py-2 pr-4">Label</th>
+            <th class="py-2 pr-4">Host</th>
+            <th class="py-2 pr-4">DB</th>
+            <th class="py-2">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{ range _, r := RedisItems }}
+          <tr class="border-b">
+            <td class="py-2.5 pr-4 font-medium">{{ r.Label }}</td>
+            <td class="py-2.5 pr-4 font-mono text-xs ">{{ r.Host }}:{{ r.Port }}</td>
+            <td class="py-2.5 pr-4 ">{{ r.DB }}</td>
+            <td class="py-2.5 flex gap-2">
+              <a class="text-xs hover:underline" href="/databases/redis/{{ r.ID }}/info">Info</a>
+              <form action="/databases/redis/{{ r.ID }}/delete" method="post" style="display:inline" data-confirm-message="Delete this Redis connection?">
+                <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+                <button class="text-xs hover:underline" type="submit">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {{ end }}
+        </tbody>
+      </table>
+    </div>
+    {{ else }}
+    <p class="text-sm opacity-70 mb-4">No Redis connections found.</p>
+    {{ end }}
+    <details class="pt-3 border-t border-[var(--border)]">
+      <summary class="cursor-pointer text-sm font-semibold hover:underline">Add Redis Connection</summary>
+      <form class="mt-4 space-y-3" action="/apps/{{ Status.App.ID }}/manage/redis" method="post">
+        <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+        <div class="form-grid">
+          <label class="block text-sm font-medium">Label
+            <input class="field mt-2" name="label" value="{{ Status.App.Name }}-redis">
+          </label>
+          <label class="block text-sm font-medium">Host
+            <input class="field mt-2" name="host" value="127.0.0.1">
+          </label>
+          <label class="block text-sm font-medium">Port
+            <input class="field mt-2" name="port" value="6379">
+          </label>
+          <label class="block text-sm font-medium">DB Number
+            <input class="field mt-2" type="number" name="db" value="0" min="0">
+          </label>
+          <label class="block text-sm font-medium">Password
+            <div class="flex gap-2 mt-2">
+              <input class="field flex-1" type="text" name="password" autocomplete="new-password" placeholder="optional">
+              <button type="button" class="btn" onclick="this.previousElementSibling.value=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>String.fromCharCode(33+b%93)).join('')">Generate</button>
+            </div>
+          </label>
+        </div>
+        <div class="flex justify-end">
+          <button class="btn btn-primary" type="submit">Add Connection</button>
+        </div>
+      </form>
+    </details>
+  </div>
+</div>
+
+<!-- ═══════════ SSL/TLS ═══════════ -->
+<div class="manage-panel" data-panel="ssl">
+
+  <!-- Let's Encrypt -->
+  <div class="surface p-5 mb-5">
+    <h3 class="text-sm font-semibold mb-2">Let's Encrypt</h3>
+    <p class="text-sm opacity-70 mb-4">Issue a free trusted certificate for the app domain. Requires DNS to point to this server.</p>
+    <form class="flex flex-wrap items-end gap-2" action="/apps/{{ Status.App.ID }}/manage/ssl/letsencrypt" method="post">
+      <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+      <label class="block flex-1 text-sm font-medium">Domain
+        <input class="field mt-2" name="domain" placeholder="example.com" required>
+      </label>
+      <button class="btn btn-primary" type="submit">Issue Let's Encrypt Certificate</button>
+    </form>
+  </div>
+
+  <!-- Import Certificate -->
+  <div class="surface p-5 mb-5">
+    <h3 class="text-sm font-semibold mb-2">Import Certificate</h3>
+    <p class="text-sm opacity-70 mb-4">Paste your existing certificate PEM files below.</p>
+    <form class="space-y-4" action="/apps/{{ Status.App.ID }}/manage/ssl/import" method="post">
+      <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+      <label class="block text-sm font-medium">Domain
+        <input class="field mt-2" name="domain" placeholder="example.com" required>
+      </label>
+      <label class="block text-sm font-medium">Private Key *
+        <textarea class="field mt-2 font-mono text-xs" name="private_key" rows="6" placeholder="-----BEGIN PRIVATE KEY-----&#10;...&#10;-----END PRIVATE KEY-----" required></textarea>
+      </label>
+      <label class="block text-sm font-medium">Certificate *
+        <textarea class="field mt-2 font-mono text-xs" name="certificate" rows="6" placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----" required></textarea>
+      </label>
+      <label class="block text-sm font-medium">Certificate Chain / Bundle
+        <textarea class="field mt-2 font-mono text-xs" name="certificate_chain" rows="4" placeholder="-----BEGIN CERTIFICATE-----&#10;(intermediate + root CA, optional)&#10;-----END CERTIFICATE-----"></textarea>
+      </label>
+      <div class="flex justify-end">
+        <button class="btn btn-primary" type="submit">Import Certificate</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Self-Signed -->
+  <div class="surface p-5">
+    <h3 class="text-sm font-semibold mb-2">Self-Signed Certificate</h3>
+    <p class="text-sm opacity-70 mb-4">Generate a self-signed certificate for development or internal use.</p>
+    <form class="flex flex-wrap items-end gap-2" action="/apps/{{ Status.App.ID }}/manage/ssl/self-signed" method="post">
+      <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+      <label class="block flex-1 text-sm font-medium">Domain
+        <input class="field mt-2" name="domain" placeholder="example.com" required>
+      </label>
+      <button class="btn" type="submit">Generate Self-Signed Certificate</button>
+    </form>
+  </div>
+</div>
+
+<!-- ═══════════ SSH/FTP ═══════════ -->
+<div class="manage-panel" data-panel="ssh">
+
+  <!-- ── SSH Users ── -->
+  <div class="surface p-5 mb-5">
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+      <h3 class="text-sm font-semibold">SSH Users</h3>
+    </div>
+
+    {{ if len(SSHUsers) > 0 }}
+    <div class="overflow-x-auto mb-4">
+      <table class="w-full text-sm text-left">
+        <thead>
+          <tr class="text-xs uppercase tracking-wide">
+            <th class="py-2 pr-4">Username</th>
+            <th class="py-2 pr-4">Home Directory</th>
+            <th class="py-2 pr-4">Shell</th>
+            <th class="py-2 pr-4">SSH</th>
+            <th class="py-2 pr-4">Status</th>
+            <th class="py-2 text-right">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{ range _, u := SSHUsers }}
+          <tr class="border-b hover:bg-[var(--bg-hover)] transition-colors">
+            <td class="py-2.5 pr-4 font-medium font-medium">{{ u.Username }}{{ if u.ID == PrimarySSHUserID }} <span class="text-[10px]  border border-[var(--accent)] rounded px-1.5 py-0.5 ml-1">primary</span>{{ end }}</td>
+            <td class="py-2.5 pr-4 font-mono text-xs ">{{ u.HomeDirectory }}</td>
+            <td class="py-2.5 pr-4 font-mono text-xs opacity-70">{{ u.Shell }}</td>
+            <td class="py-2.5 pr-4">{{ if u.SSHEnabled }}<span class="inline-flex items-center gap-1 text-xs "><svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg> Enabled</span>{{ else }}<span class="text-xs opacity-50">Disabled</span>{{ end }}</td>
+            <td class="py-2.5 pr-4">{{ if u.IsActive }}<span class="badge badge-ok">Active</span>{{ else }}<span class="badge badge-danger">Inactive</span>{{ end }}</td>
+            <td class="py-2.5 text-right">
+              {{ if u.ID != PrimarySSHUserID }}
+              <form action="/apps/{{ Status.App.ID }}/manage/site-user/{{ u.ID }}/delete" method="post" style="display:inline" data-confirm-message="Delete SSH user {{ u.Username }}?">
+                <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+                <button class="text-xs hover:underline font-medium" type="submit">Delete</button>
+              </form>
+              {{ else }}
+              <span class="text-xs opacity-30">—</span>
+              {{ end }}
+            </td>
+          </tr>
+          {{ end }}
+        </tbody>
+      </table>
+    </div>
+    {{ else }}
+    <div class="rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] p-4 mb-4">
+      <p class="text-sm opacity-70">No SSH user configured for this application. Add one below to enable SSH access.</p>
+    </div>
+    {{ end }}
+
+    <details class="pt-3 border-t border-[var(--border)]" {{ if len(SSHUsers) == 0 }}open{{ end }}>
+      <summary class="cursor-pointer text-sm font-semibold hover:underline select-none">+ Add SSH User</summary>
+      <form class="mt-4 space-y-4" action="/apps/{{ Status.App.ID }}/manage/site-user" method="post">
+        <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+        <div class="grid gap-4 sm:grid-cols-2">
+          <label class="block text-sm font-medium">Username
+            <input class="field mt-1" name="username" placeholder="e.g. appuser" required>
+          </label>
+          <label class="block text-sm font-medium">Password
+            <div class="flex gap-2 mt-1">
+              <input class="field flex-1" type="text" name="password" id="app-ssh-password" autocomplete="new-password" placeholder="auto-generated if empty">
+              <button type="button" class="btn whitespace-nowrap" onclick="var p='';var c='abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%';for(var i=0;i<20;i++)p+=c[Math.floor(Math.random()*c.length)];document.getElementById('app-ssh-password').value=p;">Generate</button>
+            </div>
+          </label>
+        </div>
+        <div class="flex justify-end">
+          <button class="btn btn-primary" type="submit">Add SSH User</button>
+        </div>
+      </form>
+    </details>
+  </div>
+
+  <!-- ── FTP Users ── -->
+  <div class="surface p-5">
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+      <h3 class="text-sm font-semibold">FTP Users</h3>
+    </div>
+
+    {{ if FTPUsers }}
+    <div class="overflow-x-auto mb-4">
+      <table class="w-full text-sm text-left">
+        <thead>
+          <tr class="text-xs uppercase tracking-wide">
+            <th class="py-2 pr-4">Username</th>
+            <th class="py-2 pr-4">Home Directory</th>
+            <th class="py-2 pr-4">Status</th>
+            <th class="py-2 text-right">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{ range _, u := FTPUsers }}
+          <tr class="border-b hover:bg-[var(--bg-hover)] transition-colors">
+            <td class="py-2.5 pr-4 font-medium font-medium">{{ u.Username }}</td>
+            <td class="py-2.5 pr-4 font-mono text-xs ">{{ u.HomeDir }}</td>
+            <td class="py-2.5 pr-4">{{ if u.IsActive }}<span class="badge badge-ok">Active</span>{{ else }}<span class="badge badge-danger">Inactive</span>{{ end }}</td>
+            <td class="py-2.5 text-right">
+              <form action="/apps/{{ Status.App.ID }}/manage/ftp-users/{{ u.ID }}/delete" method="post" style="display:inline" data-confirm-message="Delete FTP user {{ u.Username }}?">
+                <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+                <button class="text-xs hover:underline font-medium" type="submit">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {{ end }}
+        </tbody>
+      </table>
+    </div>
+    {{ else }}
+    <div class="rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] p-4 mb-4">
+      <p class="text-sm opacity-70">No FTP users configured. Add one below to enable FTP access.</p>
+    </div>
+    {{ end }}
+
+    <details class="pt-3 border-t border-[var(--border)]" {{ if !FTPUsers }}open{{ end }}>
+      <summary class="cursor-pointer text-sm font-semibold hover:underline select-none">+ Add FTP User</summary>
+      <form class="mt-4 space-y-4" action="/apps/{{ Status.App.ID }}/manage/ftp-users" method="post">
+        <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+        <div class="grid gap-4 sm:grid-cols-2">
+          <label class="block text-sm font-medium">Username
+            <input class="field mt-1" name="username" placeholder="e.g. ftpuser" required>
+          </label>
+          <label class="block text-sm font-medium">Password
+            <div class="flex gap-2 mt-1">
+              <input class="field flex-1" type="text" name="password" id="app-ftp-password" autocomplete="new-password" placeholder="auto-generated if empty">
+              <button type="button" class="btn whitespace-nowrap" onclick="var p='';var c='abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%';for(var i=0;i<20;i++)p+=c[Math.floor(Math.random()*c.length)];document.getElementById('app-ftp-password').value=p;">Generate</button>
+            </div>
+          </label>
+        </div>
+        <label class="block text-sm font-medium">Home Directory
+          <input class="field mt-1 font-mono text-xs" name="home_dir" value="{{ DefaultHomeDir }}" placeholder="/home/app/workdir">
+          <span class="text-xs opacity-50 mt-1">The root directory this FTP user can access. Defaults to the application working directory.</span>
+        </label>
+        <div class="flex justify-end">
+          <button class="btn btn-primary" type="submit">Add FTP User</button>
+        </div>
+      </form>
+    </details>
+  </div>
+</div>
+
+<!-- ═══════════ Logs ═══════════ -->
+<div class="manage-panel" data-panel="logs">
+  <div class="surface p-5">
+    <h3 class="text-sm font-semibold mb-4">Logs</h3>
+    <div class="grid gap-6 xl:grid-cols-2">
+      <div>
+        <h4 class="text-sm font-medium mb-2">Stdout</h4>
+        <pre class="log">{{ StdoutLog }}</pre>
+      </div>
+      <div>
+        <h4 class="text-sm font-medium mb-2">Stderr</h4>
+        <pre class="log">{{ StderrLog }}</pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+$(function () {
+  function activateTab(name) {
+    $('#manage-tabs .manage-tab').each(function () {
+      $(this).toggleClass('manage-tab-active', $(this).data('tab') === name);
+    });
+    $('.manage-panel').each(function () {
+      $(this).toggleClass('manage-panel-active', $(this).data('panel') === name);
+    });
+  }
+
+  $('#manage-tabs').on('click', '.manage-tab', function () {
+    var tab = $(this).data('tab');
+    history.replaceState(null, '', '#' + tab);
+    activateTab(tab);
+  });
+
+  var hash = location.hash.replace('#', '');
+  if (hash && $('[data-panel="' + hash + '"]').length) {
+    activateTab(hash);
+  }
+
+  var copyNotyf = null;
+  function copyNotify(ok, msg) {
+    if (typeof Notyf !== 'function') return;
+    if (!copyNotyf) {
+      copyNotyf = new Notyf({ duration: 2200, dismissible: false, position: { x: 'center', y: 'top' }, ripple: false });
+    }
+    copyNotyf[ok ? 'success' : 'error'](msg);
+  }
+  function copyFallback(text, onOk, onErr) {
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      onOk();
+    } catch (_) {
+      onErr();
+    }
+  }
+  function copyServerIP(text, onOk, onErr) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(onOk).catch(function () { copyFallback(text, onOk, onErr); });
+      return;
+    }
+    copyFallback(text, onOk, onErr);
+  }
+  $('.manage-header-copy').on('click', function () {
+    var $btn = $(this);
+    var value = $.trim(String($btn.data('copyValue') || ''));
+    if (!value) {
+      copyNotify(false, 'Nothing to copy');
+      return;
+    }
+    copyServerIP(value, function () {
+      $btn.addClass('is-copied');
+      setTimeout(function () { $btn.removeClass('is-copied'); }, 900);
+      copyNotify(true, 'Server IP copied');
+    }, function () {
+      copyNotify(false, 'Could not copy');
+    });
+  });
+
+  function togglePmFields() {
+    var pm = $('#rt-pm').val() || 'systemd';
+    $('.rt-pm-field').hide();
+    $('.rt-pm-' + pm).show();
+  }
+  $('#rt-pm').on('change', togglePmFields);
+  togglePmFields();
+});
+if (typeof lucide !== 'undefined') lucide.createIcons();
+</script>
+</div>
+{{ else }}
+<div class="manage-shell">
+
+<div class="manage-header">
+  <div class="manage-header-top">
+    <a href="/platforms" class="btn"><i data-lucide="arrow-left"></i> Back to Platforms</a>
+    <form action="/websites/{{ Item.ID }}/toggle" method="post" style="display:inline" {{ if Item.Enabled }}data-confirm-message="Enable maintenance mode for this platform?"{{ end }}>
+      <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+      <input type="hidden" name="enabled" value="{{ if Item.Enabled }}false{{ else }}true{{ end }}">
+      <button class="btn {{ if Item.Enabled }}btn-warning{{ else }}btn-success{{ end }}" type="submit">{{ if Item.Enabled }}Enable Maintenance{{ else }}Disable Maintenance{{ end }}</button>
+    </form>
+  </div>
+  <div class="manage-header-grid">
+    <div class="manage-header-item manage-header-primary">
+      <span class="manage-header-label">Domain</span>
+      {{ if PrimaryDomain != "" }}
+      <a class="manage-header-domain-link" href="https://{{ PrimaryDomain }}/" target="_blank" rel="noopener noreferrer">
+        <i data-lucide="globe"></i>
+        <span>{{ PrimaryDomain }}</span>
+        <i data-lucide="external-link"></i>
+      </a>
+      {{ else }}
+      <span class="manage-header-value">No domain</span>
+      {{ end }}
+    </div>
+    <div class="manage-header-item">
+      <span class="manage-header-label">Type</span>
+      <span class="manage-header-value">{{ Item.Type }}</span>
+    </div>
+    <div class="manage-header-item">
+      <span class="manage-header-label">Server IP</span>
+      <button type="button" class="manage-header-copy" data-copy-value="{{ ServerAddress }}" aria-label="Copy server IP">
+        <span class="manage-header-value manage-header-value--mono">{{ ServerAddress }}</span>
+        <i data-lucide="copy"></i>
+      </button>
+    </div>
+    <div class="manage-header-item">
+      <span class="manage-header-label">SSH User</span>
+      <span class="manage-header-value">{{ if Item.SiteUser }}{{ Item.SiteUser.Username }}{{ else }}—{{ end }}</span>
+    </div>
+    <div class="manage-header-item">
+      <span class="manage-header-label">Status</span>
+      <span class="manage-header-value">{{ if Item.Enabled }}<span class="badge badge-ok">active</span>{{ else }}<span class="badge badge-warn">maintenance</span>{{ end }}</span>
+    </div>
+  </div>
+</div>
+
+<div class="manage-tabs" id="manage-tabs">
+  <button class="manage-tab manage-tab-active" data-tab="settings"><i data-lucide="settings"></i><span>Settings</span></button>
+  <button class="manage-tab" data-tab="vhost"><i data-lucide="server"></i><span>Vhost</span></button>
+  <button class="manage-tab" data-tab="databases"><i data-lucide="database"></i><span>Databases</span></button>
+  <button class="manage-tab" data-tab="varnish"><i data-lucide="layers"></i><span>Varnish Cache</span></button>
+  <button class="manage-tab" data-tab="ssl"><i data-lucide="shield-check"></i><span>SSL/TLS</span></button>
+  <button class="manage-tab" data-tab="security"><i data-lucide="shield"></i><span>Security</span></button>
+  <button class="manage-tab" data-tab="ssh"><i data-lucide="key"></i><span>SSH/FTP</span></button>
+  <button class="manage-tab" data-tab="file-manager"><i data-lucide="folder-open"></i><span>File Manager</span></button>
+  <button class="manage-tab" data-tab="cron-jobs"><i data-lucide="clock"></i><span>Cron Jobs</span></button>
+  <button class="manage-tab" data-tab="logs"><i data-lucide="file-text"></i><span>Logs</span></button>
+</div>
+
+<!-- ═══════════ Settings ═══════════ -->
+<div class="manage-panel manage-panel-active" data-panel="settings">
+
+  <!-- Domain Settings -->
+  <div class="mb-6 pt-6">
+    <!-- <h3 class="text-sm font-semibold mb-3" style="color:var(--text)">Domain Settings</h3> -->
+    <form action="/websites/{{ Item.ID }}" method="post">
+      <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+      <input type="hidden" name="type" value="{{ Item.Type }}">
+      <input type="hidden" name="enabled" value="{{ Item.Enabled }}">
+      <div class="form-grid">
+        <label class="block text-sm font-medium">Domain Name
+          <input class="field mt-2" name="primary_domain" value="{{ if len(Item.Domains) > 0 }}{{ Item.Domains[0].Domain }}{{ end }}">
+        </label>
+        <label class="block text-sm font-medium">Root Directory *
+          <input class="field mt-2" name="root_path" value="{{ Item.RootPath }}">
+        </label>
+      </div>
+      <div class="mt-4 flex justify-end">
+        <button class="btn btn-primary" type="submit">Save</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Site User Settings -->
+  <div class="platform-ssh-section">
+    <div class="platform-ssh-headline">
+      <h3 class="platform-ssh-title">SSH User Settings</h3>
+      {{ if Item.SiteUser }}
+      <div class="platform-ssh-meta">
+        <span class="platform-ssh-user">{{ Item.SiteUser.Username }}</span>
+        <span class="platform-ssh-sep">•</span>
+        <span class="platform-ssh-status {{ if Item.SiteUser.IsActive }}platform-ssh-status-active{{ else }}platform-ssh-status-inactive{{ end }}">{{ if Item.SiteUser.IsActive }}Active{{ else }}Inactive{{ end }}</span>
+      </div>
+      {{ end }}
+    </div>
+    {{ if Item.SiteUser }}
+    <form action="/websites/{{ Item.ID }}/manage/site-user/password" method="post" class="platform-ssh-form">
+      <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+      <div class="platform-ssh-pass-row">
+        <input class="field" type="text" name="password" id="siteuser-pw" autocomplete="new-password" placeholder="New password (leave blank to auto-generate)">
+        <button type="button" class="btn" onclick="var c='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%',p='';for(var i=0;i<20;i++)p+=c[Math.floor(Math.random()*c.length)];document.getElementById('siteuser-pw').value=p;">Generate</button>
+        <button class="btn btn-primary" type="submit">Update Password</button>
+      </div>
+    </form>
+    {{ else }}
+    <form action="/websites/{{ Item.ID }}/manage/site-user" method="post" class="platform-ssh-form">
+      <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+      <div class="platform-ssh-create-row">
+        <input class="field" name="username" placeholder="Username (e.g. siteuser)" required>
+        <input class="field" type="text" name="password" id="siteuser-new-pw" autocomplete="new-password" placeholder="Password (leave blank to auto-generate)">
+        <button type="button" class="btn" onclick="var c='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%',p='';for(var i=0;i<20;i++)p+=c[Math.floor(Math.random()*c.length)];document.getElementById('siteuser-new-pw').value=p;">Generate</button>
+        <button class="btn btn-primary" type="submit">Create SSH User</button>
+      </div>
+    </form>
+    {{ end }}
+  </div>
+
+  {{ if Item.Type == "php" }}
+  <!-- PHP Settings -->
+  <div class="mb-6 pt-6" style="border-top:1px solid var(--border)">
+    <h3 class="text-sm font-semibold mb-3" style="color:var(--text)">PHP Settings</h3>
+    <form action="/websites/{{ Item.ID }}/manage/php-settings" method="post">
+      <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <label class="block text-sm font-medium">PHP Version
+          <select class="field mt-2" name="php_version">
+            {{ range _, v := PHPVersions }}
+              <option value="{{ v }}" {{ if v == Item.PHPVersion }}selected{{ end }}>PHP {{ v }}</option>
+            {{ end }}
+          </select>
+        </label>
+        <label class="block text-sm font-medium">memory_limit
+          <select class="field mt-2" name="memory_limit">
+            <option value="64M" {{ if PhpCfg.MemoryLimit == "64M" }}selected{{ end }}>64M</option>
+            <option value="128M" {{ if PhpCfg.MemoryLimit == "128M" }}selected{{ end }}>128M</option>
+            <option value="256M" {{ if PhpCfg.MemoryLimit == "256M" }}selected{{ end }}>256M</option>
+            <option value="512M" {{ if PhpCfg.MemoryLimit == "512M" }}selected{{ end }}>512M</option>
+            <option value="1024M" {{ if PhpCfg.MemoryLimit == "1024M" }}selected{{ end }}>1024M</option>
+          </select>
+        </label>
+        <label class="block text-sm font-medium">max_execution_time
+          <select class="field mt-2" name="max_execution_time">
+            <option value="30" {{ if PhpCfg.MaxExecutionTime == "30" }}selected{{ end }}>30</option>
+            <option value="60" {{ if PhpCfg.MaxExecutionTime == "60" }}selected{{ end }}>60</option>
+            <option value="120" {{ if PhpCfg.MaxExecutionTime == "120" }}selected{{ end }}>120</option>
+            <option value="300" {{ if PhpCfg.MaxExecutionTime == "300" }}selected{{ end }}>300</option>
+            <option value="600" {{ if PhpCfg.MaxExecutionTime == "600" }}selected{{ end }}>600</option>
+          </select>
+        </label>
+        <label class="block text-sm font-medium">max_input_time
+          <select class="field mt-2" name="max_input_time">
+            <option value="30" {{ if PhpCfg.MaxInputTime == "30" }}selected{{ end }}>30</option>
+            <option value="60" {{ if PhpCfg.MaxInputTime == "60" }}selected{{ end }}>60</option>
+            <option value="120" {{ if PhpCfg.MaxInputTime == "120" }}selected{{ end }}>120</option>
+            <option value="300" {{ if PhpCfg.MaxInputTime == "300" }}selected{{ end }}>300</option>
+          </select>
+        </label>
+        <label class="block text-sm font-medium">max_input_vars
+          <select class="field mt-2" name="max_input_vars">
+            <option value="1000" {{ if PhpCfg.MaxInputVars == "1000" }}selected{{ end }}>1000</option>
+            <option value="5000" {{ if PhpCfg.MaxInputVars == "5000" }}selected{{ end }}>5000</option>
+            <option value="10000" {{ if PhpCfg.MaxInputVars == "10000" }}selected{{ end }}>10000</option>
+          </select>
+        </label>
+        <label class="block text-sm font-medium">post_max_size
+          <select class="field mt-2" name="post_max_size">
+            <option value="8M" {{ if PhpCfg.PostMaxSize == "8M" }}selected{{ end }}>8M</option>
+            <option value="16M" {{ if PhpCfg.PostMaxSize == "16M" }}selected{{ end }}>16M</option>
+            <option value="32M" {{ if PhpCfg.PostMaxSize == "32M" }}selected{{ end }}>32M</option>
+            <option value="64M" {{ if PhpCfg.PostMaxSize == "64M" }}selected{{ end }}>64M</option>
+            <option value="128M" {{ if PhpCfg.PostMaxSize == "128M" }}selected{{ end }}>128M</option>
+            <option value="256M" {{ if PhpCfg.PostMaxSize == "256M" }}selected{{ end }}>256M</option>
+          </select>
+        </label>
+        <label class="block text-sm font-medium">upload_max_filesize
+          <select class="field mt-2" name="upload_max_filesize">
+            <option value="8M" {{ if PhpCfg.UploadMaxFilesize == "8M" }}selected{{ end }}>8M</option>
+            <option value="16M" {{ if PhpCfg.UploadMaxFilesize == "16M" }}selected{{ end }}>16M</option>
+            <option value="32M" {{ if PhpCfg.UploadMaxFilesize == "32M" }}selected{{ end }}>32M</option>
+            <option value="64M" {{ if PhpCfg.UploadMaxFilesize == "64M" }}selected{{ end }}>64M</option>
+            <option value="128M" {{ if PhpCfg.UploadMaxFilesize == "128M" }}selected{{ end }}>128M</option>
+            <option value="256M" {{ if PhpCfg.UploadMaxFilesize == "256M" }}selected{{ end }}>256M</option>
+          </select>
+        </label>
+      </div>
+      <div class="mt-4">
+        <label class="block text-sm font-medium">Additional Configuration Directives
+          <textarea class="field mt-2 font-mono text-xs" name="additional_directives" rows="5" placeholder="e.g. display_errors = Off&#10;date.timezone = UTC">{{ PhpCfg.AdditionalDirectives }}</textarea>
+        </label>
+      </div>
+      <div class="mt-4 flex justify-end">
+        <button class="btn btn-primary" type="submit">Save PHP Settings</button>
+      </div>
+    </form>
+  </div>
+  {{ end }}
+
+  {{ if Item.Type == "proxy" }}
+  {{ if isset(LinkedApp) && LinkedApp != nil }}
+  <!-- ── Runtime Info & Controls (app exists) ── -->
+  <div class="surface p-5 mb-5">
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+      <h3 class="text-sm font-semibold">Runtime &amp; Service</h3>
+      <div class="flex items-center gap-2">
+        {{ if isset(LinkedAppStatus) && LinkedAppStatus != nil }}
+          {{ if LinkedAppStatus.Service.Active }}
+            <span class="badge badge-ok">running</span>
+          {{ else }}
+            <span class="badge badge-danger">stopped</span>
+          {{ end }}
+        {{ end }}
+      </div>
+    </div>
+
+    <!-- Service Controls -->
+    <div class="flex flex-wrap gap-2 mb-5">
+      <form action="/apps/{{ LinkedApp.ID }}/actions/start" method="post"><input type="hidden" name="_csrf" value="{{ CSRFToken }}"><button class="btn btn-success text-xs" type="submit">Start</button></form>
+      <form action="/apps/{{ LinkedApp.ID }}/actions/stop" method="post" data-confirm-message="Stop this service now?"><input type="hidden" name="_csrf" value="{{ CSRFToken }}"><button class="btn btn-danger text-xs" type="submit">Stop</button></form>
+      <form action="/apps/{{ LinkedApp.ID }}/actions/restart" method="post"><input type="hidden" name="_csrf" value="{{ CSRFToken }}"><button class="btn text-xs" type="submit">Restart</button></form>
+      <form action="/apps/{{ LinkedApp.ID }}/actions/enable" method="post"><input type="hidden" name="_csrf" value="{{ CSRFToken }}"><button class="btn btn-primary text-xs" type="submit">Enable</button></form>
+      <form action="/apps/{{ LinkedApp.ID }}/actions/disable" method="post" data-confirm-message="Disable autostart?"><input type="hidden" name="_csrf" value="{{ CSRFToken }}"><button class="btn btn-warning text-xs" type="submit">Disable</button></form>
+    </div>
+
+    <!-- Info Cards -->
+    <div class="grid gap-3 text-sm sm:grid-cols-2 mb-5">
+      <div class="rounded-md border border-[var(--border)] p-3">
+        <p class="text-xs uppercase tracking-wide opacity-70">Runtime</p>
+        <p class="mt-1"><span class="badge badge-neutral">{{ LinkedApp.Runtime }}</span></p>
+      </div>
+      <div class="rounded-md border border-[var(--border)] p-3">
+        <p class="text-xs uppercase tracking-wide opacity-70">Process Manager</p>
+        <p class="mt-1"><span class="badge badge-neutral">{{ if LinkedApp.ProcessManager }}{{ LinkedApp.ProcessManager }}{{ else }}systemd{{ end }}</span></p>
+      </div>
+      <div class="rounded-md border border-[var(--border)] p-3">
+        <p class="text-xs uppercase tracking-wide opacity-70">Bind</p>
+        <p class="mt-1 font-mono text-xs ">{{ LinkedApp.Host }}:{{ LinkedApp.Port }}</p>
+      </div>
+      <div class="rounded-md border border-[var(--border)] p-3">
+        <p class="text-xs uppercase tracking-wide opacity-70">Execution Mode</p>
+        <p class="mt-1"><span class="badge {{ if LinkedApp.ExecutionMode == "compiled" }}badge-ok{{ else }}badge-warn{{ end }}">{{ LinkedApp.ExecutionMode }}</span></p>
+      </div>
+      <div class="rounded-md border border-[var(--border)] p-3">
+        <p class="text-xs uppercase tracking-wide opacity-70">{{ if LinkedApp.ExecutionMode == "interpreted" }}Interpreter{{ else }}Binary{{ end }}</p>
+        <p class="mt-1 font-mono text-xs ">{{ LinkedApp.BinaryPath }}</p>
+      </div>
+      {{ if LinkedApp.EntryPoint }}
+      <div class="rounded-md border border-[var(--border)] p-3">
+        <p class="text-xs uppercase tracking-wide opacity-70">Entry Point</p>
+        <p class="mt-1 font-mono text-xs ">{{ LinkedApp.EntryPoint }}</p>
+      </div>
+      {{ end }}
+      <div class="rounded-md border border-[var(--border)] p-3">
+        <p class="text-xs uppercase tracking-wide opacity-70">Working Directory</p>
+        <p class="mt-1 font-mono text-xs ">{{ LinkedApp.WorkingDirectory }}</p>
+      </div>
+      <div class="rounded-md border border-[var(--border)] p-3">
+        <p class="text-xs uppercase tracking-wide opacity-70">Service Name</p>
+        <p class="mt-1 font-mono text-xs ">{{ LinkedApp.ServiceName }}</p>
+      </div>
+    </div>
+
+    <!-- Editable Runtime Tuning -->
+    <h4 class="text-sm font-medium mb-3">Tuning</h4>
+    <form id="runtime-settings-form" action="/apps/{{ LinkedApp.ID }}/manage/runtime-settings" method="post">
+      <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+        <label class="block text-sm font-medium">Process Manager
+          <select class="field mt-2" name="process_manager" id="rt-pm" data-runtime="{{ LinkedApp.Runtime }}">
+            <option value="systemd" {{ if LinkedApp.ProcessManager == "systemd" || LinkedApp.ProcessManager == "" }}selected{{ end }}>systemd</option>
+            <option value="pm2" {{ if LinkedApp.ProcessManager == "pm2" }}selected{{ end }}>pm2</option>
+            <option value="gunicorn" {{ if LinkedApp.ProcessManager == "gunicorn" }}selected{{ end }}>gunicorn</option>
+            <option value="uwsgi" {{ if LinkedApp.ProcessManager == "uwsgi" }}selected{{ end }}>uwsgi</option>
+          </select>
+        </label>
+
+        <label class="block text-sm font-medium">Workers
+          <input class="field mt-2" type="number" name="workers" min="0" value="{{ LinkedApp.Workers }}" placeholder="0 = auto/default">
+          <span class="text-xs opacity-50 mt-1">0 = use process manager default</span>
+        </label>
+
+        <label class="block text-sm font-medium">Timeout (seconds)
+          <input class="field mt-2" type="number" name="timeout" min="0" value="{{ LinkedApp.Timeout }}" placeholder="0 = default">
+        </label>
+
+        <label class="block text-sm font-medium">Proxy Port
+          <input class="field mt-2" type="number" name="port" min="1" max="65535" value="{{ LinkedApp.Port }}" placeholder="e.g. 8080">
+          <span class="text-xs opacity-50 mt-1">Updates bind/proxy port and reloads runtime config.</span>
+        </label>
+
+        <label class="block text-sm font-medium">Runtime Version
+          {{ if LinkedApp.Runtime == "node" }}
+          <select class="field mt-2" name="runtime_version">
+            {{ if LinkedRuntimeVersion != "" }}
+            <option value="{{ LinkedRuntimeVersion }}" selected>{{ LinkedRuntimeVersion }} (current)</option>
+            {{ end }}
+            {{ range _, v := NodeVersions }}
+            {{ if LinkedRuntimeVersion != v }}<option value="{{ v }}">{{ v }}</option>{{ end }}
+            {{ end }}
+          </select>
+          {{ else if LinkedApp.Runtime == "python" }}
+          <select class="field mt-2" name="runtime_version">
+            {{ if LinkedRuntimeVersion != "" }}
+            <option value="{{ LinkedRuntimeVersion }}" selected>{{ LinkedRuntimeVersion }} (current)</option>
+            {{ end }}
+            {{ range _, v := PythonVersions }}
+            {{ if LinkedRuntimeVersion != v }}<option value="{{ v }}">{{ v }}</option>{{ end }}
+            {{ end }}
+          </select>
+          {{ else if LinkedApp.Runtime == "go" }}
+          <select class="field mt-2" name="runtime_version">
+            {{ if LinkedRuntimeVersion != "" }}
+            <option value="{{ LinkedRuntimeVersion }}" selected>{{ LinkedRuntimeVersion }} (current)</option>
+            {{ end }}
+            {{ range _, v := GoVersions }}
+            {{ if LinkedRuntimeVersion != v }}<option value="{{ v }}">{{ v }}</option>{{ end }}
+            {{ end }}
+          </select>
+          {{ else if LinkedApp.Runtime == "php" }}
+          <select class="field mt-2" name="runtime_version">
+            {{ if LinkedRuntimeVersion != "" }}
+            <option value="{{ LinkedRuntimeVersion }}" selected>{{ LinkedRuntimeVersion }} (current)</option>
+            {{ end }}
+            {{ range _, v := PHPVersions }}
+            {{ if LinkedRuntimeVersion != v }}<option value="{{ v }}">{{ v }}</option>{{ end }}
+            {{ end }}
+          </select>
+          {{ else }}
+          <input type="hidden" name="runtime_version" value="{{ LinkedRuntimeVersion }}">
+          <input class="field mt-2" type="text" value="Not applicable for this runtime" readonly>
+          {{ end }}
+          <span class="text-xs opacity-50 mt-1">Version is stored as <span class="font-mono">RUNTIME_VERSION</span>.</span>
+        </label>
+
+        <label class="block text-sm font-medium">Max Memory
+          <input class="field mt-2" type="text" name="max_memory" value="{{ LinkedApp.MaxMemory }}" placeholder="e.g. 512M">
+          <span class="text-xs opacity-50 mt-1">PM2: --max-memory-restart &middot; Systemd: MemoryMax</span>
+        </label>
+
+        <label class="block text-sm font-medium">Restart Policy
+          <select class="field mt-2" name="restart_policy">
+            <option value="on-failure" {{ if LinkedApp.RestartPolicy == "on-failure" }}selected{{ end }}>on-failure</option>
+            <option value="always" {{ if LinkedApp.RestartPolicy == "always" }}selected{{ end }}>always</option>
+            <option value="no" {{ if LinkedApp.RestartPolicy == "no" }}selected{{ end }}>no</option>
+            <option value="on-abnormal" {{ if LinkedApp.RestartPolicy == "on-abnormal" }}selected{{ end }}>on-abnormal</option>
+          </select>
+        </label>
+
+        <label class="block text-sm font-medium rt-pm-field rt-pm-gunicorn rt-pm-uwsgi">Worker Class
+          <select class="field mt-2" name="worker_class">
+            <option value="" {{ if LinkedApp.WorkerClass == "" }}selected{{ end }}>default (sync)</option>
+            <option value="sync" {{ if LinkedApp.WorkerClass == "sync" }}selected{{ end }}>sync</option>
+            <option value="gevent" {{ if LinkedApp.WorkerClass == "gevent" }}selected{{ end }}>gevent</option>
+            <option value="uvicorn.workers.UvicornWorker" {{ if LinkedApp.WorkerClass == "uvicorn.workers.UvicornWorker" }}selected{{ end }}>uvicorn.workers.UvicornWorker</option>
+            <option value="gthread" {{ if LinkedApp.WorkerClass == "gthread" }}selected{{ end }}>gthread</option>
+          </select>
+        </label>
+
+        <label class="block text-sm font-medium rt-pm-field rt-pm-pm2">Exec Mode
+          <select class="field mt-2" name="exec_mode">
+            <option value="fork" {{ if LinkedApp.ExecMode == "fork" || LinkedApp.ExecMode == "" }}selected{{ end }}>fork</option>
+            <option value="cluster" {{ if LinkedApp.ExecMode == "cluster" }}selected{{ end }}>cluster</option>
+          </select>
+        </label>
+
+      </div>
+      <div class="mt-4 flex flex-wrap justify-end gap-2">
+        <button class="btn btn-primary" type="submit" name="runtime_apply" value="reconfigure">Reconfigure Runtime</button>
+        <button class="btn" type="submit" name="runtime_apply" value="reset">Reset Runtime Process</button>
+      </div>
+    </form>
+
+    <!-- Delete Runtime -->
+    <div class="mt-6 pt-5 border-t border-[var(--border)]">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h4 class="text-sm font-semibold ">Delete Runtime &amp; Service</h4>
+          <p class="text-xs opacity-50 mt-1">Removes the linked runtime process, service unit, and runtime configuration. The platform itself is kept.</p>
+        </div>
+        <form action="/websites/{{ Item.ID }}/manage/delete-app" method="post" data-confirm-message="Delete the linked runtime and service? The platform will remain but the process will be removed.">
+          <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+          <button class="btn btn-danger text-xs" type="submit">Delete Runtime</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  {{ else }}
+  <!-- ── Create Runtime Configuration (no app yet) ── -->
+  <div class="surface p-5 mb-5">
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+      <h3 class="text-sm font-semibold">Runtime Settings</h3>
+    </div>
+    <form id="create-app-form" action="/websites/{{ Item.ID }}/manage/create-app" method="post">
+      <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+        <label class="block text-sm font-medium">Runtime
+          <select class="field mt-2" name="runtime" id="ca-runtime">
+            <option value="go" {{ if Item.AppRuntime == "go" }}selected{{ end }}>Go</option>
+            <option value="python" {{ if Item.AppRuntime == "python" }}selected{{ end }}>Python</option>
+            <option value="node" {{ if Item.AppRuntime == "node" }}selected{{ end }}>Node.js</option>
+            <option value="binary" {{ if Item.AppRuntime == "binary" || Item.AppRuntime == "" }}selected{{ end }}>Binary / Other</option>
+          </select>
+        </label>
+
+        <label class="block text-sm font-medium">Process Manager
+          <select class="field mt-2" name="process_manager" id="ca-pm">
+          </select>
+        </label>
+
+        <label class="block text-sm font-medium" id="ca-binary-label">
+          <span id="ca-binary-title">Binary / Command Path</span>
+          <input class="field mt-2" type="text" name="binary_path" id="ca-binary-input" placeholder="/usr/local/bin/myapp">
+          <span class="text-xs opacity-50 mt-1" id="ca-binary-hint">Absolute path to the compiled binary or command</span>
+        </label>
+
+        <label class="block text-sm font-medium ca-field ca-interpreted" style="display:none" id="ca-entry-label">Entry Point
+          <input class="field mt-2" type="text" name="entry_point" placeholder="app.py / index.js">
+          <span class="text-xs opacity-50 mt-1">Main script file to execute</span>
+        </label>
+
+        <label class="block text-sm font-medium">Working Directory
+          <input class="field mt-2" type="text" name="working_directory" value="{{ Item.RootPath }}" placeholder="{{ Item.RootPath }}">
+        </label>
+
+        <label class="block text-sm font-medium">Port
+          <input class="field mt-2" type="number" name="port" min="1" max="65535" placeholder="8080">
+          <span class="text-xs opacity-50 mt-1">Leave blank to auto-detect from proxy target</span>
+        </label>
+
+        <label class="block text-sm font-medium">Workers
+          <input class="field mt-2" type="number" name="workers" min="0" value="0" placeholder="0 = auto/default">
+          <span class="text-xs opacity-50 mt-1">0 = use process manager default</span>
+        </label>
+
+        <label class="block text-sm font-medium">Timeout (seconds)
+          <input class="field mt-2" type="number" name="timeout" min="0" value="0" placeholder="0 = default">
+        </label>
+
+        <label class="block text-sm font-medium">Max Memory
+          <input class="field mt-2" type="text" name="max_memory" placeholder="e.g. 512M">
+        </label>
+
+        <label class="block text-sm font-medium">Restart Policy
+          <select class="field mt-2" name="restart_policy">
+            <option value="on-failure" selected>on-failure</option>
+            <option value="always">always</option>
+            <option value="no">no</option>
+            <option value="on-abnormal">on-abnormal</option>
+          </select>
+        </label>
+
+        <label class="block text-sm font-medium ca-pm-field ca-pm-gunicorn ca-pm-uwsgi" style="display:none">Worker Class
+          <select class="field mt-2" name="worker_class">
+            <option value="">default (sync)</option>
+            <option value="sync">sync</option>
+            <option value="gevent">gevent</option>
+            <option value="uvicorn.workers.UvicornWorker">uvicorn.workers.UvicornWorker</option>
+            <option value="gthread">gthread</option>
+          </select>
+        </label>
+
+        <label class="block text-sm font-medium ca-pm-field ca-pm-pm2" style="display:none">Exec Mode
+          <select class="field mt-2" name="exec_mode">
+            <option value="fork" selected>fork</option>
+            <option value="cluster">cluster</option>
+          </select>
+        </label>
+
+      </div>
+      <div class="mt-4 flex justify-end">
+        <button class="btn btn-primary" type="submit">Create Runtime Configuration</button>
+      </div>
+    </form>
+  </div>
+  {{ end }}
+  {{ end }}
+
+  <!-- Delete Site -->
+  <div class="surface p-5 border border-[var(--border)]">
+    <h3 class="text-sm font-semibold mb-2">Delete Platform</h3>
+    <p class="text-sm opacity-70 mb-4">Deleting this platform will permanently remove runtime, users, databases, configs, and files. This cannot be undone.</p>
+    <form action="/websites/{{ Item.ID }}/delete" method="post" data-confirm-message="Are you sure you want to delete this platform? This action cannot be undone." data-confirm-input-match="DELETE" data-confirm-input-label="Type DELETE to permanently remove this platform" data-confirm-input-hint="This removes users, database connections, runtime, and files.">
+      <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+      <button class="btn btn-danger" type="submit">Delete Platform</button>
+    </form>
+  </div>
+</div>
+
+<!-- ═══════════ Vhost ═══════════ -->
+<div class="manage-panel" data-panel="vhost">
+  <div class="surface p-5">
+    <h3 class="text-sm font-semibold mb-4">Nginx Vhost Configuration</h3>
+    <form action="/websites/{{ Item.ID }}/manage/vhost" method="post">
+      <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+      <textarea class="field font-mono text-xs" name="vhost_content" rows="24" spellcheck="false">{{ VhostContent }}</textarea>
+      <div class="mt-4 flex justify-end">
+        <button class="btn btn-primary" type="submit">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ═══════════ Databases ═══════════ -->
+<div class="manage-panel" data-panel="databases">
+
+  <!-- ── MariaDB / MySQL ── -->
+  <div class="surface p-5 mb-5">
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+      <div>
+        <h3 class="text-sm font-semibold">MariaDB / MySQL</h3>
+        <p class="text-xs opacity-70 mt-1">Host: 127.0.0.1 &nbsp; Port: 3306</p>
+      </div>
+      <a class="btn" href="{{ AdminerURL }}" target="_blank" rel="noreferrer">Open Adminer</a>
+    </div>
+    {{ if MariaDBItems }}
+    <div class="overflow-x-auto mb-4">
+      <table class="w-full text-sm text-left">
+        <thead>
+          <tr class="text-xs uppercase tracking-wide">
+            <th class="py-2 pr-4">Label</th>
+            <th class="py-2 pr-4">Database</th>
+            <th class="py-2 pr-4">Username</th>
+            <th class="py-2">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{ range _, db := MariaDBItems }}
+          <tr class="border-b">
+            <td class="py-2.5 pr-4 font-medium">{{ db.Label }}</td>
+            <td class="py-2.5 pr-4 font-mono text-xs ">{{ db.Database }}</td>
+            <td class="py-2.5 pr-4 ">{{ db.Username }}</td>
+            <td class="py-2.5">
+              <form action="/databases/connections/{{ db.ID }}/delete" method="post" style="display:inline" data-confirm-message="Delete this connection?">
+                <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+                <button class="text-xs hover:underline" type="submit">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {{ end }}
+        </tbody>
+      </table>
+    </div>
+    {{ else }}
+    <p class="text-sm opacity-70 mb-4">No MariaDB databases found.</p>
+    {{ end }}
+    <details class="pt-3 border-t border-[var(--border)]">
+      <summary class="cursor-pointer text-sm font-semibold hover:underline">Add MariaDB Database</summary>
+      <form class="mt-4 space-y-3" action="/websites/{{ Item.ID }}/manage/database" method="post">
+        <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+        <input type="hidden" name="engine" value="mariadb">
+        <div class="form-grid">
+          <label class="block text-sm font-medium">Label
+            <input class="field mt-2" name="label" value="{{ Item.Name }}-db">
+          </label>
+          <label class="block text-sm font-medium">Host
+            <input class="field mt-2" name="host" value="127.0.0.1">
+          </label>
+          <label class="block text-sm font-medium">Port
+            <input class="field mt-2" name="port" value="3306">
+          </label>
+          <label class="block text-sm font-medium">Database
+            <input class="field mt-2" name="database" placeholder="app_db" required>
+          </label>
+          <label class="block text-sm font-medium">Username
+            <input class="field mt-2" name="username" placeholder="app_user" required>
+          </label>
+          <label class="block text-sm font-medium">Password
+            <div class="flex gap-2 mt-2">
+              <input class="field flex-1" type="text" name="password" id="mariadb-pw" autocomplete="new-password" required>
+              <button type="button" class="btn" onclick="this.previousElementSibling.value=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>String.fromCharCode(33+b%93)).join('')">Generate</button>
+            </div>
+          </label>
+        </div>
+        <div class="flex justify-end">
+          <button class="btn btn-primary" type="submit">Add Database</button>
+        </div>
+      </form>
+    </details>
+  </div>
+
+  <!-- ── PostgreSQL ── -->
+  <div class="surface p-5 mb-5">
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+      <div>
+        <h3 class="text-sm font-semibold">PostgreSQL</h3>
+        <p class="text-xs opacity-70 mt-1">Host: 127.0.0.1 &nbsp; Port: 5432</p>
+      </div>
+    </div>
+    {{ if PostgresItems }}
+    <div class="overflow-x-auto mb-4">
+      <table class="w-full text-sm text-left">
+        <thead>
+          <tr class="text-xs uppercase tracking-wide">
+            <th class="py-2 pr-4">Label</th>
+            <th class="py-2 pr-4">Database</th>
+            <th class="py-2 pr-4">Username</th>
+            <th class="py-2">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{ range _, db := PostgresItems }}
+          <tr class="border-b">
+            <td class="py-2.5 pr-4 font-medium">{{ db.Label }}</td>
+            <td class="py-2.5 pr-4 font-mono text-xs ">{{ db.Database }}</td>
+            <td class="py-2.5 pr-4 ">{{ db.Username }}</td>
+            <td class="py-2.5 flex gap-2">
+              <a class="text-xs hover:underline" href="/databases/connections/{{ db.ID }}/postgres-gui" target="_blank">Open pgweb</a>
+              <form action="/databases/connections/{{ db.ID }}/delete" method="post" style="display:inline" data-confirm-message="Delete this connection?">
+                <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+                <button class="text-xs hover:underline" type="submit">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {{ end }}
+        </tbody>
+      </table>
+    </div>
+    {{ else }}
+    <p class="text-sm opacity-70 mb-4">No PostgreSQL databases found.</p>
+    {{ end }}
+    <details class="pt-3 border-t border-[var(--border)]">
+      <summary class="cursor-pointer text-sm font-semibold hover:underline">Add PostgreSQL Database</summary>
+      <form class="mt-4 space-y-3" action="/websites/{{ Item.ID }}/manage/database" method="post">
+        <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+        <input type="hidden" name="engine" value="postgres">
+        <div class="form-grid">
+          <label class="block text-sm font-medium">Label
+            <input class="field mt-2" name="label" value="{{ Item.Name }}-pg">
+          </label>
+          <label class="block text-sm font-medium">Host
+            <input class="field mt-2" name="host" value="127.0.0.1">
+          </label>
+          <label class="block text-sm font-medium">Port
+            <input class="field mt-2" name="port" value="5432">
+          </label>
+          <label class="block text-sm font-medium">Database
+            <input class="field mt-2" name="database" placeholder="app_db" required>
+          </label>
+          <label class="block text-sm font-medium">Username
+            <input class="field mt-2" name="username" placeholder="app_user" required>
+          </label>
+          <label class="block text-sm font-medium">Password
+            <div class="flex gap-2 mt-2">
+              <input class="field flex-1" type="text" name="password" autocomplete="new-password" required>
+              <button type="button" class="btn" onclick="this.previousElementSibling.value=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>String.fromCharCode(33+b%93)).join('')">Generate</button>
+            </div>
+          </label>
+        </div>
+        <div class="flex justify-end">
+          <button class="btn btn-primary" type="submit">Add Database</button>
+        </div>
+      </form>
+    </details>
+  </div>
+
+  <!-- ── Redis ── -->
+  <div class="surface p-5">
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+      <div>
+        <h3 class="text-sm font-semibold">Redis</h3>
+        <p class="text-xs opacity-70 mt-1">Host: 127.0.0.1 &nbsp; Port: 6379</p>
+      </div>
+    </div>
+    {{ if RedisItems }}
+    <div class="overflow-x-auto mb-4">
+      <table class="w-full text-sm text-left">
+        <thead>
+          <tr class="text-xs uppercase tracking-wide">
+            <th class="py-2 pr-4">Label</th>
+            <th class="py-2 pr-4">Host</th>
+            <th class="py-2 pr-4">DB</th>
+            <th class="py-2">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{ range _, r := RedisItems }}
+          <tr class="border-b">
+            <td class="py-2.5 pr-4 font-medium">{{ r.Label }}</td>
+            <td class="py-2.5 pr-4 font-mono text-xs ">{{ r.Host }}:{{ r.Port }}</td>
+            <td class="py-2.5 pr-4 ">{{ r.DB }}</td>
+            <td class="py-2.5 flex gap-2">
+              <a class="text-xs hover:underline" href="/databases/redis/{{ r.ID }}/info">Info</a>
+              <form action="/databases/redis/{{ r.ID }}/delete" method="post" style="display:inline" data-confirm-message="Delete this Redis connection?">
+                <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+                <button class="text-xs hover:underline" type="submit">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {{ end }}
+        </tbody>
+      </table>
+    </div>
+    {{ else }}
+    <p class="text-sm opacity-70 mb-4">No Redis connections found.</p>
+    {{ end }}
+    <details class="pt-3 border-t border-[var(--border)]">
+      <summary class="cursor-pointer text-sm font-semibold hover:underline">Add Redis Connection</summary>
+      <form class="mt-4 space-y-3" action="/websites/{{ Item.ID }}/manage/redis" method="post">
+        <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+        <div class="form-grid">
+          <label class="block text-sm font-medium">Label
+            <input class="field mt-2" name="label" value="{{ Item.Name }}-redis">
+          </label>
+          <label class="block text-sm font-medium">Host
+            <input class="field mt-2" name="host" value="127.0.0.1">
+          </label>
+          <label class="block text-sm font-medium">Port
+            <input class="field mt-2" name="port" value="6379">
+          </label>
+          <label class="block text-sm font-medium">DB Number
+            <input class="field mt-2" type="number" name="db" value="0" min="0">
+          </label>
+          <label class="block text-sm font-medium">Password
+            <div class="flex gap-2 mt-2">
+              <input class="field flex-1" type="text" name="password" autocomplete="new-password" placeholder="optional">
+              <button type="button" class="btn" onclick="this.previousElementSibling.value=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>String.fromCharCode(33+b%93)).join('')">Generate</button>
+            </div>
+          </label>
+        </div>
+        <div class="flex justify-end">
+          <button class="btn btn-primary" type="submit">Add Connection</button>
+        </div>
+      </form>
+    </details>
+  </div>
+</div>
+
+<!-- ═══════════ Varnish Cache ═══════════ -->
+<div class="manage-panel" data-panel="varnish">
+  <div class="surface p-5 mb-5">
+    <form action="/websites/{{ Item.ID }}/manage/varnish" method="post">
+      <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+      <div class="flex items-center gap-3 mb-5">
+        <label class="relative inline-flex items-center cursor-pointer">
+          <input type="hidden" name="enabled" value="false">
+          <input type="checkbox" name="enabled" value="true" class="sr-only peer" {{ if VarnishCfg }}{{ if VarnishCfg.Enabled }}checked{{ end }}{{ end }}>
+          <span class="toggle-track"></span>
+        </label>
+        <span class="text-sm font-semibold">Varnish Cache</span>
+      </div>
+      <div class="form-grid">
+        <label class="block text-sm font-medium">Varnish Server *
+          <input class="field mt-2" name="server" value="{{ if VarnishCfg }}{{ VarnishCfg.Server }}{{ else }}127.0.0.1:6081{{ end }}">
+        </label>
+        <label class="block text-sm font-medium">Cache Lifetime *
+          <input class="field mt-2" name="cache_lifetime" type="number" value="{{ if VarnishCfg }}{{ VarnishCfg.CacheLifetime }}{{ else }}604800{{ end }}">
+          <span class="text-xs opacity-50 mt-1">Cache Lifetime in seconds before being refreshed.</span>
+        </label>
+        <label class="block text-sm font-medium">Cache Tag Prefix *
+          <input class="field mt-2" name="cache_tag_prefix" value="{{ if VarnishCfg }}{{ VarnishCfg.CacheTagPrefix }}{{ end }}" placeholder="Se10">
+        </label>
+        <label class="block text-sm font-medium">Excluded Params
+          <input class="field mt-2" name="excluded_params" value="{{ if VarnishCfg }}{{ VarnishCfg.ExcludedParams }}{{ end }}" placeholder="__SID,noCache">
+          <span class="text-xs opacity-50 mt-1">List of GET parameters, separated by a comma, to disable caching.</span>
+        </label>
+      </div>
+      <label class="block text-sm font-medium mt-3">Excludes
+        <textarea class="field mt-2 font-mono text-xs" name="excludes" rows="5" placeholder="^/admin/">{{ if VarnishCfg }}{{ VarnishCfg.Excludes }}{{ end }}</textarea>
+        <span class="text-xs opacity-50 mt-1">Urls and files that Varnish Cache shouldn't cache.</span>
+      </label>
+      <div class="mt-4 flex justify-end">
+        <button class="btn btn-primary" type="submit">Save</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="surface p-5">
+    <h3 class="text-sm font-semibold mb-3">Purge Cache</h3>
+    <input class="field" placeholder="https://{{ if len(Item.Domains) > 0 }}{{ Item.Domains[0].Domain }}{{ end }}/sample-site" disabled>
+    <span class="text-xs opacity-50 mt-2 block">You can purge single urls or tags separated by comma.</span>
+    <div class="mt-4 flex justify-end">
+      <button class="btn btn-primary" disabled>Purge Cache</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ SSL/TLS ═══════════ -->
+<div class="manage-panel" data-panel="ssl">
+
+  <!-- Certificates table -->
+  <div class="surface p-5 mb-5">
+    <h3 class="text-sm font-semibold mb-4">Certificates</h3>
+    {{ if SSLItems }}
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm text-left">
+        <thead>
+          <tr class="text-xs uppercase tracking-wide">
+            <th class="py-2 pr-4">Type</th>
+            <th class="py-2 pr-4">Domains</th>
+            <th class="py-2 pr-4">Expiration Date</th>
+            <th class="py-2 pr-4">Status</th>
+            <th class="py-2">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{ range _, cert := SSLItems }}
+          <tr class="border-b">
+            <td class="py-2.5 pr-4 font-medium">{{ if cert.Issuer }}{{ cert.Issuer }}{{ else }}Unknown{{ end }}</td>
+            <td class="py-2.5 pr-4 ">{{ cert.Domain }}</td>
+            <td class="py-2.5 pr-4  text-xs">{{ if cert.NotAfter }}{{ cert.NotAfter.Format("Jan 2, 2006") }}{{ else }}&mdash;{{ end }}</td>
+            <td class="py-2.5 pr-4"><span class="badge {{ if cert.Status == "active" }}badge-ok{{ else }}badge-warn{{ end }}">{{ cert.Status }}</span></td>
+            <td class="py-2.5 flex gap-2">
+              {{ if cert.Status == "active" }}
+              <form action="/ssl/{{ cert.ID }}/renew" method="post" style="display:inline">
+                <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+                <button class="text-xs hover:underline" type="submit">Renew</button>
+              </form>
+              {{ end }}
+              <form action="/ssl/{{ cert.ID }}/delete" method="post" style="display:inline" data-confirm-message="Delete this certificate?">
+                <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+                <button class="text-xs hover:underline" type="submit">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {{ end }}
+        </tbody>
+      </table>
+    </div>
+    {{ else }}
+    <p class="text-sm opacity-70">No certificates found.</p>
+    {{ end }}
+  </div>
+
+  <!-- Let's Encrypt -->
+  <div class="surface p-5 mb-5">
+    <h3 class="text-sm font-semibold mb-2">Let's Encrypt</h3>
+    <p class="text-sm opacity-70 mb-4">Issue a free trusted certificate for all domains on this site. Requires DNS to point to this server.</p>
+    {{ if len(Item.Domains) > 0 }}
+    <div class="flex flex-wrap gap-2 mb-4">
+      {{ range _, d := Item.Domains }}
+        <span class="badge badge-neutral">{{ d.Domain }}</span>
+      {{ end }}
+    </div>
+    <form action="/websites/{{ Item.ID }}/manage/ssl/letsencrypt" method="post">
+      <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+      <button class="btn btn-primary" type="submit">Issue Let's Encrypt Certificate</button>
+    </form>
+    {{ else }}
+    <p class="text-sm opacity-70">No domains configured. Add a domain in the Domains tab first.</p>
+    {{ end }}
+  </div>
+
+  <!-- Import Certificate -->
+  <div class="surface p-5 mb-5">
+    <h3 class="text-sm font-semibold mb-2">Import Certificate</h3>
+    <p class="text-sm opacity-70 mb-4">Paste your existing certificate PEM files below.</p>
+    <form class="space-y-4" action="/websites/{{ Item.ID }}/manage/ssl/import" method="post">
+      <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+      <input type="hidden" name="domain" value="{{ if len(Item.Domains) > 0 }}{{ Item.Domains[0].Domain }}{{ end }}">
+      <label class="block text-sm font-medium">Private Key *
+        <textarea class="field mt-2 font-mono text-xs" name="private_key" rows="6" placeholder="-----BEGIN PRIVATE KEY-----&#10;...&#10;-----END PRIVATE KEY-----" required></textarea>
+      </label>
+      <label class="block text-sm font-medium">Certificate *
+        <textarea class="field mt-2 font-mono text-xs" name="certificate" rows="6" placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----" required></textarea>
+      </label>
+      <label class="block text-sm font-medium">Certificate Chain / Bundle
+        <textarea class="field mt-2 font-mono text-xs" name="certificate_chain" rows="4" placeholder="-----BEGIN CERTIFICATE-----&#10;(intermediate + root CA, optional)&#10;-----END CERTIFICATE-----"></textarea>
+        <span class="text-xs opacity-50 mt-1">Paste intermediate and root CA certificates here. Leave blank if your certificate file already includes the full chain.</span>
+      </label>
+      <div class="flex justify-end">
+        <button class="btn btn-primary" type="submit">Import Certificate</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Self-Signed -->
+  <div class="surface p-5">
+    <h3 class="text-sm font-semibold mb-2">Self-Signed Certificate</h3>
+    <p class="text-sm opacity-70 mb-4">Generate a self-signed certificate for development or internal use. Browsers will show a warning.</p>
+    <form action="/websites/{{ Item.ID }}/manage/ssl/self-signed" method="post">
+      <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+      <button class="btn" type="submit">Generate Self-Signed Certificate</button>
+    </form>
+  </div>
+</div>
+
+<!-- ═══════════ Security ═══════════ -->
+<div class="manage-panel" data-panel="security">
+
+  <!-- IP Blocking -->
+  <div class="surface p-5 mb-5">
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+      <h3 class="text-sm font-semibold">IP Blocking</h3>
+    </div>
+    {{ if IPBlocks }}
+    <div class="overflow-x-auto mb-4">
+      <table class="w-full text-sm text-left">
+        <thead>
+          <tr class="text-xs uppercase tracking-wide">
+            <th class="py-2 pr-4">IP</th>
+            <th class="py-2">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{ range _, b := IPBlocks }}
+          <tr class="border-b">
+            <td class="py-2.5 pr-4 font-medium font-mono text-xs">{{ b.IP }}</td>
+            <td class="py-2.5">
+              <form action="/websites/{{ Item.ID }}/manage/security/ip-block/{{ b.ID }}/delete" method="post" style="display:inline" data-confirm-message="Delete this blocked IP entry?">
+                <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+                <button class="text-xs hover:underline" type="submit">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {{ end }}
+        </tbody>
+      </table>
+    </div>
+    {{ else }}
+    <p class="text-sm opacity-70 mb-4">No ips found.</p>
+    {{ end }}
+    <form class="flex flex-wrap items-end gap-2" action="/websites/{{ Item.ID }}/manage/security/ip-block" method="post">
+      <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+      <label class="block flex-1 text-sm font-medium">IP Address
+        <input class="field mt-2" name="ip" placeholder="192.168.1.1" required>
+      </label>
+      <button class="btn btn-primary" type="submit">Add IP</button>
+    </form>
+  </div>
+
+  <!-- Bots Blocking -->
+  <div class="surface p-5 mb-5">
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+      <h3 class="text-sm font-semibold">Bots Blocking</h3>
+    </div>
+    {{ if BotBlocks }}
+    <div class="overflow-x-auto mb-4">
+      <table class="w-full text-sm text-left">
+        <thead>
+          <tr class="text-xs uppercase tracking-wide">
+            <th class="py-2 pr-4">Bot Name</th>
+            <th class="py-2">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{ range _, b := BotBlocks }}
+          <tr class="border-b">
+            <td class="py-2.5 pr-4 font-medium">{{ b.BotName }}</td>
+            <td class="py-2.5">
+              <form action="/websites/{{ Item.ID }}/manage/security/bot-block/{{ b.ID }}/delete" method="post" style="display:inline" data-confirm-message="Delete this bot-block rule?">
+                <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+                <button class="text-xs hover:underline" type="submit">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {{ end }}
+        </tbody>
+      </table>
+    </div>
+    {{ else }}
+    <p class="text-sm opacity-70 mb-4">No bots found.</p>
+    {{ end }}
+    <form class="flex flex-wrap items-end gap-2" action="/websites/{{ Item.ID }}/manage/security/bot-block" method="post">
+      <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+      <label class="block flex-1 text-sm font-medium">Bot Name
+        <input class="field mt-2" name="bot_name" placeholder="AhrefsBot" required>
+      </label>
+      <button class="btn btn-primary" type="submit">Add Bot</button>
+    </form>
+  </div>
+
+  <!-- Basic Authentication -->
+  <div class="surface p-5 mb-5">
+    <form action="/websites/{{ Item.ID }}/manage/security/basic-auth" method="post">
+      <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+      <div class="flex items-center gap-3 mb-5">
+        <label class="relative inline-flex items-center cursor-pointer">
+          <input type="hidden" name="enabled" value="false">
+          <input type="checkbox" name="enabled" value="true" class="sr-only peer" {{ if BasicAuth }}{{ if BasicAuth.Enabled }}checked{{ end }}{{ end }}>
+          <span class="toggle-track"></span>
+        </label>
+        <span class="text-sm font-semibold">Basic Authentication</span>
+      </div>
+      <div class="form-grid">
+        <label class="block text-sm font-medium">User Name
+          <input class="field mt-2" name="username" value="{{ if BasicAuth }}{{ BasicAuth.Username }}{{ end }}" placeholder="john.doe">
+        </label>
+        <label class="block text-sm font-medium">Password
+          <input class="field mt-2" type="password" name="password" value="{{ if BasicAuth }}{{ BasicAuth.Password }}{{ end }}" placeholder="••••••••">
+        </label>
+      </div>
+      <label class="block text-sm font-medium mt-3">Whitelisted IPs
+        <input class="field mt-2" name="whitelisted_ips" value="{{ if BasicAuth }}{{ BasicAuth.WhitelistedIPs }}{{ end }}" placeholder="1.1.1.1,2.2.2.2">
+        <span class="text-xs opacity-50 mt-1">List of IPs for bypassing the basic authentication, comma separated.</span>
+      </label>
+      <div class="mt-4 flex justify-end">
+        <button class="btn btn-primary" type="submit">Save</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Cloudflare -->
+  <div class="surface p-5">
+    <div class="flex items-center gap-3 mb-3">
+      <label class="relative inline-flex items-center cursor-pointer">
+        <input type="checkbox" class="sr-only peer" disabled>
+        <span class="toggle-track"></span>
+      </label>
+      <span class="text-sm font-semibold">Cloudflare</span>
+    </div>
+    <p class="text-sm opacity-70">Allow traffic from Cloudflare only</p>
+    <p class="text-xs opacity-50 mt-1">The name servers must point to Cloudflare, and the proxy needs to be enabled for your dns records.</p>
+    <div class="mt-4 flex justify-end">
+      <button class="btn btn-primary" disabled>Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ SSH/FTP ═══════════ -->
+<div class="manage-panel" data-panel="ssh">
+
+  <!-- ── SSH Users ── -->
+  <div class="surface p-5 mb-5">
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+      <h3 class="text-sm font-semibold">SSH Users</h3>
+    </div>
+
+    {{ if len(SSHUsers) > 0 }}
+    <div class="overflow-x-auto mb-4">
+      <table class="w-full text-sm text-left">
+        <thead>
+          <tr class="text-xs uppercase tracking-wide">
+            <th class="py-2 pr-4">Username</th>
+            <th class="py-2 pr-4">Home Directory</th>
+            <th class="py-2 pr-4">Shell</th>
+            <th class="py-2 pr-4">SSH</th>
+            <th class="py-2 pr-4">Status</th>
+            <th class="py-2 text-right">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{ range _, u := SSHUsers }}
+          <tr class="border-b hover:bg-[var(--bg-hover)] transition-colors">
+            <td class="py-2.5 pr-4 font-medium font-medium">{{ u.Username }}{{ if u.ID == PrimarySSHUserID }} <span class="text-[10px]  border border-[var(--accent)] rounded px-1.5 py-0.5 ml-1">primary</span>{{ end }}</td>
+            <td class="py-2.5 pr-4 font-mono text-xs ">{{ u.HomeDirectory }}</td>
+            <td class="py-2.5 pr-4 font-mono text-xs opacity-70">{{ u.Shell }}</td>
+            <td class="py-2.5 pr-4">{{ if u.SSHEnabled }}<span class="inline-flex items-center gap-1 text-xs "><svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg> Enabled</span>{{ else }}<span class="text-xs opacity-50">Disabled</span>{{ end }}</td>
+            <td class="py-2.5 pr-4">{{ if u.IsActive }}<span class="badge badge-ok">Active</span>{{ else }}<span class="badge badge-danger">Inactive</span>{{ end }}</td>
+            <td class="py-2.5 text-right">
+              {{ if u.ID != PrimarySSHUserID }}
+              <form action="/websites/{{ Item.ID }}/manage/site-user/{{ u.ID }}/delete" method="post" style="display:inline" data-confirm-message="Delete SSH user {{ u.Username }}?">
+                <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+                <button class="text-xs hover:underline font-medium" type="submit">Delete</button>
+              </form>
+              {{ else }}
+              <span class="text-xs opacity-30">—</span>
+              {{ end }}
+            </td>
+          </tr>
+          {{ end }}
+        </tbody>
+      </table>
+    </div>
+    {{ else }}
+    <div class="rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] p-4 mb-4">
+      <p class="text-sm opacity-70">No SSH user configured for this site. Add one below to enable SSH access.</p>
+    </div>
+    {{ end }}
+
+    <details class="pt-3 border-t border-[var(--border)]" {{ if len(SSHUsers) == 0 }}open{{ end }}>
+      <summary class="cursor-pointer text-sm font-semibold hover:underline select-none">+ Add SSH User</summary>
+      <form class="mt-4 space-y-4" action="/websites/{{ Item.ID }}/manage/site-user" method="post">
+        <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+        <div class="grid gap-4 sm:grid-cols-2">
+          <label class="block text-sm font-medium">Username
+            <input class="field mt-1" name="username" placeholder="e.g. siteuser" required>
+          </label>
+          <label class="block text-sm font-medium">Password
+            <div class="flex gap-2 mt-1">
+              <input class="field flex-1" type="text" name="password" id="ssh-password" autocomplete="new-password" placeholder="auto-generated if empty">
+              <button type="button" class="btn whitespace-nowrap" onclick="var p='';var c='abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%';for(var i=0;i<20;i++)p+=c[Math.floor(Math.random()*c.length)];document.getElementById('ssh-password').value=p;">Generate</button>
+            </div>
+          </label>
+        </div>
+        <div class="flex justify-end">
+          <button class="btn btn-primary" type="submit">Add SSH User</button>
+        </div>
+      </form>
+    </details>
+  </div>
+
+  <!-- ── FTP Users ── -->
+  <div class="surface p-5">
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+      <h3 class="text-sm font-semibold">FTP Users</h3>
+    </div>
+
+    {{ if FTPUsers }}
+    <div class="overflow-x-auto mb-4">
+      <table class="w-full text-sm text-left">
+        <thead>
+          <tr class="text-xs uppercase tracking-wide">
+            <th class="py-2 pr-4">Username</th>
+            <th class="py-2 pr-4">Home Directory</th>
+            <th class="py-2 pr-4">Status</th>
+            <th class="py-2 text-right">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{ range _, u := FTPUsers }}
+          <tr class="border-b hover:bg-[var(--bg-hover)] transition-colors">
+            <td class="py-2.5 pr-4 font-medium font-medium">{{ u.Username }}</td>
+            <td class="py-2.5 pr-4 font-mono text-xs ">{{ u.HomeDir }}</td>
+            <td class="py-2.5 pr-4">{{ if u.IsActive }}<span class="badge badge-ok">Active</span>{{ else }}<span class="badge badge-danger">Inactive</span>{{ end }}</td>
+            <td class="py-2.5 text-right">
+              <form action="/websites/{{ Item.ID }}/manage/ftp-users/{{ u.ID }}/delete" method="post" style="display:inline" data-confirm-message="Delete FTP user {{ u.Username }}?">
+                <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+                <button class="text-xs hover:underline font-medium" type="submit">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {{ end }}
+        </tbody>
+      </table>
+    </div>
+    {{ else }}
+    <div class="rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] p-4 mb-4">
+      <p class="text-sm opacity-70">No FTP users configured. Add one below to enable FTP access.</p>
+    </div>
+    {{ end }}
+
+    <details class="pt-3 border-t border-[var(--border)]" {{ if !FTPUsers }}open{{ end }}>
+      <summary class="cursor-pointer text-sm font-semibold hover:underline select-none">+ Add FTP User</summary>
+      <form class="mt-4 space-y-4" action="/websites/{{ Item.ID }}/manage/ftp-users" method="post">
+        <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+        <div class="grid gap-4 sm:grid-cols-2">
+          <label class="block text-sm font-medium">Username
+            <input class="field mt-1" name="username" placeholder="e.g. ftpuser" required>
+          </label>
+          <label class="block text-sm font-medium">Password
+            <div class="flex gap-2 mt-1">
+              <input class="field flex-1" type="text" name="password" id="ftp-password" autocomplete="new-password" placeholder="auto-generated if empty">
+              <button type="button" class="btn whitespace-nowrap" onclick="var p='';var c='abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%';for(var i=0;i<20;i++)p+=c[Math.floor(Math.random()*c.length)];document.getElementById('ftp-password').value=p;">Generate</button>
+            </div>
+          </label>
+        </div>
+        <label class="block text-sm font-medium">Home Directory
+          <input class="field mt-1 font-mono text-xs" name="home_dir" value="{{ DefaultHomeDir }}" placeholder="/home/site/htdocs">
+          <span class="text-xs opacity-50 mt-1">The root directory this FTP user can access. Defaults to the site root.</span>
+        </label>
+        <div class="flex justify-end">
+          <button class="btn btn-primary" type="submit">Add FTP User</button>
+        </div>
+      </form>
+    </details>
+  </div>
+</div>
+
+<!-- ═══════════ File Manager ═══════════ -->
+<div class="manage-panel" data-panel="file-manager">
+  <div id="elfinder" data-url="/websites/{{ Item.ID }}/elfinder" data-csrf="{{ CSRFToken }}"></div>
+</div>
+
+<!-- ═══════════ Cron Jobs ═══════════ -->
+<div class="manage-panel" data-panel="cron-jobs">
+  <div class="surface p-5">
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+      <h3 class="text-sm font-semibold">Cron Jobs</h3>
+    </div>
+
+    {{ if CronJobs }}
+    <div class="overflow-x-auto mb-4">
+      <table class="w-full text-sm text-left">
+        <thead>
+          <tr class="text-xs uppercase tracking-wide">
+            <th class="py-2 pr-4">Schedule</th>
+            <th class="py-2 pr-4">Command</th>
+            <th class="py-2">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{ range _, cj := CronJobs }}
+          <tr class="border-b">
+            <td class="py-2.5 pr-4 font-mono text-xs font-medium">{{ cj.Schedule }}</td>
+            <td class="py-2.5 pr-4 font-mono text-xs  max-w-md truncate">{{ cj.Command }}</td>
+            <td class="py-2.5">
+              <form action="/websites/{{ Item.ID }}/manage/cron-jobs/{{ cj.ID }}/delete" method="post" style="display:inline" data-confirm-message="Delete this cron job?">
+                <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+                <button class="text-xs hover:underline" type="submit">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {{ end }}
+        </tbody>
+      </table>
+    </div>
+    {{ else }}
+    <p class="text-sm opacity-70 mb-4">No cron jobs found.</p>
+    {{ end }}
+
+    <div class="pt-4 border-t border-[var(--border)]">
+      <h4 class="text-sm font-medium mb-3">Add Cron Job</h4>
+      <form class="space-y-3" action="/websites/{{ Item.ID }}/manage/cron-jobs" method="post">
+        <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+        <div class="form-grid">
+          <label class="block text-sm font-medium">Schedule
+            <input class="field mt-2 font-mono text-xs" name="schedule" placeholder="0 */6 * * *" required>
+            <span class="text-xs opacity-50 mt-1">Cron expression (min hour dom month dow)</span>
+          </label>
+          <label class="block text-sm font-medium">Command
+            <input class="field mt-2 font-mono text-xs" name="command" placeholder="/usr/bin/php /home/site/htdocs/cron.php" required>
+          </label>
+        </div>
+        <div class="flex justify-end">
+          <button class="btn btn-primary" type="submit">Add Cron Job</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ Logs ═══════════ -->
+<div class="manage-panel" data-panel="logs">
+  <div class="surface p-5">
+    <h3 class="text-sm font-semibold mb-4" style="color:var(--text)">Logs</h3>
+
+    <div class="log-controls" id="log-controls" data-site-id="{{ Item.ID }}">
+      <select class="field log-select" id="log-type">
+        <option value="all">All Types</option>
+        <option value="access" selected>Access</option>
+        <option value="error">Error</option>
+      </select>
+      <select class="field log-select" id="log-file">
+        <option value="">Loading...</option>
+      </select>
+      <select class="field log-select log-select-sm" id="log-lines">
+        <option value="50">50</option>
+        <option value="100" selected>100</option>
+        <option value="200">200</option>
+        <option value="500">500</option>
+        <option value="1000">1000</option>
+      </select>
+      <button class="btn btn-primary" id="log-update">Update</button>
+    </div>
+
+    <div class="log-viewer" id="log-viewer">
+      <div class="log-empty">Select a log file and click Update</div>
+    </div>
+  </div>
+</div>
+
+<!-- elFinder + CodeMirror assets -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/jqueryui/1.13.3/themes/smoothness/jquery-ui.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/elfinder/2.1.65/css/elfinder.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/elfinder/2.1.65/css/theme.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/theme/monokai.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jqueryui/1.13.3/jquery-ui.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/elfinder/2.1.65/js/elfinder.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/htmlmixed/htmlmixed.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/xml/xml.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/javascript/javascript.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/css/css.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/php/php.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/clike/clike.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/python/python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/shell/shell.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/sql/sql.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/yaml/yaml.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/markdown/markdown.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/go/go.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/ruby/ruby.min.js"></script>
+
+<style>
+  /* ═══════════════════════════════════════════
+     elFinder Premium Dark Minimal Overrides
+     ═══════════════════════════════════════════ */
+  .elfinder {
+    font-family: var(--font) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius-xl) !important;
+    background: var(--bg-card) !important;
+    backdrop-filter: blur(12px) !important;
+    -webkit-backdrop-filter: blur(12px) !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important;
+    overflow: hidden !important;
+  }
+  
+  .elfinder-workzone, .elfinder-navbar, .elfinder-cwd {
+    background: transparent !important;
+    border-color: var(--border) !important;
+  }
+  .elfinder-navbar { border-right: 1px solid var(--border) !important; }
+  
+  /* Toolbar */
+  .elfinder-toolbar {
+    background: var(--bg-elevated) !important;
+    border-bottom: 1px solid var(--border) !important;
+    padding: var(--space-2) !important;
+  }
+  .elfinder-buttonset { margin: 0 var(--space-2) 0 0 !important; }
+  .elfinder-button {
+    background: transparent !important;
+    border: 1px solid transparent !important;
+    border-radius: var(--radius) !important;
+    transition: all 0.2s ease !important;
+  }
+  .elfinder-button:hover, .ui-state-hover {
+    background: var(--bg-hover) !important;
+    border-color: var(--border-strong) !important;
+  }
+  .ui-state-active, .ui-state-focus {
+    background: var(--primary-soft) !important;
+    border-color: var(--primary) !important;
+  }
+  
+  /* Statusbar */
+  .elfinder-statusbar {
+    background: var(--bg-elevated) !important;
+    border-top: 1px solid var(--border) !important;
+    color: var(--text-sec) !important;
+    font-size: 0.75rem !important;
+  }
+  
+  /* Typography & Links */
+  .elfinder-navbar-dir, .elfinder-cwd-file, .elfinder-cwd-view-list td {
+    color: var(--text) !important;
+  }
+  .ui-selected.elfinder-navbar-dir, .ui-selected.elfinder-cwd-file, .elfinder-cwd-view-list tr.ui-selected td {
+    background-color: var(--primary-soft) !important;
+    color: var(--text) !important;
+  }
+  
+  /* List View Fixes */
+  .elfinder-cwd-view-list th {
+    background: var(--bg-subtle) !important;
+    color: var(--text-muted) !important;
+    border-color: var(--border) !important;
+    font-size: 0.75rem !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.04em !important;
+  }
+  .elfinder-cwd-view-list td { 
+    border-bottom: 1px dashed var(--border-strong) !important; 
+  }
+  .elfinder-cwd table { border-collapse: separate !important; border-spacing: 0 !important; }
+  
+  /* Dialogs & Context Menu */
+  .ui-dialog, .elfinder-dialog {
+    background: var(--bg-card) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius-lg) !important;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.2) !important;
+  }
+  .ui-dialog-titlebar {
+    background: var(--bg-elevated) !important;
+    border-bottom: 1px solid var(--border) !important;
+    color: var(--text) !important;
+    font-family: var(--font) !important;
+  }
+  .ui-widget-content {
+    background: var(--bg-card) !important;
+    color: var(--text) !important;
+  }
+  .ui-widget-header {
+    background: var(--bg-elevated) !important;
+    color: var(--text) !important;
+    border: none !important;
+    border-bottom: 1px solid var(--border) !important;
+  }
+  .elfinder-contextmenu {
+    background: var(--bg-card) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius) !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
+    padding: var(--space-1) 0 !important;
+    font-family: var(--font) !important;
+  }
+  .elfinder-contextmenu-item {
+    color: var(--text) !important;
+    padding: var(--space-2) var(--space-4) !important;
+  }
+  .elfinder-contextmenu-item:hover {
+    background: var(--bg-hover) !important;
+  }
+  .elfinder-contextsubmenu {
+    background: var(--bg-card) !important;
+    border: 1px solid var(--border) !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
+  }
+  
+  /* Buttons inside dialogs */
+  .ui-dialog-buttonpane button {
+    background: var(--bg-elevated) !important;
+    border: 1px solid var(--border-strong) !important;
+    color: var(--text) !important;
+    border-radius: var(--radius) !important;
+    padding: var(--space-1) var(--space-3) !important;
+    cursor: pointer !important;
+  }
+  .ui-dialog-buttonpane button:hover {
+    background: var(--bg-hover) !important;
+  }
+  
+  /* Filter dark icons safely using a softer invert if app is in dark mode. 
+     (Assumes standard lucide/linear dark aesthetic defaults to dark mode primarily) */
+  :root { --ef-filter: invert(0.85) hue-rotate(180deg) brightness(1.2); }
+  body.light-theme { --ef-filter: none; }
+  .elfinder-button-icon, .ui-icon {
+    filter: var(--ef-filter);
+  }
+  /* Do not invert file type icons in the grid ! */
+  .elfinder-cwd-icon {
+    filter: none !important;
+  }
+</style>
+
+<script>
+$(function () {
+  function activateTab(name) {
+    $('#manage-tabs .manage-tab').each(function () {
+      $(this).toggleClass('manage-tab-active', $(this).data('tab') === name);
+    });
+    $('.manage-panel').each(function () {
+      $(this).toggleClass('manage-panel-active', $(this).data('panel') === name);
+    });
+  }
+
+  $('#manage-tabs').on('click', '.manage-tab', function () {
+    var tab = $(this).data('tab');
+    history.replaceState(null, '', '#' + tab);
+    activateTab(tab);
+  });
+
+  var hash = location.hash.replace('#', '');
+  if (hash && $('[data-panel="' + hash + '"]').length) {
+    activateTab(hash);
+  }
+
+  var copyNotyf = null;
+  function copyNotify(ok, msg) {
+    if (typeof Notyf !== 'function') return;
+    if (!copyNotyf) {
+      copyNotyf = new Notyf({ duration: 2200, dismissible: false, position: { x: 'center', y: 'top' }, ripple: false });
+    }
+    copyNotyf[ok ? 'success' : 'error'](msg);
+  }
+  function copyFallback(text, onOk, onErr) {
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      onOk();
+    } catch (_) {
+      onErr();
+    }
+  }
+  function copyServerIP(text, onOk, onErr) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(onOk).catch(function () { copyFallback(text, onOk, onErr); });
+      return;
+    }
+    copyFallback(text, onOk, onErr);
+  }
+  $('.manage-header-copy').on('click', function () {
+    var $btn = $(this);
+    var value = $.trim(String($btn.data('copyValue') || ''));
+    if (!value) {
+      copyNotify(false, 'Nothing to copy');
+      return;
+    }
+    copyServerIP(value, function () {
+      $btn.addClass('is-copied');
+      setTimeout(function () { $btn.removeClass('is-copied'); }, 900);
+      copyNotify(true, 'Server IP copied');
+    }, function () {
+      copyNotify(false, 'Could not copy');
+    });
+  });
+
+  // elFinder + CodeMirror
+  var $ef = $('#elfinder');
+  if ($ef.length) {
+    var connectorUrl = $ef.data('url');
+    var csrfToken = $ef.data('csrf');
+
+    var extModes = {
+      'js': 'javascript', 'jsx': 'javascript', 'ts': 'javascript', 'tsx': 'javascript', 'json': 'javascript',
+      'html': 'htmlmixed', 'htm': 'htmlmixed', 'php': 'php',
+      'css': 'css', 'scss': 'css', 'less': 'css',
+      'py': 'python', 'sh': 'shell', 'bash': 'shell', 'zsh': 'shell',
+      'sql': 'sql', 'yml': 'yaml', 'yaml': 'yaml', 'md': 'markdown',
+      'go': 'go', 'rb': 'ruby', 'xml': 'xml', 'svg': 'xml',
+      'c': 'clike', 'cpp': 'clike', 'h': 'clike', 'java': 'clike', 'rs': 'clike',
+      'txt': null, 'log': null, 'env': null, 'conf': null, 'ini': null,
+      'toml': null, 'cfg': null, 'htaccess': null, 'dockerfile': null, 'makefile': null
+    };
+
+    var mimeMap = {
+      'text/html': 'htmlmixed',
+      'application/x-httpd-php': 'php',
+      'application/javascript': 'javascript',
+      'application/json': 'javascript',
+      'text/javascript': 'javascript',
+      'text/css': 'css',
+      'text/x-python': 'python',
+      'text/x-sh': 'shell',
+      'text/x-shellscript': 'shell',
+      'application/x-sh': 'shell',
+      'text/x-sql': 'sql',
+      'text/x-yaml': 'yaml',
+      'text/x-markdown': 'markdown',
+      'text/x-go': 'go',
+      'text/x-ruby': 'ruby',
+      'text/xml': 'xml',
+      'application/xml': 'xml',
+      'text/x-c': 'clike',
+      'text/x-csrc': 'clike',
+      'text/x-c++src': 'clike',
+      'text/x-java': 'clike'
+    };
+
+    function getMode(file) {
+      if (file && file.mime && mimeMap[file.mime]) return mimeMap[file.mime];
+      if (file && file.name) {
+        var ext = file.name.split('.').pop().toLowerCase();
+        if (ext in extModes) return extModes[ext];
+      }
+      return null;
+    }
+
+    $ef.elfinder({
+      url: connectorUrl,
+      customHeaders: { 'X-CSRF-Token': csrfToken },
+      cssAutoLoad: false,
+      lang: 'en',
+      height: 550,
+      resizable: true,
+      defaultView: 'list',
+      commandsOptions: {
+        edit: {
+          editors: [{
+            info: { name: 'CodeMirror', iconImg: '' },
+            mimes: ['text/plain', 'text/html', 'text/css', 'text/javascript', 'application/javascript',
+                    'application/json', 'application/xml', 'text/xml', 'text/x-php', 'application/x-httpd-php',
+                    'text/x-python', 'text/x-sh', 'text/x-sql', 'text/x-yaml', 'text/x-markdown',
+                    'text/x-c', 'text/x-c++src', 'text/x-java', 'text/x-go', 'text/x-ruby',
+                    'text/x-shellscript', 'application/x-sh', 'text/x-csrc', 'application/octet-stream'],
+            setup: function (opts, fm) {
+              this.editorOpts = {
+                theme: 'monokai',
+                lineNumbers: true,
+                tabSize: 2,
+                indentWithTabs: false,
+                lineWrapping: true,
+                matchBrackets: true,
+                styleActiveLine: true
+              };
+            },
+            load: function (textarea) {
+              var file = this.file;
+              var mode = getMode(file);
+              var opts = $.extend({}, this.editorOpts, { mode: mode });
+              var cm = CodeMirror.fromTextArea(textarea, opts);
+              cm.setSize('100%', '100%');
+              $(textarea).data('cm', cm);
+              setTimeout(function () { cm.refresh(); }, 100);
+            },
+            close: function (textarea) {
+              var cm = $(textarea).data('cm');
+              if (cm) {
+                cm.save();
+                cm.toTextArea();
+                $(textarea).removeData('cm');
+              }
+            },
+            save: function (textarea) {
+              var cm = $(textarea).data('cm');
+              if (cm) cm.save();
+            }
+          }]
+        }
+      }
+    });
+  }
+
+  // ── Log Viewer ──
+  var $logControls = $('#log-controls');
+  if ($logControls.length) {
+    var logSiteId = $logControls.data('site-id');
+    var logBase = '/websites/' + logSiteId + '/manage';
+    var allLogFiles = [];
+
+    function loadLogFiles() {
+      $.getJSON(logBase + '/log-files', function (data) {
+        allLogFiles = data.files || [];
+        filterLogFiles();
+        if (allLogFiles.length) {
+          loadLogContent();
+        }
+      });
+    }
+
+    function filterLogFiles() {
+      var type = $('#log-type').val();
+      var $sel = $('#log-file').empty();
+      var matched = [];
+      for (var i = 0; i < allLogFiles.length; i++) {
+        var f = allLogFiles[i];
+        if (type === 'all' || f.type === type) {
+          matched.push(f);
+        }
+      }
+      if (!matched.length) {
+        $sel.append('<option value="">No log files found</option>');
+        return;
+      }
+      for (var j = 0; j < matched.length; j++) {
+        $sel.append('<option value="' + matched[j].name + '">' + matched[j].name + '</option>');
+      }
+    }
+
+    function loadLogContent() {
+      var file = $('#log-file').val();
+      if (!file) {
+        $('#log-viewer').html('<div class="log-empty">No log file selected</div>');
+        return;
+      }
+      var lines = $('#log-lines').val();
+      $('#log-viewer').html('<div class="log-empty">Loading...</div>');
+      $.getJSON(logBase + '/log-content', { file: file, lines: lines }, function (data) {
+        var content = (data.content || '').trim();
+        if (!content) {
+          $('#log-viewer').html('<div class="log-empty">Log file is empty</div>');
+          return;
+        }
+        var escaped = $('<div/>').text(content).html();
+        var logLines = escaped.split('\n');
+        var html = '';
+        for (var i = 0; i < logLines.length; i++) {
+          html += '<div class="log-line">' + colorizeLog(logLines[i]) + '</div>';
+        }
+        $('#log-viewer').html(html);
+        var viewer = document.getElementById('log-viewer');
+        viewer.scrollTop = viewer.scrollHeight;
+      }).fail(function () {
+        $('#log-viewer').html('<div class="log-empty log-error">Failed to load log file</div>');
+      });
+    }
+
+    function colorizeLog(line) {
+      return line
+        .replace(/(\d{4}\/\d{2}\/\d{2}\s\d{2}:\d{2}:\d{2}|\d{2}\/\w+\/\d{4}:\d{2}:\d{2}:\d{2}\s[+\-]\d{4}|\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2})/g, '<span class="log-date">$1</span>')
+        .replace(/\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b/g, '<span class="log-ip">$1</span>')
+        .replace(/\s(2\d{2})\s/g, ' <span class="log-ok">$1</span> ')
+        .replace(/\s(3\d{2})\s/g, ' <span class="log-redirect">$1</span> ')
+        .replace(/\s(4\d{2})\s/g, ' <span class="log-warn">$1</span> ')
+        .replace(/\s(5\d{2})\s/g, ' <span class="log-err">$1</span> ')
+        .replace(/\"(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\s/g, '"<span class="log-method">$1</span> ')
+        .replace(/(\/[^\s"]*)/g, '<span class="log-path">$1</span>');
+    }
+
+    $('#log-type').on('change', function () {
+      filterLogFiles();
+    });
+
+    $('#log-update').on('click', function () {
+      loadLogContent();
+    });
+
+    $('#log-file').on('change', function () {
+      loadLogContent();
+    });
+
+    loadLogFiles();
+  }
+
+  // PM options allowed per runtime
+  var pmByRuntime = {
+    go:     ['systemd'],
+    binary: ['systemd'],
+    python: ['systemd', 'gunicorn', 'uwsgi', 'pm2'],
+    node:   ['systemd', 'pm2']
+  };
+
+  // Runtime PM field toggling (for linked app edit form)
+  if ($('#rt-pm').length) {
+    function togglePmFields() {
+      var pm = $('#rt-pm').val() || 'systemd';
+      $('.rt-pm-field').hide();
+      $('.rt-pm-' + pm).show();
+    }
+    $('#rt-pm').on('change', togglePmFields);
+    togglePmFields();
+  }
+
+  // Create-app form: toggle runtime-specific and PM-specific fields
+  if ($('#ca-runtime').length) {
+    var defaultPm = { go: 'systemd', binary: 'systemd', python: 'gunicorn', node: 'pm2' };
+    var defaultEntryPoint = {
+      python: { gunicorn: 'app:app', uwsgi: 'app:app', pm2: 'app.py', systemd: 'app.py' },
+      node:   { pm2: 'index.js', systemd: 'index.js' }
+    };
+    function rebuildPmOptions(rt) {
+      var allowed = pmByRuntime[rt] || ['systemd'];
+      var $sel = $('#ca-pm');
+      var best = defaultPm[rt] || 'systemd';
+      $sel.empty();
+      $.each(allowed, function(_, pm) {
+        $sel.append($('<option>').val(pm).text(pm));
+      });
+      if (allowed.indexOf(best) !== -1) {
+        $sel.val(best);
+      } else {
+        $sel.val(allowed[0]);
+      }
+      $sel.trigger('change');
+    }
+    function updateBinaryHints() {
+      var rt = $('#ca-runtime').val();
+      var pm = $('#ca-pm').val() || 'systemd';
+      var title, placeholder, hint;
+      if (rt === 'go' || rt === 'binary') {
+        title = rt === 'go' ? 'Binary Path' : 'Binary / Command Path';
+        placeholder = '/usr/local/bin/myapp';
+        hint = 'Absolute path to the compiled binary (required)';
+      } else if (pm === 'gunicorn') {
+        title = 'Gunicorn Command'; placeholder = 'gunicorn'; hint = 'Leave blank to default to "gunicorn"';
+      } else if (pm === 'uwsgi') {
+        title = 'uWSGI Command'; placeholder = 'uwsgi'; hint = 'Leave blank to default to "uwsgi"';
+      } else if (pm === 'pm2') {
+        title = 'PM2 Command'; placeholder = 'pm2'; hint = 'Leave blank to default to "pm2"';
+      } else if (rt === 'python') {
+        title = 'Python Interpreter'; placeholder = 'python3'; hint = 'Leave blank to default to "python3"';
+      } else if (rt === 'node') {
+        title = 'Node Binary'; placeholder = 'node'; hint = 'Leave blank to default to "node"';
+      } else {
+        title = 'Binary / Command Path'; placeholder = '/usr/local/bin/myapp'; hint = 'Absolute path to binary';
+      }
+      $('#ca-binary-title').text(title);
+      $('#ca-binary-input').attr('placeholder', placeholder);
+      $('#ca-binary-hint').text(hint);
+      var epInfo = (defaultEntryPoint[rt] || {})[pm] || '';
+      if (epInfo) {
+        $('#ca-entry-label input').attr('placeholder', epInfo);
+        $('#ca-entry-label .text-xs').text('Leave blank to default to "' + epInfo + '"');
+      }
+    }
+    function toggleCaRuntime() {
+      var rt = $('#ca-runtime').val();
+      if (rt === 'python' || rt === 'node') {
+        $('.ca-interpreted').show();
+      } else {
+        $('.ca-interpreted').hide();
+      }
+      rebuildPmOptions(rt);
+    }
+    function toggleCaPm() {
+      var pm = $('#ca-pm').val() || 'systemd';
+      $('.ca-pm-field').hide();
+      $('.ca-pm-' + pm).show();
+      updateBinaryHints();
+    }
+    $('#ca-runtime').on('change', toggleCaRuntime);
+    $('#ca-pm').on('change', toggleCaPm);
+    toggleCaRuntime();
+  }
+});
+if (typeof lucide !== 'undefined') lucide.createIcons();
+</script>
+</div>
+{{ end }}

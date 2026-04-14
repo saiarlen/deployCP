@@ -1,0 +1,24 @@
+<div class="page-top">
+  <a class="btn" href="/databases"><i data-lucide="arrow-left"></i> Back to Databases</a>
+</div>
+
+<div style="display:grid;gap:var(--space-3);grid-template-columns:repeat(2,minmax(0,1fr));margin-bottom:var(--space-4)" class="sm:grid-cols-4">
+  <div class="property-card">
+    <p class="property-label">Ping</p>
+    <p class="property-value link-accent">{{ Info.Ping }}</p>
+  </div>
+  <div class="property-card">
+    <p class="property-label">DB Size</p>
+    <p class="property-value">{{ Info.DBSize }}</p>
+  </div>
+</div>
+
+<div class="section-shell">
+  <div class="section-top">
+    <h3 class="section-title">Redis INFO</h3>
+  </div>
+  <div style="padding:var(--space-4)">
+    <pre class="log" style="max-height:none">{{ Info.Info }}</pre>
+  </div>
+</div>
+<script>if (typeof lucide !== 'undefined') lucide.createIcons();</script>

@@ -1,0 +1,506 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ Title }} - {{ AppName }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/notyf@3/notyf.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css?v={{ AssetVersion }}">
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; height: 100%; }
+
+    .login-page {
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      font-size: 14px;
+      -webkit-font-smoothing: antialiased;
+      display: grid;
+      place-items: center;
+      padding: 5rem 1.25rem 1.5rem;
+      position: relative;
+    }
+    .login-shell {
+      width: 100%;
+      max-width: 27rem;
+      margin: 0 auto;
+    }
+
+    /* topbar pinned at the top, matched with app nav rhythm */
+    .login-topbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      min-height: 3.5rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-card);
+      z-index: 10;
+    }
+    .login-topbar-inner {
+      height: 100%;
+      width: 100%;
+      min-height: 3.5rem;
+      max-width: 1440px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-4);
+      padding: 0 clamp(var(--space-4), 3vw, var(--space-8));
+    }
+
+    .login-brand {
+      display: flex;
+      align-items: center;
+      gap: var(--space-3);
+    }
+    .login-brand-icon {
+      width: 2rem;
+      height: 2rem;
+      border-radius: var(--radius);
+      background: var(--primary);
+      color: #fff;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .login-brand-name {
+      font-size: 0.9375rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+
+    .login-theme-group {
+      display: inline-flex;
+      align-items: center;
+      border-radius: var(--radius);
+      border: 1px solid var(--border-strong);
+      padding: 2px;
+      background: var(--bg-card);
+      gap: 1px;
+    }
+    .login-theme-btn {
+      border: none;
+      border-radius: 6px;
+      background: transparent;
+      padding: 4px 12px;
+      font-size: 0.8125rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-family: inherit;
+      transition: background 0.12s, color 0.12s;
+    }
+    .login-theme-btn:hover { color: var(--text); }
+    .login-theme-btn-active {
+      background: var(--bg-elevated);
+      color: var(--text);
+    }
+
+    /* login card */
+    .login-card {
+      width: 100%;
+      max-width: 27rem;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 0;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .light-theme .login-card {
+      box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+    }
+    .login-card-head {
+      padding: var(--space-6) var(--space-6) var(--space-5);
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(180deg, var(--bg-elevated) 0%, var(--bg-card) 100%);
+    }
+    .login-card-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-2);
+      border-radius: 999px;
+      border: 1px solid var(--border-strong);
+      background: var(--bg-card);
+      padding: 6px 10px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      color: var(--text-sec);
+      margin-bottom: var(--space-4);
+    }
+    .login-card-badge svg {
+      width: 13px;
+      height: 13px;
+      stroke-width: 2;
+      color: var(--text-muted);
+    }
+    .login-card-title {
+      margin: 0;
+      font-size: 1.3rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      color: var(--text);
+      line-height: 1.2;
+    }
+    .login-card-sub {
+      margin: var(--space-2) 0 0;
+      font-size: 0.9rem;
+      color: var(--text-sec);
+      line-height: 1.5;
+     
+    }
+    .login-card-body {
+      padding: var(--space-6);
+    }
+
+    .login-form {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-4);
+    }
+    .login-label {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-2);
+      font-size: 0.8125rem;
+      font-weight: 500;
+      color: var(--text-sec);
+      letter-spacing: 0.01em;
+    }
+    .login-field {
+      height: 2.25rem;
+      padding: 0 var(--space-3);
+      border-radius: var(--radius);
+      border: 1px solid var(--border-strong);
+      background: var(--bg-input);
+      font-family: inherit;
+      font-size: 0.9375rem;
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .login-field::placeholder { color: var(--text-muted); }
+    .login-field:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px var(--primary-soft);
+    }
+    .light-theme .login-field {
+      background: var(--bg-card);
+    }
+    .login-password-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+    .login-password-wrap .login-field {
+      width: 100%;
+      padding-right: 2.5rem;
+    }
+    .login-password-toggle {
+      position: absolute;
+      right: 0.45rem;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      width: 1.6rem;
+      height: 1.6rem;
+      border-radius: var(--radius);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+    .login-password-toggle:hover {
+      color: var(--text);
+      background: var(--bg-hover);
+    }
+    .login-captcha-row {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      gap: var(--space-2);
+    }
+    .login-captcha-canvas {
+      height: 2.25rem;
+      width: 100%;
+      min-width: 136px;
+      border: 1px dashed var(--border-strong);
+      border-radius: var(--radius);
+      background: var(--bg-elevated);
+      display: block;
+    }
+    .login-captcha-refresh {
+      width: 2.25rem;
+      height: 2.25rem;
+      border-radius: var(--radius);
+      border: 1px solid var(--border-strong);
+      background: var(--bg-input);
+      color: var(--text-muted);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s, background 0.15s;
+    }
+    .login-captcha-refresh:hover {
+      color: var(--text);
+      border-color: var(--primary);
+      background: var(--bg-elevated);
+    }
+    .login-captcha-answer {
+      width: 100%;
+      min-width: 0;
+    }
+    .login-help {
+      margin-top: 0.15rem;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .login-submit {
+      margin-top: var(--space-1);
+      height: 2.5rem;
+      width: 100%;
+      border-radius: var(--radius);
+      border: none;
+      background: var(--primary);
+      color: #fff;
+      font-family: inherit;
+      font-size: 0.9375rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.12s;
+    }
+    .login-submit:hover { background: var(--primary-dark); }
+    .login-submit:active { opacity: 0.9; }
+    .login-submit[disabled] {
+      opacity: 0.75;
+      cursor: wait;
+    }
+
+    .login-flash {
+      margin-bottom: var(--space-4);
+      padding: 0.625rem 0.875rem;
+      border-radius: 7px;
+      border: 1px solid var(--border);
+      background: var(--bg-elevated);
+      font-size: 0.875rem;
+      color: var(--danger);
+    }
+    @media (max-width: 560px) {
+      .login-shell {
+        max-width: 100%;
+      }
+      .login-card-head,
+      .login-card-body {
+        padding: var(--space-5);
+      }
+      .login-captcha-row {
+        grid-template-columns: 1fr auto 1fr;
+      }
+      .login-captcha-canvas {
+        min-width: 112px;
+      }
+    }
+  </style>
+</head>
+<body class="{{ if Theme == "light" }}light-theme{{ end }}">
+
+  <!-- pinned topbar -->
+  <header class="login-topbar">
+    <div class="login-topbar-inner">
+      <div class="login-brand">
+        <span class="login-brand-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+        </span>
+        <span class="login-brand-name">{{ AppName }}</span>
+      </div>
+
+      <div class="login-theme-group">
+        <form action="/theme" method="post" style="display:contents">
+          <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+          <input type="hidden" name="theme" value="light">
+          <button type="submit" class="login-theme-btn {{ if Theme == "light" }}login-theme-btn-active{{ end }}">Light</button>
+        </form>
+        <form action="/theme" method="post" style="display:contents">
+          <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+          <input type="hidden" name="theme" value="dark">
+          <button type="submit" class="login-theme-btn {{ if Theme == "dark" }}login-theme-btn-active{{ end }}">Dark</button>
+        </form>
+      </div>
+    </div>
+  </header>
+
+  <!-- true viewport centre -->
+  <main class="login-page">
+    <div class="login-shell">
+      <div class="login-card">
+        <div class="login-card-head">
+          <span class="login-card-badge">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            Secure access
+          </span>
+          <h1 class="login-card-title">Sign in to {{ AppName }}</h1>
+          <p class="login-card-sub">Use your control panel credentials to continue.</p>
+        </div>
+        <div class="login-card-body">
+          {{ if Flash != "" }}
+            <div id="login-flash" class="hidden" data-flash="{{ Flash }}"></div>
+          {{ end }}
+
+          <form id="login-form" action="/login" method="post" class="login-form">
+            <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+            <input type="hidden" id="captcha-expression" name="captcha_expression" value="{{ CaptchaExpression }}">
+            <input type="hidden" id="captcha-token" name="captcha_token" value="{{ CaptchaToken }}">
+            <label class="login-label">
+              Username
+              <input name="username" required class="login-field" autocomplete="username" placeholder="admin">
+            </label>
+            <label class="login-label">
+              Password
+              <div class="login-password-wrap">
+                <input id="login-password" name="password" type="password" required class="login-field" autocomplete="current-password" placeholder="••••••••">
+                <button type="button" class="login-password-toggle" id="password-toggle-btn" aria-label="Show password" aria-pressed="false">
+                  <i id="password-toggle-icon" data-lucide="eye"></i>
+                </button>
+              </div>
+            </label>
+            <label class="login-label">
+              
+              <div class="login-captcha-row">
+                <canvas id="captcha-canvas" class="login-captcha-canvas" width="170" height="38"></canvas>
+                <button id="captcha-refresh-btn" type="button" class="login-captcha-refresh" aria-label="Refresh captcha">
+                  <i data-lucide="refresh-cw"></i>
+                </button>
+                <input id="captcha-answer-field" name="captcha_answer" required class="login-field login-captcha-answer" autocomplete="off" inputmode="numeric" placeholder="Answer">
+              </div>
+              <span class="login-help">Solve the expression shown in the image.</span>
+            </label>
+            <button id="login-submit-btn" type="submit" class="login-submit" data-default-label="Sign In">Sign In</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/notyf@3/notyf.min.js"></script>
+  <script>
+    $(function () {
+      function refreshIcons() {
+        if (window.lucide && typeof window.lucide.createIcons === 'function') {
+          window.lucide.createIcons();
+        }
+      }
+      function drawCaptcha(expression) {
+        var canvas = document.getElementById('captcha-canvas');
+        if (!canvas || !canvas.getContext) return;
+        var ctx = canvas.getContext('2d');
+        var width = canvas.width;
+        var height = canvas.height;
+
+        ctx.clearRect(0, 0, width, height);
+        var isLightTheme = document.body.classList.contains('light-theme');
+        var bgTone = isLightTheme ? 'rgba(0, 0, 0, 0.05)' : 'rgba(255, 255, 255, 0.04)';
+        var lineToneA = isLightTheme ? 'rgba(0, 0, 0, 0.16)' : 'rgba(255, 255, 255, 0.14)';
+        var lineToneB = isLightTheme ? 'rgba(0, 0, 0, 0.10)' : 'rgba(255, 255, 255, 0.08)';
+        var textTone = isLightTheme ? '#18181b' : '#d4d4d8';
+
+        ctx.fillStyle = bgTone;
+        ctx.fillRect(0, 0, width, height);
+
+        for (var i = 0; i < 7; i++) {
+          ctx.strokeStyle = i % 2 === 0 ? lineToneA : lineToneB;
+          ctx.beginPath();
+          ctx.moveTo(0, Math.random() * height);
+          ctx.lineTo(width, Math.random() * height);
+          ctx.stroke();
+        }
+
+        ctx.save();
+        ctx.font = '600 20px Inter, system-ui, sans-serif';
+        ctx.fillStyle = textTone;
+        ctx.textBaseline = 'middle';
+        ctx.translate(11, height / 2 + 1);
+        ctx.rotate((Math.random() - 0.5) * 0.08);
+        ctx.fillText(expression, 0, 0);
+        ctx.restore();
+      }
+
+      function setCaptchaChallenge(expr, token) {
+        $('#captcha-expression').val(expr || '');
+        if (token != null && token !== undefined) {
+          $('#captcha-token').val(String(token || ''));
+        }
+        drawCaptcha(String(expr || ''));
+      }
+
+      function refreshCaptchaFromServer() {
+        return fetch('/login/captcha', {
+          method: 'GET',
+          headers: { 'Accept': 'application/json' },
+          credentials: 'same-origin'
+        }).then(function (res) {
+          if (!res.ok) throw new Error('captcha refresh failed');
+          return res.json();
+        }).then(function (payload) {
+          setCaptchaChallenge(payload.expression || '', payload.token || '');
+          $('#captcha-answer-field').val('').trigger('focus');
+        });
+      }
+
+      var $passwordField = $('#login-password');
+      var $passwordToggleBtn = $('#password-toggle-btn');
+      var $passwordToggleIcon = $('#password-toggle-icon');
+      $passwordToggleBtn.on('click', function () {
+        if (!$passwordField.length) return;
+        var hidden = $passwordField.attr('type') === 'password';
+        $passwordField.attr('type', hidden ? 'text' : 'password');
+        $passwordToggleBtn.attr('aria-pressed', hidden ? 'true' : 'false');
+        $passwordToggleBtn.attr('aria-label', hidden ? 'Hide password' : 'Show password');
+        $passwordToggleIcon.attr('data-lucide', hidden ? 'eye-off' : 'eye');
+        refreshIcons();
+      });
+      $('#captcha-refresh-btn').on('click', function () {
+        refreshCaptchaFromServer().catch(function () {});
+      });
+
+      setCaptchaChallenge($('#captcha-expression').val(), $('#captcha-token').val());
+
+      var $loginForm = $('#login-form');
+      var $loginSubmitBtn = $('#login-submit-btn');
+      $loginForm.on('submit', function () {
+        if (!$loginSubmitBtn.length) return;
+        $loginSubmitBtn.prop('disabled', true);
+        $loginSubmitBtn.text('Signing in...');
+      });
+
+      var $flash = $('#login-flash');
+      if ($flash.length) {
+        var msg = String($flash.data('flash') || '').trim();
+        if (msg) {
+          if (typeof Notyf === 'function') {
+            var notyf = new Notyf({ duration: 6000, dismissible: true, position: { x: 'center', y: 'top' }, ripple: false });
+            notyf.open({ type: 'error', message: msg });
+          }
+        }
+      }
+
+      refreshIcons();
+    });
+  </script>
+</body>
+</html>

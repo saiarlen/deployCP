@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ Title }} - {{ AppName }}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ["Inter", "Plus Jakarta Sans", "system-ui", "-apple-system", "sans-serif"],
+            mono: ["JetBrains Mono", "Fira Code", "Consolas", "monospace"]
+          }
+        }
+      }
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/notyf@3/notyf.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css?v={{ AssetVersion }}">
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/notyf@3/notyf.min.js"></script>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+</head>
+<body class="font-sans antialiased {{ if Theme == "light" }}light-theme{{ end }}">
+  <div id="ui-root" class="app-shell">
+
+    <nav class="app-nav">
+      <div class="nav-bar">
+        <div class="nav-left">
+          <a href="/" class="nav-brand">
+            <span class="nav-brand-icon">
+              <i data-lucide="zap" style="width:13px;height:13px;stroke-width:2.5"></i>
+            </span>
+            <span class="nav-brand-text">{{ AppName }}</span>
+          </a>
+          <div class="nav-links">
+            <a href="/" class="nav-item {{ if Section == "dashboard" }}nav-item-active{{ end }}">
+              <i data-lucide="layout-dashboard"></i>
+              Dashboard
+            </a>
+            <a href="/platforms" class="nav-item {{ if Section == "platforms" || Section == "sites" || Section == "websites" || Section == "apps" }}nav-item-active{{ end }}">
+              <i data-lucide="globe"></i>
+              Platforms
+            </a>
+          </div>
+        </div>
+
+        <div class="nav-right">
+          <form action="/profile/theme" method="post" class="contents">
+            <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+            <input type="hidden" name="theme" value="{{ if Theme == "dark" }}light{{ else }}dark{{ end }}">
+            <button type="submit" class="nav-icon-btn" title="Toggle theme">
+              {{ if Theme == "dark" }}
+              <i data-lucide="sun"></i>
+              {{ else }}
+              <i data-lucide="moon"></i>
+              {{ end }}
+            </button>
+          </form>
+
+          {{ if CanAccessSettings }}
+          <a href="/settings" class="nav-icon-btn {{ if Section == "settings" || Section == "services" }}nav-icon-btn-active{{ end }}" title="Settings">
+            <i data-lucide="settings"></i>
+          </a>
+          {{ end }}
+
+          {{ if AuthUser }}
+          <div class="nav-user" id="nav-user">
+            <button id="user-toggle" type="button" class="nav-user-btn">
+              <span class="nav-user-avatar">
+                <i data-lucide="user"></i>
+              </span>
+              <span class="hidden sm:inline">{{ AuthUser.Username }}</span>
+            </button>
+            <div id="user-dropdown" class="nav-dropdown hidden">
+              <a href="/profile" class="dropdown-item">
+                <i data-lucide="user-round-cog"></i> Profile
+              </a>
+              {{ if CanAccessSettings }}
+              <a href="/settings" class="dropdown-item">
+                <i data-lucide="settings"></i> Settings
+              </a>
+              {{ end }}
+              <div class="dropdown-divider"></div>
+              <form action="/logout" method="post">
+                <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+                <button type="submit" class="dropdown-item dropdown-danger">
+                  <i data-lucide="log-out"></i> Sign Out
+                </button>
+              </form>
+            </div>
+          </div>
+          {{ end }}
+
+          <button id="mobile-toggle" type="button" class="nav-icon-btn nav-mobile-btn" aria-label="Menu">
+            <i data-lucide="menu" style="width:16px;height:16px"></i>
+          </button>
+        </div>
+      </div>
+
+      <div id="mobile-menu" class="nav-mobile hidden">
+        <a href="/" class="nav-mobile-item {{ if Section == "dashboard" }}nav-mobile-item-active{{ end }}">
+          <i data-lucide="layout-dashboard"></i> Dashboard
+        </a>
+        <a href="/platforms" class="nav-mobile-item {{ if Section == "platforms" || Section == "sites" || Section == "websites" || Section == "apps" }}nav-mobile-item-active{{ end }}">
+          <i data-lucide="globe"></i> Platforms
+        </a>
+        {{ if CanAccessSettings }}
+        <a href="/settings" class="nav-mobile-item {{ if Section == "settings" || Section == "services" }}nav-mobile-item-active{{ end }}">
+          <i data-lucide="settings"></i> Settings
+        </a>
+        {{ end }}
+        {{ if AuthUser }}
+        <div style="margin-top:var(--space-3);padding-top:var(--space-3);border-top:1px solid var(--border)">
+          <form action="/logout" method="post">
+            <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+            <button type="submit" class="btn btn-danger" style="width:100%"><i data-lucide="log-out"></i> Sign Out</button>
+          </form>
+        </div>
+        {{ end }}
+      </div>
+    </nav>
+
+    <main class="app-main">
+      <div class="page-shell">
+
+        <div class="page-header{{ if isset(PageActionHref) }} page-header--with-actions{{ end }}">
+          <div class="page-header-copy">
+            <h1 class="page-title">{{ Title }}</h1>
+          </div>
+          {{ if isset(PageActionHref) }}
+          <div class="page-header-actions">
+            <a href="{{ PageActionHref }}" class="btn btn-primary btn-create-platform"><i data-lucide="circle-plus"></i><span>{{ PageActionLabel }}</span></a>
+          </div>
+          {{ end }}
+        </div>
+
+        {{ if Flash != "" }}
+          <div id="app-flash" class="flash-banner hidden" data-flash="{{ Flash }}">{{ Flash }}</div>
+        {{ end }}
+
+        <div class="page-body">
+          {{ embed() }}
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <div id="action-confirm-modal" class="confirm-modal hidden" aria-hidden="true">
+    <div class="confirm-modal-backdrop" data-confirm-cancel></div>
+    <div class="confirm-modal-card" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title" aria-describedby="confirm-modal-message">
+      <div class="confirm-modal-top">
+        <span class="confirm-modal-icon">
+          <i data-lucide="triangle-alert"></i>
+        </span>
+        <div class="confirm-modal-copy">
+          <h3 id="confirm-modal-title" class="confirm-modal-title">Confirm Action</h3>
+          <p id="confirm-modal-message" class="confirm-modal-message"></p>
+        </div>
+      </div>
+      <div id="confirm-modal-input-wrap" class="confirm-modal-input-wrap hidden">
+        <label id="confirm-modal-input-label" for="confirm-modal-input" class="confirm-modal-input-label"></label>
+        <input id="confirm-modal-input" type="text" class="field confirm-modal-input" autocomplete="off" spellcheck="false">
+        <p id="confirm-modal-input-hint" class="confirm-modal-input-hint"></p>
+      </div>
+      <div class="confirm-modal-actions">
+        <button type="button" class="btn" data-confirm-cancel>Cancel</button>
+        <button type="button" id="confirm-modal-submit" class="btn btn-danger">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    $(function () {
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+
+      $('#user-toggle').on('click', function (e) {
+        e.stopPropagation();
+        $('#user-dropdown').toggleClass('hidden');
+      });
+      $(document).on('click', function (e) {
+        if (!$(e.target).closest('#nav-user').length) {
+          $('#user-dropdown').addClass('hidden');
+        }
+      });
+      $('#mobile-toggle').on('click', function () {
+        $('#mobile-menu').toggleClass('hidden');
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+      });
+
+      var $flash = $('#app-flash');
+      if ($flash.length) {
+        var msg = String($flash.data('flash') || '').trim();
+        if (msg && typeof Notyf === 'function') {
+          var notyf = new Notyf({
+            duration: 6000,
+            dismissible: true,
+            position: { x: 'center', y: 'top' },
+            ripple: false
+          });
+          var isErr = /(error|failed|invalid|required|unable|cannot|can't|denied|blocked|in\s+use|not\s+found|unauthorized)/i.test(msg);
+          notyf.open({ type: isErr ? 'error' : 'success', message: msg });
+        } else if (msg) {
+          $flash.removeClass('hidden');
+        }
+      }
+
+      var $confirmModal = $('#action-confirm-modal');
+      var $confirmTitle = $('#confirm-modal-title');
+      var $confirmMessage = $('#confirm-modal-message');
+      var $confirmSubmit = $('#confirm-modal-submit');
+      var $confirmInputWrap = $('#confirm-modal-input-wrap');
+      var $confirmInputLabel = $('#confirm-modal-input-label');
+      var $confirmInput = $('#confirm-modal-input');
+      var $confirmInputHint = $('#confirm-modal-input-hint');
+      var pendingForm = null;
+      var pendingSubmitter = null;
+      var pendingLastFocus = null;
+      var pendingInputExpected = '';
+
+      function getSubmitterFromEvent(e) {
+        return e.originalEvent && e.originalEvent.submitter ? e.originalEvent.submitter : document.activeElement;
+      }
+
+      function isDangerAction(action) {
+        return /\/delete(?:$|[/?#])|\/manage\/delete-app(?:$|[/?#])|\/actions\/(?:stop|disable)(?:$|[/?#])/i.test(action || '');
+      }
+
+      function getTriggerLabel($submitter) {
+        if (!$submitter || !$submitter.length) return '';
+        return String($submitter.data('confirmLabel') || $submitter.text() || '')
+          .replace(/\s+/g, ' ')
+          .trim();
+      }
+
+      function needsConfirmation($form, $submitter) {
+        var method = String($form.attr('method') || 'get').toLowerCase();
+        if (method !== 'post') return false;
+        if ($form.is('[data-confirm="false"]')) return false;
+        if ($form.is('[data-confirm],[data-confirm-message]')) return true;
+
+        var action = String($form.attr('action') || '').toLowerCase();
+        if (isDangerAction(action)) return true;
+
+        var nextEnabled = String($form.find('input[name="enabled"]').val() || '').toLowerCase();
+        if (nextEnabled === 'false') return true;
+
+        var triggerLabel = getTriggerLabel($submitter).toLowerCase();
+        return /(delete|remove|disable|stop|destroy|terminate|purge|revoke)/.test(triggerLabel);
+      }
+
+      function resolveMessage($form, $submitter) {
+        var explicit = String($form.data('confirmMessage') || '').trim();
+        if (explicit) return explicit;
+
+        var action = String($form.attr('action') || '').toLowerCase();
+        if (/\/actions\/stop(?:$|[/?#])/.test(action)) return 'Stop this service now?';
+        if (/\/actions\/disable(?:$|[/?#])/.test(action)) return 'Disable autostart for this service?';
+        if (/\/manage\/delete-app(?:$|[/?#])/.test(action)) return 'Delete the linked runtime and service? This cannot be undone.';
+        if (/\/delete(?:$|[/?#])/.test(action)) return 'Delete this item? This action cannot be undone.';
+
+        var triggerLabel = getTriggerLabel($submitter);
+        if (triggerLabel) return 'Are you sure you want to ' + triggerLabel.toLowerCase() + '?';
+        return 'Are you sure you want to continue with this action?';
+      }
+
+      function resolveConfirmCta($form, $submitter) {
+        var explicit = String($form.data('confirmCta') || '').trim();
+        if (explicit) return explicit;
+        var triggerLabel = getTriggerLabel($submitter);
+        if (triggerLabel) return triggerLabel;
+        return 'Confirm';
+      }
+
+      function resolveInputExpected($form) {
+        return String($form.data('confirmInputMatch') || '').trim();
+      }
+
+      function resolveInputLabel($form, expected) {
+        var explicit = String($form.data('confirmInputLabel') || '').trim();
+        if (explicit) return explicit;
+        if (!expected) return '';
+        return 'Type ' + expected + ' to confirm';
+      }
+
+      function resolveInputHint($form, expected) {
+        var explicit = String($form.data('confirmInputHint') || '').trim();
+        if (explicit) return explicit;
+        if (!expected) return '';
+        return 'Confirmation is case-sensitive.';
+      }
+
+      function updateConfirmSubmitState() {
+        if (!pendingInputExpected) {
+          $confirmSubmit.prop('disabled', false).attr('aria-disabled', 'false');
+          return;
+        }
+        var matches = String($confirmInput.val() || '') === pendingInputExpected;
+        $confirmSubmit.prop('disabled', !matches).attr('aria-disabled', matches ? 'false' : 'true');
+      }
+
+      function openConfirmModal(title, message, ctaText, inputExpected, inputLabel, inputHint) {
+        $confirmTitle.text(title || 'Confirm Action');
+        $confirmMessage.text(message || 'Are you sure?');
+        $confirmSubmit.text(ctaText || 'Confirm');
+        pendingInputExpected = String(inputExpected || '').trim();
+        if (pendingInputExpected) {
+          $confirmInputLabel.text(inputLabel || ('Type ' + pendingInputExpected + ' to confirm'));
+          $confirmInputHint.text(inputHint || '');
+          $confirmInput.val('');
+          $confirmInputWrap.removeClass('hidden');
+        } else {
+          $confirmInputWrap.addClass('hidden');
+          $confirmInputLabel.text('');
+          $confirmInputHint.text('');
+          $confirmInput.val('');
+        }
+        updateConfirmSubmitState();
+        $confirmModal.removeClass('hidden').addClass('confirm-modal-open').attr('aria-hidden', 'false');
+        $('body').addClass('confirm-modal-active');
+        pendingLastFocus = document.activeElement;
+        window.setTimeout(function () {
+          if (pendingInputExpected) {
+            $confirmInput.trigger('focus');
+          } else {
+            $confirmSubmit.trigger('focus');
+          }
+        }, 0);
+      }
+
+      function closeConfirmModal() {
+        pendingInputExpected = '';
+        $confirmInput.val('');
+        $confirmInputWrap.addClass('hidden');
+        $confirmInputLabel.text('');
+        $confirmInputHint.text('');
+        $confirmModal.addClass('hidden').removeClass('confirm-modal-open').attr('aria-hidden', 'true');
+        $('body').removeClass('confirm-modal-active');
+        if (pendingLastFocus && typeof pendingLastFocus.focus === 'function') {
+          pendingLastFocus.focus();
+        }
+      }
+
+      $(document).on('submit', 'form', function (e) {
+        var $form = $(this);
+        if ($form.data('confirmBypassed') === 'true') {
+          $form.removeData('confirmBypassed');
+          return;
+        }
+
+        var submitter = getSubmitterFromEvent(e);
+        var $submitter = submitter ? $(submitter) : $();
+        if (!needsConfirmation($form, $submitter)) return;
+
+        e.preventDefault();
+        pendingForm = this;
+        pendingSubmitter = submitter && submitter.form === this ? submitter : null;
+        openConfirmModal(
+          String($form.data('confirmTitle') || 'Confirm Action'),
+          resolveMessage($form, $submitter),
+          resolveConfirmCta($form, $submitter),
+          resolveInputExpected($form),
+          resolveInputLabel($form, resolveInputExpected($form)),
+          resolveInputHint($form, resolveInputExpected($form))
+        );
+      });
+
+      $(document).on('click', '[data-confirm-cancel]', function () {
+        pendingForm = null;
+        pendingSubmitter = null;
+        closeConfirmModal();
+      });
+
+      $confirmSubmit.on('click', function () {
+        if (!pendingForm) return;
+        if (pendingInputExpected && String($confirmInput.val() || '') !== pendingInputExpected) return;
+        var form = pendingForm;
+        var submitter = pendingSubmitter;
+        pendingForm = null;
+        pendingSubmitter = null;
+        closeConfirmModal();
+        $(form).data('confirmBypassed', 'true');
+        if (submitter && typeof form.requestSubmit === 'function') {
+          form.requestSubmit(submitter);
+        } else if (typeof form.requestSubmit === 'function') {
+          form.requestSubmit();
+        } else {
+          form.submit();
+        }
+      });
+
+      $confirmInput.on('input', updateConfirmSubmitState);
+
+      $(document).on('keydown', function (e) {
+        if ($confirmModal.hasClass('hidden')) return;
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          pendingForm = null;
+          pendingSubmitter = null;
+          closeConfirmModal();
+        }
+      });
+    });
+  </script>
+</body>
+</html>

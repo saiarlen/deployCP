@@ -1,0 +1,174 @@
+<div class="sites-apps-page">
+  <div class="content-card sa-shell">
+    <div class="sa-metrics" aria-label="Overview">
+      <div class="sa-metric">
+        <span class="sa-metric-value">{{ len(Websites) }}</span>
+        <span class="sa-metric-label">Web Runtime</span>
+      </div>
+      <span class="sa-metrics-divider" aria-hidden="true"></span>
+      <div class="sa-metric">
+        <span class="sa-metric-value">{{ len(Apps) }}</span>
+        <span class="sa-metric-label">Service Runtime</span>
+      </div>
+      <span class="sa-metrics-divider" aria-hidden="true"></span>
+      <div class="sa-metric">
+        <span class="sa-metric-value">{{ len(Websites) + len(Apps) }}</span>
+        <span class="sa-metric-label">Platforms</span>
+      </div>
+    </div>
+
+    <div class="sa-toolbar">
+      <span class="sa-toolbar-label">Show</span>
+      <div class="sa-chip-strip" role="toolbar" aria-label="Filter list">
+        <button type="button" class="sa-chip sa-chip-active" data-filter="all">All</button>
+        <button type="button" class="sa-chip sa-chip-muted" data-filter="proxy">Proxy</button>
+        <button type="button" class="sa-chip sa-chip-muted" data-filter="static">Static</button>
+        <button type="button" class="sa-chip sa-chip-muted" data-filter="php">PHP</button>
+        <button type="button" class="sa-chip sa-chip-muted" data-filter="go">Go</button>
+        <button type="button" class="sa-chip sa-chip-muted" data-filter="python">Python</button>
+        <button type="button" class="sa-chip sa-chip-muted" data-filter="node">Node</button>
+        <button type="button" class="sa-chip sa-chip-muted" data-filter="binary">Binary</button>
+      </div>
+    </div>
+
+    <div class="sa-feed" id="sa-feed">
+      {{ range _, w := Websites }}
+      <article class="sa-card" data-kind="platform" data-type="{{ w.Type }}">
+        <div class="sa-card-icon" aria-hidden="true">
+          <img class="sa-card-stack-img" src="{{ websiteStackIconURL(w.Type, w.AppRuntime) }}" alt="" width="22" height="22" loading="lazy" decoding="async" />
+        </div>
+        <div class="sa-card-main">
+          <div class="sa-card-top">
+            <div class="sa-card-title-wrap">
+              
+              <h3 class="sa-card-title"><a href="{{ platformShowURL("website", w.ID) }}">{{ w.Name }}</a></h3>
+            </div>
+          </div>
+          <div class="sa-card-meta">
+            <span class="sa-meta-pill sa-meta-pill--proxy">
+              <i data-lucide="route"></i>
+              <span>{{ if w.Type == "proxy" }}Proxy{{ else }}Web{{ end }}</span>
+            </span>
+            {{ if w.Enabled }}
+            <span class="sa-meta-pill sa-meta-pill--on">
+              <i data-lucide="circle-check"></i>
+              <span>Active</span>
+            </span>
+            {{ else }}
+            <span class="sa-meta-pill sa-meta-pill--off">
+              <i data-lucide="circle-x"></i>
+              <span>Maintenance</span>
+            </span>
+            {{ end }}
+            <span class="sa-domainline">
+              {{ if len(w.Domains) == 0 }}
+              <span class="sa-domain-icon-wrap" aria-hidden="true"><i data-lucide="globe" class="sa-domain-icon"></i></span>
+              <span class="sa-domain-empty">No domain</span>
+              {{ else }}
+              <span class="sa-domain-icon-wrap" aria-hidden="true"><i data-lucide="globe" class="sa-domain-icon"></i></span>
+              <span class="sa-domain-links">
+                {{ range _, d := w.Domains }}{{ if d.Primary }}
+                <a class="sa-domain-link" href="https://{{ d.Domain }}/" target="_blank" rel="noopener noreferrer">{{ d.Domain }}</a>
+                {{ end }}{{ end }}
+                {{ range _, d := w.Domains }}{{ if !d.Primary }}
+                <a class="sa-domain-link" href="https://{{ d.Domain }}/" target="_blank" rel="noopener noreferrer">{{ d.Domain }}</a>
+                {{ end }}{{ end }}
+              </span>
+              {{ end }}
+            </span>
+          </div>
+        </div>
+        <a class="sa-card-action" href="{{ platformShowURL("website", w.ID) }}" aria-label="Manage {{ w.Name }}">
+          <span class="sa-card-action-icon"><i data-lucide="settings-2"></i></span>
+          <span class="sa-card-action-label">Manage</span>
+        </a>
+      </article>
+      {{ end }}
+      {{ range _, a := Apps }}
+      <article class="sa-card" data-kind="platform" data-type="{{ a.Runtime }}">
+        <div class="sa-card-icon" aria-hidden="true">
+          <img class="sa-card-stack-img" src="{{ appStackIconURL(a.Runtime) }}" alt="" width="22" height="22" loading="lazy" decoding="async" />
+        </div>
+        <div class="sa-card-main">
+          <div class="sa-card-top">
+            <div class="sa-card-title-wrap">
+              
+              <h3 class="sa-card-title">
+                <a href="{{ if a.WebsiteID }}{{ platformShowURL("website", a.WebsiteID) }}{{ else }}{{ platformShowURL("app", a.ID) }}{{ end }}">{{ a.Name }}</a>
+              </h3>
+            </div>
+          </div>
+          <div class="sa-card-meta">
+            <span class="sa-meta-pill sa-meta-pill--proxy">
+              <i data-lucide="route"></i>
+              <span>{{ if isset(a.Website) && a.Website != nil }}Proxy{{ else }}Direct{{ end }}</span>
+            </span>
+            {{ if a.Enabled }}
+            <span class="sa-meta-pill sa-meta-pill--on">
+              <i data-lucide="circle-check"></i>
+              <span>Active</span>
+            </span>
+            {{ else }}
+            <span class="sa-meta-pill sa-meta-pill--off">
+              <i data-lucide="circle-x"></i>
+              <span>Off</span>
+            </span>
+            {{ end }}
+            <span class="sa-domainline">
+              {{ if isset(a.Website) && a.Website != nil && len(a.Website.Domains) > 0 }}
+              <span class="sa-domain-icon-wrap" aria-hidden="true"><i data-lucide="globe" class="sa-domain-icon"></i></span>
+              <span class="sa-domain-links">
+                {{ range _, d := a.Website.Domains }}{{ if d.Primary }}
+                <a class="sa-domain-link" href="https://{{ d.Domain }}/" target="_blank" rel="noopener noreferrer">{{ d.Domain }}</a>
+                {{ end }}{{ end }}
+                {{ range _, d := a.Website.Domains }}{{ if !d.Primary }}
+                <a class="sa-domain-link" href="https://{{ d.Domain }}/" target="_blank" rel="noopener noreferrer">{{ d.Domain }}</a>
+                {{ end }}{{ end }}
+              </span>
+              {{ else }}
+              <span class="sa-domain-icon-wrap" aria-hidden="true"><i data-lucide="globe" class="sa-domain-icon"></i></span>
+              <span class="sa-domain-empty">No domain</span>
+              {{ end }}
+            </span>
+          </div>
+        </div>
+        <a class="sa-card-action" href="{{ if a.WebsiteID }}{{ platformShowURL("website", a.WebsiteID) }}{{ else }}{{ platformShowURL("app", a.ID) }}{{ end }}" aria-label="Manage {{ a.Name }}">
+          <span class="sa-card-action-icon"><i data-lucide="settings-2"></i></span>
+          <span class="sa-card-action-label">Manage</span>
+        </a>
+      </article>
+      {{ end }}
+    </div>
+    <div id="sa-empty" class="sa-empty">No items match this filter.</div>
+  </div>
+</div>
+
+<script>
+$(function () {
+  if (typeof lucide !== "undefined") lucide.createIcons();
+  var $chips = $(".sa-chip-strip [data-filter]");
+  var $cards = $("#sa-feed .sa-card");
+  var $empty = $("#sa-empty");
+
+  function applyFilter(value) {
+    var visible = 0;
+    $cards.each(function () {
+      var $c = $(this);
+      var type = ($c.data("type") || "").toLowerCase();
+      var show = value === "all" || type === value;
+      $c.toggle(show);
+      if (show) visible += 1;
+    });
+    $empty.toggle(visible === 0);
+  }
+
+  $chips.on("click", function () {
+    var v = $(this).data("filter");
+    $chips.removeClass("sa-chip-active");
+    $(this).addClass("sa-chip-active");
+    applyFilter(v);
+  });
+
+  applyFilter("all");
+});
+</script>

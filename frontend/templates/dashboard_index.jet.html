@@ -1,0 +1,512 @@
+<div class="dashboard-page">
+<div class="page-top">
+  <div class="content-card dashboard-stats-bar-wrap">
+    <div class="dashboard-stats-bar">
+      <div class="dashboard-stats-seg">
+        <span class="dashboard-stats-icon" aria-hidden="true"><i data-lucide="globe"></i></span>
+        <div class="dashboard-stats-seg-body">
+          <strong class="dashboard-stats-seg-value">{{ Metrics.WebsitesCount }}</strong>
+          <span class="dashboard-stats-seg-label">Websites</span>
+        </div>
+      </div>
+      <div class="dashboard-stats-seg">
+        <span class="dashboard-stats-icon" aria-hidden="true"><i data-lucide="box"></i></span>
+        <div class="dashboard-stats-seg-body">
+          <strong class="dashboard-stats-seg-value">{{ Metrics.AppsCount }}</strong>
+          <span class="dashboard-stats-seg-label">Applications</span>
+        </div>
+      </div>
+      <div class="dashboard-stats-seg">
+        <span class="dashboard-stats-icon" aria-hidden="true"><i data-lucide="server"></i></span>
+        <div class="dashboard-stats-seg-body">
+          <strong class="dashboard-stats-seg-value">{{ Metrics.ServicesCount }}</strong>
+          <span class="dashboard-stats-seg-label">Services</span>
+        </div>
+      </div>
+      <div class="dashboard-stats-seg">
+        <span class="dashboard-stats-icon" aria-hidden="true"><i data-lucide="database"></i></span>
+        <div class="dashboard-stats-seg-body">
+          <strong class="dashboard-stats-seg-value">{{ Metrics.DatabasesCount }}</strong>
+          <span class="dashboard-stats-seg-label">Databases</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="dashboard-overview-grid">
+  <div class="content-card">
+    <h3 class="content-card-title dashboard-content-card-title"><i data-lucide="monitor"></i> Server Profile</h3>
+    <div class="dashboard-kv-list">
+      <div class="dashboard-kv-row">
+        <span class="property-label">Operating System</span>
+        <span class="property-value">{{ Metrics.OperatingSystem }}</span>
+      </div>
+      <div class="dashboard-kv-row">
+        <span class="property-label">Hostname</span>
+        <span class="property-value">{{ Metrics.Hostname }}</span>
+      </div>
+      <div class="dashboard-kv-row">
+        <span class="property-label">Public IPv4</span>
+        <span class="property-value property-value--copy">
+          <span id="public-ipv4-text" class="property-value--mono">{{ Metrics.PublicIPv4 }}</span>
+          <button type="button" class="copy-inline-btn" id="public-ipv4-copy" aria-label="Copy public IPv4 address" title="Copy address">
+            <i data-lucide="copy"></i>
+          </button>
+        </span>
+      </div>
+      <div class="dashboard-kv-row">
+        <span class="property-label">Node Size</span>
+        <span class="property-value">{{ Metrics.SizeCPU }} vCPU · {{ Metrics.SizeRAM }} RAM · {{ Metrics.SizeDisk }} Disk</span>
+      </div>
+    </div>
+    <div class="dashboard-disk-block">
+     
+      <p class="metric-label">Disk</p>
+      <p class="metric-value">
+        <span id="disk-live-pct">{{ formatPct(Metrics.DiskUsedPct) }}</span>
+        <span class="dashboard-disk-meta"> — <span id="disk-live" data-disk-meta="{{ Metrics.DiskAvailable }} free of {{ Metrics.DiskTotal }}">{{ Metrics.DiskAvailable }} free of {{ Metrics.DiskTotal }}</span></span>
+      </p>
+      <div class="disk-mini-rail">
+        <div id="disk-gauge" class="disk-mini-fill" style="--disk-pct: {{ formatFloat1(Metrics.DiskUsedPct) }};"></div>
+      </div>
+    </div>
+  </div>
+  <div class="content-card">
+    <h3 class="content-card-title dashboard-content-card-title"><i data-lucide="activity"></i> Live Health</h3>
+    <div class="dashboard-kv-list">
+      <div class="dashboard-kv-row">
+        <span class="metric-label">CPU</span>
+        <span class="metric-value" id="cpu-live">{{ formatPct(Metrics.CPUUsage) }}</span>
+      </div>
+      <div class="dashboard-kv-row">
+        <span class="metric-label">Memory</span>
+        <span class="metric-value" id="memory-live">{{ formatPct(Metrics.MemoryUsedPct) }}</span>
+      </div>
+    
+      <div class="dashboard-kv-row">
+        <span class="metric-label">Uptime</span>
+        <span class="metric-value">{{ Metrics.Uptime }}</span>
+      </div>
+      <div class="dashboard-kv-row">
+        <span class="metric-label">RX / TX (Mbps)</span>
+        <span class="metric-value" id="network-live">—</span>
+      </div>
+      <div class="dashboard-disk-block dashboard-disk-block--inline">
+        <p class="metric-label">Load (1m)</p>
+        <p class="metric-value"><span id="load-live">{{ formatFloat1(Metrics.Load1) }}</span></p>
+        <div class="disk-mini-rail">
+          <div id="load-gauge" class="load-mini-fill" style="--load-pct: {{ formatFloat1(LoadBarPct) }};" data-vcpu="{{ VCPUCount }}"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="content-card">
+  <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--space-3);margin-bottom:var(--space-4)">
+    <h3 class="dashboard-section-title">
+      <i data-lucide="trending-up"></i> Telemetry
+    </h3>
+    <div class="range-chip-group">
+      <button type="button" class="range-chip range-chip-active" data-range="1h">1H</button>
+      <button type="button" class="range-chip" data-range="1d">1D</button>
+      <button type="button" class="range-chip" data-range="7d">7D</button>
+      <button type="button" class="range-chip" data-range="30d">30D</button>
+      <button type="button" class="range-chip" data-range="90d">3M</button>
+    </div>
+  </div>
+  <p id="range-state" class="range-state">Range: 1H · loading...</p>
+  <div class="telemetry-grid">
+    <div class="chart-card">
+      <h4 class="chart-title">CPU (%)</h4>
+      <div class="chart-canvas-shell"><canvas id="cpuChart" class="chart-canvas"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <h4 class="chart-title">CPU Cores (%)</h4>
+      <div class="chart-canvas-shell"><canvas id="coreChart" class="chart-canvas"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <h4 class="chart-title">Memory (%)</h4>
+      <div class="chart-canvas-shell"><canvas id="memoryChart" class="chart-canvas"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <h4 class="chart-title">Disk (%)</h4>
+      <div class="chart-canvas-shell"><canvas id="diskChart" class="chart-canvas"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <h4 class="chart-title">Load (1m / 5m / 15m)</h4>
+      <div class="chart-canvas-shell"><canvas id="loadChart" class="chart-canvas"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <h4 class="chart-title">Network (Mbps RX/TX)</h4>
+      <div class="chart-canvas-shell"><canvas id="networkChart" class="chart-canvas"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script>
+  (function () {
+    const rangeButtons = Array.from(document.querySelectorAll(".range-chip[data-range]"));
+    const rangeStateEl = document.getElementById("range-state");
+    if (!rangeButtons.length) return;
+
+    function safeNum(value, fallback) {
+      const n = Number(value);
+      if (Number.isFinite(n)) return n;
+      return Number.isFinite(fallback) ? fallback : 0;
+    }
+
+    const state = {
+      range: "1h",
+      points: [{
+        timestamp: Math.floor(Date.now() / 1000),
+        cpu: safeNum("{{ formatFloat1(Metrics.CPUUsage) }}", 0),
+        mem: safeNum("{{ formatFloat1(Metrics.MemoryUsedPct) }}", 0),
+        disk: safeNum("{{ formatFloat1(Metrics.DiskUsedPct) }}", 0),
+        load1: safeNum("{{ formatFloat1(Metrics.Load1) }}", 0),
+        load5: 0, load15: 0, rx: 0, tx: 0
+      }],
+      corePoints: [],
+      coreCount: 0,
+      charts: {}
+    };
+
+    const rangeSeconds = { "1h": 3600, "1d": 86400, "7d": 604800, "30d": 2592000, "90d": 7776000 };
+    const maxPointsByRange = { "1h": 420, "1d": 420, "7d": 360, "30d": 360, "90d": 360 };
+
+    function setRangeState(message) { if (rangeStateEl) rangeStateEl.textContent = message; }
+    function asPct(v) { return Number(v || 0).toFixed(1) + "%"; }
+    function rangeLabel(k) { return k === "1h" ? "1H" : k === "7d" ? "7D" : k === "30d" ? "30D" : k === "90d" ? "3M" : "1D"; }
+
+    function normalizePoint(raw) {
+      return {
+        timestamp: safeNum(raw.timestamp, Math.floor(Date.now() / 1000)),
+        cpu: safeNum(raw.cpu_usage, 0), mem: safeNum(raw.memory_used, 0),
+        disk: safeNum(raw.disk_used, 0), load1: safeNum(raw.load_1, 0),
+        load5: safeNum(raw.load_5, 0), load15: safeNum(raw.load_15, 0),
+        rx: safeNum(raw.network_rx_bps, 0), tx: safeNum(raw.network_tx_bps, 0)
+      };
+    }
+
+    function setRangeButtonState(active) {
+      rangeButtons.forEach(btn => btn.classList.toggle("range-chip-active", btn.dataset.range === active));
+    }
+
+    function trimByRange(points) {
+      const now = Math.floor(Date.now() / 1000);
+      const cutoff = now - (rangeSeconds[state.range] || 3600);
+      let filtered = points.filter(p => Number(p.timestamp || 0) >= cutoff);
+      const max = maxPointsByRange[state.range] || 320;
+      if (filtered.length > max) filtered = filtered.slice(filtered.length - max);
+      return filtered;
+    }
+
+    function resolveXWindow(points) {
+      const nowTs = Math.floor(Date.now() / 1000);
+      const windowSec = rangeSeconds[state.range] || 3600;
+      if (!points.length) return { min: nowTs - windowSec, max: nowTs };
+      const first = Number(points[0].timestamp || nowTs);
+      const last = Number(points[points.length - 1].timestamp || nowTs);
+      const observed = Math.max(1, last - first);
+      if (observed < windowSec * 0.25) {
+        const pad = Math.max(24, Math.round(observed * 0.12));
+        return { min: first - pad, max: Math.max(last + pad, first - pad + 90) };
+      }
+      const max = Math.max(last, nowTs);
+      return { min: max - windowSec, max };
+    }
+
+    function nearestCorePoint(timestamp) {
+      if (!state.corePoints.length) return null;
+      const target = Number(timestamp || 0);
+      let best = null, bestDelta = Infinity;
+      for (let i = 0; i < state.corePoints.length; i++) {
+        const ts = Number(state.corePoints[i].timestamp || 0);
+        if (ts === target) return state.corePoints[i];
+        const d = Math.abs(ts - target);
+        if (d < bestDelta) { best = state.corePoints[i]; bestDelta = d; }
+      }
+      return best;
+    }
+
+    function coreStatsAt(timestamp, cpuFallback) {
+      const fb = safeNum(cpuFallback, 0);
+      const nearest = nearestCorePoint(timestamp);
+      if (!nearest || !Array.isArray(nearest.cores) || !nearest.cores.length)
+        return { count: 0, min: fb, max: fb, avg: fb, top: [] };
+      const values = [];
+      for (let i = 0; i < nearest.cores.length; i++) {
+        const v = Number(nearest.cores[i]);
+        if (Number.isFinite(v)) values.push({ index: i, value: v });
+      }
+      if (!values.length) return { count: 0, min: fb, max: fb, avg: fb, top: [] };
+      let min = values[0].value, max = values[0].value, sum = 0;
+      values.forEach(e => { if (e.value < min) min = e.value; if (e.value > max) max = e.value; sum += e.value; });
+      return { count: values.length, min, max, avg: sum / values.length, top: values.slice().sort((a, b) => b.value - a.value) };
+    }
+
+    function coreTooltipLines(timestamp) {
+      const s = coreStatsAt(timestamp, 0);
+      if (!s.count) return ["Core details unavailable"];
+      const lines = ["Cores: " + s.count + " | Max " + s.max.toFixed(1) + "% | Min " + s.min.toFixed(1) + "%"];
+      s.top.slice(0, 6).forEach(e => lines.push("Core " + (e.index + 1) + ": " + e.value.toFixed(1) + "%"));
+      if (s.count > 6) lines.push("+" + (s.count - 6) + " more");
+      return lines;
+    }
+
+    function formatAxisTime(ts) {
+      const d = new Date(Number(ts || 0) * 1000);
+      if (state.range === "1h") return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      if (state.range === "1d") return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      return d.toLocaleDateString([], { month: "short", day: "numeric" });
+    }
+
+    function themePalette() {
+      const light = document.body.classList.contains("light-theme");
+      return {
+        grid: light ? "rgba(0,0,0,.05)" : "rgba(255,255,255,.06)",
+        axis: light ? "#71717a" : "#71717a",
+        tooltipBg: light ? "#ffffff" : "#1c1c1f",
+        tooltipFg: light ? "#18181b" : "#f2f2f3",
+        tooltipBorder: light ? "rgba(0,0,0,.12)" : "rgba(255,255,255,.12)"
+      };
+    }
+
+    function makeLineDataset(label, color, data, width, extra) {
+      const ds = { label, data, borderColor: color, pointRadius: ctx => (ctx.dataset && ctx.dataset.data && ctx.dataset.data.length <= 1) ? 2.5 : 0, pointHoverRadius: 3, tension: .3, borderWidth: width || 1.5, spanGaps: true };
+      if (extra) Object.assign(ds, extra);
+      return ds;
+    }
+
+    function fallbackPalette() {
+      const light = document.body.classList.contains("light-theme");
+      return { gridStrong: light ? "rgba(0,0,0,.07)" : "rgba(255,255,255,.07)", gridSoft: light ? "rgba(0,0,0,.04)" : "rgba(255,255,255,.04)", axis: light ? "#71717a" : "#71717a", frame: light ? "rgba(0,0,0,.1)" : "rgba(255,255,255,.1)" };
+    }
+
+    function setupFallbackCanvas(canvas) {
+      if (!canvas) return null;
+      const dpr = window.devicePixelRatio || 1;
+      const w = Math.max(320, Math.floor(canvas.clientWidth || 640));
+      const h = Math.max(160, Math.floor(canvas.clientHeight || 160));
+      if (canvas.width !== Math.floor(w * dpr) || canvas.height !== Math.floor(h * dpr)) { canvas.width = Math.floor(w * dpr); canvas.height = Math.floor(h * dpr); }
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return null;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, w, h);
+      return { ctx, width: w, height: h };
+    }
+
+    function drawFallbackChart(config) {
+      const canvas = document.getElementById(config.id);
+      const p = setupFallbackCanvas(canvas);
+      if (!p) return;
+      const { ctx, width, height } = p;
+      const pal = fallbackPalette();
+      const points = config.points || [];
+      const pad = { top: 12, right: 14, bottom: 28, left: 44 };
+      const plotW = width - pad.left - pad.right, plotH = height - pad.top - pad.bottom;
+      if (plotW <= 0 || plotH <= 0) return;
+      const wb = resolveXWindow(points);
+      const minTs = wb.min, maxTs = Math.max(wb.max, wb.min + 1);
+      const vals = [];
+      config.series.forEach(l => points.forEach(pt => { const v = Number(l.get(pt)); if (Number.isFinite(v)) vals.push(v); }));
+      let yMin = Number.isFinite(config.minY) ? config.minY : (vals.length ? Math.min(...vals) : 0);
+      let yMax = Number.isFinite(config.maxY) ? config.maxY : (vals.length ? Math.max(...vals) : 1);
+      if (yMax <= yMin) yMax = yMin + 1;
+      if (!Number.isFinite(config.minY)) yMin = Math.max(0, yMin - (yMax - yMin) * .1);
+      if (!Number.isFinite(config.maxY)) yMax += (yMax - yMin) * .1;
+      const xAt = ts => pad.left + ((Number(ts) - minTs) / (maxTs - minTs)) * plotW;
+      const yAt = v => pad.top + plotH - ((Number(v) - yMin) / (yMax - yMin)) * plotH;
+      for (let i = 0; i <= 4; i++) {
+        const y = pad.top + plotH * (i / 4);
+        ctx.strokeStyle = pal.gridStrong; ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(width - pad.right, y); ctx.stroke();
+        ctx.fillStyle = pal.axis; ctx.font = "10px Inter, sans-serif"; ctx.textAlign = "right";
+        ctx.fillText(config.yTick ? config.yTick(yMax - (yMax - yMin) * (i / 4)) : (yMax - (yMax - yMin) * (i / 4)).toFixed(1), pad.left - 6, y + 3);
+      }
+      for (let i = 0; i <= 5; i++) {
+        const ts = minTs + ((maxTs - minTs) * i) / 5, x = xAt(ts);
+        ctx.strokeStyle = pal.gridSoft; ctx.beginPath(); ctx.moveTo(x, pad.top); ctx.lineTo(x, pad.top + plotH); ctx.stroke();
+        ctx.fillStyle = pal.axis; ctx.font = "10px Inter, sans-serif"; ctx.textAlign = "center"; ctx.fillText(formatAxisTime(ts), x, height - 8);
+      }
+      ctx.strokeStyle = pal.frame; ctx.strokeRect(pad.left, pad.top, plotW, plotH);
+      config.series.forEach(line => {
+        ctx.strokeStyle = line.color; ctx.lineWidth = Number(line.width || 1.5); ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.beginPath();
+        let started = false, cnt = 0, fx = 0, fy = 0;
+        points.forEach(pt => { const v = Number(line.get(pt)); if (!Number.isFinite(v)) return; const x = xAt(pt.timestamp), y = yAt(v); if (!started) { ctx.moveTo(x, y); fx = x; fy = y; started = true; } else ctx.lineTo(x, y); cnt++; });
+        if (started) ctx.stroke();
+        if (cnt === 1) { ctx.fillStyle = line.color; ctx.beginPath(); ctx.arc(fx, fy, 2.5, 0, Math.PI * 2); ctx.fill(); }
+      });
+      if (!points.length) { ctx.fillStyle = pal.axis; ctx.font = "12px Inter, sans-serif"; ctx.textAlign = "center"; ctx.fillText("Waiting for data...", width / 2, height / 2); }
+    }
+
+    function drawFallbackCharts() {
+      const pts = state.points;
+      drawFallbackChart({ id: "cpuChart", points: pts, minY: 0, maxY: 100, yTick: v => v.toFixed(0) + "%", series: [{ color: "#60a5fa", width: 1.5, get: p => p.cpu }] });
+      drawFallbackChart({ id: "coreChart", points: pts, minY: 0, maxY: 100, yTick: v => v.toFixed(0) + "%", series: [{ color: "#60a5fa", width: 1.5, get: p => p.cpu }, { color: "#f59e0b", width: 1.2, get: p => coreStatsAt(p.timestamp, p.cpu).max }] });
+      drawFallbackChart({ id: "memoryChart", points: pts, minY: 0, maxY: 100, yTick: v => v.toFixed(0) + "%", series: [{ color: "#2563eb", width: 1.5, get: p => p.mem }] });
+      drawFallbackChart({ id: "diskChart", points: pts, minY: 0, maxY: 100, yTick: v => v.toFixed(0) + "%", series: [{ color: "#f59e0b", width: 1.5, get: p => p.disk }] });
+      const loadMax = Math.max(2, ...pts.map(p => Math.max(p.load1, p.load5, p.load15)));
+      drawFallbackChart({ id: "loadChart", points: pts, minY: 0, maxY: +(loadMax * 1.18).toFixed(2), yTick: v => v.toFixed(1), series: [{ color: "#10b981", width: 1.5, get: p => p.load1 }, { color: "#f59e0b", width: 1.5, get: p => p.load5 }, { color: "#f87171", width: 1.5, get: p => p.load15 }] });
+      const netMax = Math.max(1, ...pts.map(p => Math.max((p.rx * 8) / 1e6, (p.tx * 8) / 1e6)));
+      drawFallbackChart({ id: "networkChart", points: pts, minY: 0, maxY: +(netMax * 1.2).toFixed(3), yTick: v => v.toFixed(2), series: [{ color: "#2563eb", width: 1.5, get: p => (p.rx * 8) / 1e6 }, { color: "#f59e0b", width: 1.5, get: p => (p.tx * 8) / 1e6 }] });
+    }
+
+    function createOrUpdateChart(chartId, datasets, options) {
+      if (!window.Chart) return;
+      const ctx = document.getElementById(chartId);
+      if (!ctx) return;
+      const t = themePalette();
+      const opts = {
+        responsive: true, maintainAspectRatio: false, animation: false,
+        interaction: { mode: "nearest", axis: "x", intersect: false },
+        plugins: {
+          legend: { display: true, labels: { color: t.axis, usePointStyle: true, pointStyle: "circle", boxWidth: 6, boxHeight: 6, font: { size: 11 } } },
+          tooltip: {
+            backgroundColor: t.tooltipBg, titleColor: t.tooltipFg, bodyColor: t.tooltipFg, borderColor: t.tooltipBorder, borderWidth: 1,
+            callbacks: {
+              title(items) { return items.length ? new Date(Number(items[0].parsed.x) * 1000).toLocaleString() : ""; },
+              label(item) { const f = options.tooltipValue || (v => v.toFixed(2)); return item.dataset.label + ": " + f(Number(item.parsed.y || 0)); },
+              afterBody(items) { if (!items.length || typeof options.extraTooltipLines !== "function") return []; return options.extraTooltipLines(Number(items[0].parsed.x)) || []; }
+            }
+          }
+        },
+        scales: {
+          x: { type: "linear", min: options.minX, max: options.maxX, grid: { color: t.grid }, ticks: { color: t.axis, maxTicksLimit: 6, font: { size: 10 }, callback(v) { return formatAxisTime(v); } } },
+          y: { min: options.minY, max: options.maxY, grid: { color: t.grid }, ticks: { color: t.axis, font: { size: 10 }, callback(v) { return options.yTick ? options.yTick(Number(v)) : String(v); } } }
+        }
+      };
+      if (!state.charts[chartId]) { state.charts[chartId] = new Chart(ctx, { type: "line", data: { datasets }, options: opts }); return; }
+      state.charts[chartId].data.datasets = datasets;
+      state.charts[chartId].options = opts;
+      state.charts[chartId].update("none");
+    }
+
+    function drawCharts() {
+      if (!window.Chart) { setRangeState("Range: " + rangeLabel(state.range) + " · " + state.points.length + " samples · canvas"); drawFallbackCharts(); return; }
+      const pts = state.points, xw = resolveXWindow(pts);
+      createOrUpdateChart("cpuChart", [makeLineDataset("CPU", "#60a5fa", pts.map(p => ({ x: p.timestamp, y: p.cpu })), 1.5)], { minX: xw.min, maxX: xw.max, minY: 0, maxY: 100, yTick: v => v.toFixed(0) + "%", tooltipValue: v => v.toFixed(1) + "%" });
+      createOrUpdateChart("coreChart", [makeLineDataset("CPU Avg", "#60a5fa", pts.map(p => ({ x: p.timestamp, y: p.cpu })), 1.5), makeLineDataset("Peak Core", "#f59e0b", pts.map(p => ({ x: p.timestamp, y: coreStatsAt(p.timestamp, p.cpu).max })), 1.2, { borderDash: [6, 4] })], { minX: xw.min, maxX: xw.max, minY: 0, maxY: 100, yTick: v => v.toFixed(0) + "%", tooltipValue: v => v.toFixed(1) + "%", extraTooltipLines: coreTooltipLines });
+      createOrUpdateChart("memoryChart", [makeLineDataset("Memory", "#2563eb", pts.map(p => ({ x: p.timestamp, y: p.mem })), 1.5)], { minX: xw.min, maxX: xw.max, minY: 0, maxY: 100, yTick: v => v.toFixed(0) + "%", tooltipValue: v => v.toFixed(1) + "%" });
+      createOrUpdateChart("diskChart", [makeLineDataset("Disk", "#f59e0b", pts.map(p => ({ x: p.timestamp, y: p.disk })), 1.5)], { minX: xw.min, maxX: xw.max, minY: 0, maxY: 100, yTick: v => v.toFixed(0) + "%", tooltipValue: v => v.toFixed(1) + "%" });
+      const lm = Math.max(2, ...pts.map(p => Math.max(p.load1, p.load5, p.load15)));
+      createOrUpdateChart("loadChart", [makeLineDataset("1m", "#10b981", pts.map(p => ({ x: p.timestamp, y: p.load1 })), 1.5), makeLineDataset("5m", "#f59e0b", pts.map(p => ({ x: p.timestamp, y: p.load5 })), 1.5), makeLineDataset("15m", "#f87171", pts.map(p => ({ x: p.timestamp, y: p.load15 })), 1.5)], { minX: xw.min, maxX: xw.max, minY: 0, maxY: +(lm * 1.18).toFixed(2), yTick: v => v.toFixed(1), tooltipValue: v => v.toFixed(2) });
+      const nm = Math.max(1, ...pts.map(p => Math.max((p.rx * 8) / 1e6, (p.tx * 8) / 1e6)));
+      createOrUpdateChart("networkChart", [makeLineDataset("RX", "#2563eb", pts.map(p => ({ x: p.timestamp, y: (p.rx * 8) / 1e6 })), 1.5), makeLineDataset("TX", "#f59e0b", pts.map(p => ({ x: p.timestamp, y: (p.tx * 8) / 1e6 })), 1.5)], { minX: xw.min, maxX: xw.max, minY: 0, maxY: +(nm * 1.2).toFixed(3), yTick: v => v.toFixed(2), tooltipValue: v => v.toFixed(3) + " Mbps" });
+    }
+
+    function updateLiveCards(data) {
+      const cpu = Number(data.cpu_usage || 0), mem = Number(data.memory_used || 0), disk = Number(data.disk_used || 0), load1 = Number(data.load_1 || 0);
+      const rxMbps = (Number(data.network_rx_bps || 0) * 8) / 1e6;
+      const txMbps = (Number(data.network_tx_bps || 0) * 8) / 1e6;
+      var el;
+      if (el = document.getElementById("cpu-live")) el.textContent = asPct(cpu);
+      if (el = document.getElementById("memory-live")) el.textContent = asPct(mem);
+      if (el = document.getElementById("load-live")) el.textContent = load1.toFixed(1);
+      if (el = document.getElementById("load-gauge")) {
+        var vc = parseInt(el.getAttribute("data-vcpu") || "1", 10);
+        if (!vc || vc < 1) vc = 1;
+        var lp = Math.min(100, Math.max(0, (load1 / vc) * 100));
+        el.style.setProperty("--load-pct", lp.toFixed(1));
+      }
+      if (el = document.getElementById("disk-live-pct")) el.textContent = asPct(disk);
+      if (el = document.getElementById("disk-gauge")) el.style.setProperty("--disk-pct", disk.toFixed(1));
+      if (el = document.getElementById("disk-live")) el.textContent = el.dataset.diskMeta || "";
+      if (el = document.getElementById("network-live")) {
+        el.textContent = "RX " + rxMbps.toFixed(2) + " · TX " + txMbps.toFixed(2) + " Mbps";
+      }
+    }
+
+    async function loadHistory(rangeKey) {
+      try {
+        const r = await fetch("/dashboard/history?range=" + encodeURIComponent(rangeKey), { cache: "no-store" });
+        if (!r.ok) throw new Error("fail");
+        const d = await r.json();
+        state.points = Array.isArray(d.points) ? d.points.map(normalizePoint) : [];
+        state.points = trimByRange(state.points);
+        if (!state.points.length) state.points = [{ timestamp: Math.floor(Date.now() / 1000), cpu: safeNum("{{ formatFloat1(Metrics.CPUUsage) }}", 0), mem: safeNum("{{ formatFloat1(Metrics.MemoryUsedPct) }}", 0), disk: safeNum("{{ formatFloat1(Metrics.DiskUsedPct) }}", 0), load1: safeNum("{{ formatFloat1(Metrics.Load1) }}", 0), load5: 0, load15: 0, rx: 0, tx: 0 }];
+        state.corePoints = trimByRange(state.corePoints);
+        setRangeState("Range: " + rangeLabel(rangeKey) + " · " + state.points.length + " samples");
+      } catch (_) {
+        setRangeState("Range: " + rangeLabel(rangeKey) + " · unable to load history");
+      }
+      drawCharts();
+    }
+
+    async function refreshLive() {
+      try {
+        const r = await fetch("/dashboard/live", { cache: "no-store" });
+        if (!r.ok) return;
+        const data = await r.json();
+        updateLiveCards(data);
+        const pt = normalizePoint(data);
+        state.points.push(pt);
+        state.points = trimByRange(state.points);
+        const cores = Array.isArray(data.cpu_core_usage) ? data.cpu_core_usage.map(v => Number(v || 0)) : [];
+        if (cores.length > state.coreCount) state.coreCount = cores.length;
+        state.corePoints.push({ timestamp: pt.timestamp, cores });
+        state.corePoints = trimByRange(state.corePoints);
+        setRangeState("Range: " + rangeLabel(state.range) + " · " + state.points.length + " samples");
+        drawCharts();
+      } catch (_) {
+        setRangeState("Range: " + rangeLabel(state.range) + " · live unavailable");
+        drawCharts();
+      }
+    }
+
+    async function setRange(k) { state.range = k; setRangeButtonState(k); await loadHistory(k); }
+    rangeButtons.forEach(btn => btn.addEventListener("click", e => { e.preventDefault(); setRange(btn.dataset.range || "1h"); }));
+
+    let rt = null;
+    window.addEventListener("resize", () => { if (rt) clearTimeout(rt); rt = setTimeout(drawCharts, 120); });
+
+    drawCharts();
+    setRange("1h");
+    refreshLive();
+    setInterval(refreshLive, 2000);
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+  })();
+</script>
+<script>
+  (function () {
+    var btn = document.getElementById("public-ipv4-copy");
+    var textEl = document.getElementById("public-ipv4-text");
+    if (!btn || !textEl) return;
+    function notify(ok, msg) {
+      if (typeof Notyf !== "function") return;
+      var n = new Notyf({ duration: 6000, dismissible: true, position: { x: "center", y: "top" }, ripple: false });
+      n[ok ? "success" : "error"](msg);
+    }
+    btn.addEventListener("click", function () {
+      var text = (textEl.textContent || "").trim();
+      if (!text || text === "—") {
+        notify(false, "Nothing to copy");
+        return;
+      }
+      function copied() { notify(true, "IP address copied"); }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(copied).catch(function () { copyFallback(text, copied); });
+        return;
+      }
+      copyFallback(text, copied);
+    });
+    function copyFallback(text, onOk) {
+      try {
+        var ta = document.createElement("textarea");
+        ta.value = text;
+        ta.setAttribute("readonly", "");
+        ta.style.position = "fixed";
+        ta.style.left = "-9999px";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        onOk();
+      } catch (_) {
+        notify(false, "Could not copy");
+      }
+    }
+  })();
+</script>
+</div>

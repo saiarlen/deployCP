@@ -1,0 +1,435 @@
+<div class="page-top" style="align-items: flex-start; border-bottom: 1px solid var(--border); padding-bottom: var(--space-5); margin-bottom: var(--space-6);">
+  <div class="page-header-copy">
+    <h1 class="page-title" style="font-size: 1.75rem; letter-spacing: -0.03em;">Deploy New Platform</h1>
+    <p class="page-subtitle">Configure your runtime environment, domain, and routing setup.</p>
+  </div>
+  <a href="/platforms" class="btn btn-ghost" style="margin-top: 4px;"><i data-lucide="x"></i> Cancel</a>
+</div>
+
+<form id="sa-form" action="/platforms" method="post" class="platform-wizard" novalidate>
+  <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+  <input type="hidden" id="sa-kind" name="create_kind" value="">
+  <input type="hidden" id="sa-category" name="platform_category" value="">
+
+  <div class="pw-section">
+    <div class="pw-section-header">
+      <div class="pw-step-number">1</div>
+      <div>
+        <h3 class="pw-section-title">Select Runtime <span class="pw-required">*</span></h3>
+        <p class="pw-section-copy">Choose the engine that will power your platform.</p>
+      </div>
+    </div>
+    
+    <div class="pw-stack-grid" id="sa-tiles">
+      <button class="pw-stack-card sa-tile" data-kind="static" type="button">
+        <div class="pw-stack-icon">
+          <img src="{{ websiteStackIconURL("static", "") }}" alt="Static" loading="lazy" decoding="async" />
+        </div>
+        <div class="pw-stack-info">
+          <span class="pw-stack-title">Static</span>
+          <span class="pw-stack-kind">Platform</span>
+        </div>
+      </button>
+      <button class="pw-stack-card sa-tile" data-kind="php" type="button">
+        <div class="pw-stack-icon">
+          <img src="{{ websiteStackIconURL("php", "") }}" alt="PHP" loading="lazy" decoding="async" />
+        </div>
+        <div class="pw-stack-info">
+          <span class="pw-stack-title">PHP</span>
+          <span class="pw-stack-kind">Platform</span>
+        </div>
+      </button>
+      <button class="pw-stack-card sa-tile" data-kind="go" type="button">
+        <div class="pw-stack-icon">
+          <img src="{{ appStackIconURL("go") }}" alt="Go" loading="lazy" decoding="async" />
+        </div>
+        <div class="pw-stack-info">
+          <span class="pw-stack-title">Go</span>
+          <span class="pw-stack-kind">Platform</span>
+        </div>
+      </button>
+      <button class="pw-stack-card sa-tile" data-kind="python" type="button">
+        <div class="pw-stack-icon">
+          <img src="{{ appStackIconURL("python") }}" alt="Python" loading="lazy" decoding="async" />
+        </div>
+        <div class="pw-stack-info">
+          <span class="pw-stack-title">Python</span>
+          <span class="pw-stack-kind">Platform</span>
+        </div>
+      </button>
+      <button class="pw-stack-card sa-tile" data-kind="node" type="button">
+        <div class="pw-stack-icon">
+          <img src="{{ appStackIconURL("node") }}" alt="Node.js" loading="lazy" decoding="async" />
+        </div>
+        <div class="pw-stack-info">
+          <span class="pw-stack-title">Node.js</span>
+          <span class="pw-stack-kind">Platform</span>
+        </div>
+      </button>
+      <button class="pw-stack-card sa-tile" data-kind="binary" type="button">
+        <div class="pw-stack-icon">
+          <img src="{{ appStackIconURL("binary") }}" alt="Binary" loading="lazy" decoding="async" />
+        </div>
+        <div class="pw-stack-info">
+          <span class="pw-stack-title">Binary</span>
+          <span class="pw-stack-kind">Platform</span>
+        </div>
+      </button>
+    </div>
+    <p id="sa-tiles-error" class="pw-error pw-error-block" aria-live="polite"></p>
+  </div>
+
+  <div id="sa-step-inputs" class="pw-stage wizard-stage">
+    <div class="pw-section">
+      <div class="pw-section-header">
+        <div class="pw-step-number">2</div>
+        <div>
+          <h3 class="pw-section-title">Platform Configuration</h3>
+          <p class="pw-section-copy">Set your domain and deployment specifics.</p>
+        </div>
+      </div>
+
+      <div class="pw-config-grid">
+        <div class="pw-config-panel">
+          <h4 class="pw-panel-title">Basics</h4>
+          <div class="form-grid">
+            <label class="pw-field">
+              <span class="pw-label">Domain <span class="pw-required">*</span></span>
+              <input class="field" name="application_domain" id="sa-domain" placeholder="example.com" required>
+              <span id="sa-domain-error" class="pw-error" aria-live="polite"></span>
+            </label>
+            <label class="pw-field">
+              <span class="pw-label">Name (optional)</span>
+              <input class="field" name="name" placeholder="auto-derived from domain">
+              <span id="sa-name-error" class="pw-error" aria-live="polite"></span>
+            </label>
+            <label class="pw-field pw-field-span-2">
+              <span class="pw-label">Root Path <span class="pw-required">*</span></span>
+              <input class="field sa-workdir" id="sa-root-path" name="root_path" placeholder="{{ DefaultSiteRoot }}/example.com" required>
+              <span id="sa-root-path-error" class="pw-error" aria-live="polite"></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="pw-config-panel">
+          <h4 class="pw-panel-title">Access</h4>
+          <div class="form-grid" style="grid-template-columns: 1fr;">
+            <label class="pw-field">
+              <span class="pw-label">SSH User <span class="pw-required">*</span></span>
+              <input class="field" id="sa-site-username" name="site_username" placeholder="siteuser" required>
+              <span id="sa-site-username-error" class="pw-error" aria-live="polite"></span>
+            </label>
+            <label class="pw-field">
+              <span class="pw-label">SSH Password <span class="pw-required">*</span></span>
+              <div class="pw-pass-row">
+                <input id="sa-pass" class="field" type="text" name="site_password" autocomplete="new-password" placeholder="Enter password" required>
+                <button type="button" class="btn pw-pass-generate" onclick="document.getElementById('sa-pass').value=saGenPw()"><i data-lucide="refresh-cw"></i><span>Generate</span></button>
+              </div>
+              <span id="sa-pass-error" class="pw-error" aria-live="polite"></span>
+            </label>
+          </div>
+        </div>
+        
+        <div class="pw-config-panel pw-runtime-panel pw-field-span-2">
+          <div class="pw-runtime-head">
+            <h4>Runtime Settings</h4>
+            <p>Parameters specific to the selected engine.</p>
+          </div>
+
+          <div id="sa-static" class="wizard-stage pw-runtime-note">
+            Static platforms do not require runtime settings. You can create now and configure files directly.
+          </div>
+
+	          <div id="sa-php" class="wizard-stage form-grid">
+	            <label class="pw-field">
+	              <span class="pw-label">PHP Version <span class="pw-required">*</span></span>
+	              <select class="field" id="sa-php-version" name="php_version" required>
+	                {{ range i, v := PHPVersions }}
+	                <option value="{{ v }}" {{ if i == 0 }}selected{{ end }}>{{ v }}</option>
+	                {{ end }}
+	              </select>
+	              <span id="sa-php-version-error" class="pw-error" aria-live="polite"></span>
+	            </label>
+	          </div>
+
+	          <div id="sa-go" class="wizard-stage form-grid">
+	            <label class="pw-field">
+	              <span class="pw-label">Go Version <span class="pw-required">*</span></span>
+	              <select class="field" id="sa-go-version" name="runtime_version" required>
+	                {{ range i, v := GoVersions }}
+	                <option value="{{ v }}" {{ if i == 0 }}selected{{ end }}>{{ v }}</option>
+	                {{ end }}
+	              </select>
+	              <span id="sa-go-version-error" class="pw-error" aria-live="polite"></span>
+	            </label>
+            <label class="pw-field">
+              <span class="pw-label">Proxy Port <span class="pw-required">*</span></span>
+              <input class="field" id="sa-go-port" name="port" value="8080" inputmode="numeric" required>
+              <span id="sa-go-port-error" class="pw-error" aria-live="polite"></span>
+            </label>
+          </div>
+
+	          <div id="sa-python" class="wizard-stage form-grid">
+	            <label class="pw-field">
+	              <span class="pw-label">Python Version <span class="pw-required">*</span></span>
+	              <select class="field" id="sa-python-version" name="runtime_version" required>
+	                {{ range i, v := PythonVersions }}
+	                <option value="{{ v }}" {{ if i == 0 }}selected{{ end }}>{{ v }}</option>
+	                {{ end }}
+	              </select>
+	              <span id="sa-python-version-error" class="pw-error" aria-live="polite"></span>
+	            </label>
+            <label class="pw-field">
+              <span class="pw-label">Proxy Port <span class="pw-required">*</span></span>
+              <input class="field" id="sa-python-port" name="port" value="8000" inputmode="numeric" required>
+              <span id="sa-python-port-error" class="pw-error" aria-live="polite"></span>
+            </label>
+          </div>
+
+	          <div id="sa-node" class="wizard-stage form-grid">
+	            <label class="pw-field">
+	              <span class="pw-label">Node.js Version <span class="pw-required">*</span></span>
+	              <select class="field" id="sa-node-version" name="runtime_version" required>
+	                {{ range i, v := NodeVersions }}
+	                <option value="{{ v }}" {{ if i == 0 }}selected{{ end }}>{{ v }}</option>
+	                {{ end }}
+	              </select>
+	              <span id="sa-node-version-error" class="pw-error" aria-live="polite"></span>
+	            </label>
+            <label class="pw-field">
+              <span class="pw-label">Proxy Port <span class="pw-required">*</span></span>
+              <input class="field" id="sa-node-port" name="port" value="3000" inputmode="numeric" required>
+              <span id="sa-node-port-error" class="pw-error" aria-live="polite"></span>
+            </label>
+          </div>
+
+          <div id="sa-binary" class="wizard-stage form-grid">
+            <label class="pw-field">
+              <span class="pw-label">Port <span class="pw-required">*</span></span>
+              <input class="field" id="sa-binary-port" name="port" value="3000" inputmode="numeric" required>
+              <span id="sa-binary-port-error" class="pw-error" aria-live="polite"></span>
+            </label>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="pw-actions">
+      <button class="btn btn-primary pw-submit-btn" type="submit"><i data-lucide="rocket"></i><span>Deploy Platform</span></button>
+      <button class="btn btn-ghost" type="button" onclick="saReset()">Reset Flow</button>
+    </div>
+  </div>
+</form>
+
+<script>
+var saAllowRelativeRootPath = {{ if IsDryRun }}true{{ else }}false{{ end }};
+function saGenPw(){var c="ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%",o="";for(var i=0;i<18;i++)o+=c[Math.floor(Math.random()*c.length)];return o}
+function saCategoryByKind(kind){
+  if(kind==='static' || kind==='php') return 'site';
+  if(kind==='go' || kind==='python' || kind==='node' || kind==='binary') return 'app';
+  return '';
+}
+function saSetFieldError(id,msg){
+  var $field=$('#'+id),$err=$('#'+id+'-error');
+  if(!$field.length)return;
+  if(msg){
+    $field.addClass('pw-input-error').attr('aria-invalid','true');
+  }else{
+    $field.removeClass('pw-input-error').removeAttr('aria-invalid');
+  }
+  if($err.length)$err.text(msg||'');
+}
+function saSetGroupError(id,msg){
+  var $group=$('#'+id),$err=$('#'+id+'-error');
+  if(!$group.length)return;
+  if(msg){$group.addClass('pw-group-error');}else{$group.removeClass('pw-group-error');}
+  if($err.length)$err.text(msg||'');
+}
+function saClearAllErrors(){
+  $('.pw-input-error').removeClass('pw-input-error').removeAttr('aria-invalid');
+  $('.pw-group-error').removeClass('pw-group-error');
+  $('.pw-error').text('');
+}
+function saValidDomain(v){
+  return /^(?:\*\.)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(v);
+}
+function saValidUsername(v){
+  return /^[a-z_][a-z0-9_-]{2,31}$/.test(v);
+}
+function saValidPort(v){
+  var n=Number($.trim(v));
+  return Number.isInteger(n)&&n>=1&&n<=65535;
+}
+function saValidRootPath(v){
+  if(v==='')return false;
+  if(v.indexOf('\x00')!==-1)return false;
+  if(v==='/'||v==='.'||v==='./')return false;
+  if(saAllowRelativeRootPath)return true;
+  return v.charAt(0)==='/';
+}
+function saValidateRootPathField(){
+  var rootPath=$.trim($('#sa-root-path').val());
+  if(!rootPath){
+    saSetFieldError('sa-root-path','Root path is required.');
+    return false;
+  }
+  if(!saValidRootPath(rootPath)){
+    if(saAllowRelativeRootPath){
+      saSetFieldError('sa-root-path','Root path must be a valid path (for example: ./storage/sites/site.com).');
+    }else{
+      saSetFieldError('sa-root-path','Root path must be an absolute path (for example: /var/www/site).');
+    }
+    return false;
+  }
+  saSetFieldError('sa-root-path','');
+  return true;
+}
+function saValidateForm(){
+  saClearAllErrors();
+  var ok=true,firstInvalid=null;
+  function invalidateField(id,msg){
+    saSetFieldError(id,msg);
+    if(!firstInvalid&&$('#'+id).length)firstInvalid=$('#'+id);
+    ok=false;
+  }
+  function invalidateGroup(id,msg){
+    saSetGroupError(id,msg);
+    if(!firstInvalid&&id==='sa-tiles')firstInvalid=$('.sa-tile').first();
+    ok=false;
+  }
+
+  var kind=$.trim($('#sa-kind').val());
+  if(!kind)invalidateGroup('sa-tiles','Select a runtime stack to continue.');
+
+  var domain=$.trim($('#sa-domain').val()).toLowerCase();
+  if(!domain){
+    invalidateField('sa-domain','Domain is required.');
+  }else if(!saValidDomain(domain)){
+    invalidateField('sa-domain','Enter a valid domain (example.com).');
+  }
+
+  if(!saValidateRootPathField())invalidateField('sa-root-path',$('#sa-root-path-error').text()||'Root path is required.');
+
+  var sshUser=$.trim($('#sa-site-username').val());
+  var sshPass=$.trim($('#sa-pass').val());
+  if(!sshUser){
+    invalidateField('sa-site-username','SSH user is required.');
+  }else if(!saValidUsername(sshUser)){
+    invalidateField('sa-site-username','SSH user must start with a letter/underscore and be 3-32 chars.');
+  }
+  if(!sshPass){
+    invalidateField('sa-pass','SSH password is required.');
+  }
+
+  if(kind==='php'){
+    if(!$.trim($('#sa-php-version').val()))invalidateField('sa-php-version','PHP version is required.');
+  }
+  if(kind==='go'){
+    if(!$.trim($('#sa-go-version').val()))invalidateField('sa-go-version','Go version is required.');
+    if(!$.trim($('#sa-go-port').val()))invalidateField('sa-go-port','Port is required.');
+    else if(!saValidPort($('#sa-go-port').val()))invalidateField('sa-go-port','Port must be between 1 and 65535.');
+  }
+  if(kind==='python'){
+    if(!$.trim($('#sa-python-version').val()))invalidateField('sa-python-version','Python version is required.');
+    if(!$.trim($('#sa-python-port').val()))invalidateField('sa-python-port','Port is required.');
+    else if(!saValidPort($('#sa-python-port').val()))invalidateField('sa-python-port','Port must be between 1 and 65535.');
+  }
+  if(kind==='node'){
+    if(!$.trim($('#sa-node-version').val()))invalidateField('sa-node-version','Node.js version is required.');
+    if(!$.trim($('#sa-node-port').val()))invalidateField('sa-node-port','Port is required.');
+    else if(!saValidPort($('#sa-node-port').val()))invalidateField('sa-node-port','Port must be between 1 and 65535.');
+  }
+  if(kind==='binary'){
+    if(!$.trim($('#sa-binary-port').val()))invalidateField('sa-binary-port','Port is required.');
+    else if(!saValidPort($('#sa-binary-port').val()))invalidateField('sa-binary-port','Port must be between 1 and 65535.');
+  }
+
+  if(!ok&&firstInvalid&&firstInvalid.length){
+    firstInvalid.trigger('focus');
+    firstInvalid.get(0).scrollIntoView({behavior:'smooth',block:'center'});
+  }
+  return ok;
+}
+function saReset(){
+  $('#sa-kind').val('');
+  $('#sa-category').val('');
+  $('#sa-step-inputs').removeClass('is-visible');
+  hideAllPanels();
+  $('.sa-tile').removeClass('is-active');
+  saClearAllErrors();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+function hideAllPanels(){
+  $.each(['sa-static','sa-php','sa-go','sa-python','sa-node','sa-binary'],function(_,id){
+    $('#'+id).removeClass('is-visible');
+  });
+}
+  $(function(){
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+  var siteRoot = '{{ DefaultSiteRoot }}';
+  var panels=['sa-static','sa-php','sa-go','sa-python','sa-node','sa-binary'];
+  $.each(panels,function(_,id){
+    $('#'+id).find('input,select').each(function(){ $(this).data('field-name',$(this).attr('name')); });
+  });
+  hideAllPanels();
+  $.each(panels,function(_,id){
+    $('#'+id).find('input,select').prop('disabled',true).removeAttr('name');
+  });
+
+  $('#sa-domain').on('input change', function(){
+    var domain = $.trim($(this).val()).replace(/^\*\./, 'wildcard-');
+    if (!domain) return;
+    var path = siteRoot + '/' + domain;
+    $('.sa-workdir').each(function(){
+      if (!$(this).data('user-edited')) $(this).val(path);
+    });
+  });
+  $('.sa-workdir').on('input', function(){ $(this).data('user-edited', true); });
+  $('#sa-form').on('input change', '.field, select.field', function(){
+    var id=$(this).attr('id');
+    if(!id)return;
+    if(id==='sa-root-path'){
+      saValidateRootPathField();
+      return;
+    }
+    saSetFieldError(id,'');
+  });
+  $('#sa-form').on('submit', function(e){
+    if(!saValidateForm()){
+      e.preventDefault();
+    }
+  });
+
+  $('.sa-tile').on('click',function(){
+    var kind=$(this).data('kind');
+    $('#sa-category').val(saCategoryByKind(kind));
+    $('#sa-kind').val(kind);
+    saSetGroupError('sa-tiles','');
+    $('.sa-tile').removeClass('is-active');
+    $(this).addClass('is-active');
+    
+    // Add small delay to display the second step to allow fade-in animation to feel natural
+    setTimeout(function() {
+      $('#sa-step-inputs').addClass('is-visible');
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+    }, 50);
+    
+    hideAllPanels();
+    $.each(panels,function(_,id){
+      $('#'+id).find('input,select').prop('disabled',true).removeAttr('name');
+    });
+    var map={static:'sa-static',php:'sa-php',go:'sa-go',python:'sa-python',node:'sa-node',binary:'sa-binary'};
+    var target=map[kind];
+    if(target){
+      var $el=$('#'+target);
+      $el.addClass('is-visible');
+      $el.find('input,select').each(function(){
+        $(this).prop('disabled',false);
+        var n=$(this).data('field-name');
+        if(n)$(this).attr('name',n);
+      });
+    }
+    $('#sa-domain').trigger('change');
+  });
+});
+</script>

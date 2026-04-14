@@ -1,0 +1,40 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+
+# Go build / test artifacts
+*.test
+*.out
+*.coverprofile
+coverage.out
+cover.out
+bin/
+dist/
+deploycp
+
+# Runtime app data (generated locally)
+tmp/
+storage/cache/
+storage/db/*.sqlite
+storage/db/*.db
+storage/logs/
+storage/sites/
+storage/generated/
+storage/dryrun/
+storage/ssl/
+readme/
+
+# Keep placeholder files when present
+!storage/**/.gitkeep
+!tmp/**/.gitkeep
+
