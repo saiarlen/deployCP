@@ -57,6 +57,10 @@ type SettingsHandler struct {
 	websiteService     *services.WebsiteService
 	appService         *services.AppService
 	audit              *services.AuditService
+	firewallService    *services.FirewallService
+	runtimeService     *services.RuntimeService
+	ftpService         *services.FTPService
+	updateService      *services.UpdateService
 }
 
 func NewSettingsHandler(
@@ -71,6 +75,10 @@ func NewSettingsHandler(
 	websiteService *services.WebsiteService,
 	appService *services.AppService,
 	audit *services.AuditService,
+	firewallService *services.FirewallService,
+	runtimeService *services.RuntimeService,
+	ftpService *services.FTPService,
+	updateService *services.UpdateService,
 ) *SettingsHandler {
 	return &SettingsHandler{
 		base:               &BaseHandler{Config: cfg, Sessions: sessions},
@@ -83,6 +91,10 @@ func NewSettingsHandler(
 		websiteService:     websiteService,
 		appService:         appService,
 		audit:              audit,
+		firewallService:    firewallService,
+		runtimeService:     runtimeService,
+		ftpService:         ftpService,
+		updateService:      updateService,
 	}
 }
 
@@ -194,6 +206,11 @@ func (h *SettingsHandler) Index(c *fiber.Ctx) error {
 		activeTab = "general"
 	}
 
+	updateView := services.UpdateView{}
+	if h.updateService != nil {
+		updateView = h.updateService.FooterView()
+	}
+
 	return h.base.Render(c, "settings_index", fiber.Map{
 		"Title":                    "Settings",
 		"Items":                    items,
@@ -225,6 +242,7 @@ func (h *SettingsHandler) Index(c *fiber.Ctx) error {
 		"PythonVersions":           h.service.RuntimeVersions("python"),
 		"PHPVersions":              h.service.RuntimeVersions("php"),
 		"ActiveTab":                activeTab,
+		"UpdateView":               updateView,
 	})
 }
 
@@ -268,6 +286,12 @@ func (h *SettingsHandler) UpdateGeneral(c *fiber.Ctx) error {
 	if err := h.service.Update("proftpd_masquerade_address", proftpdMasqueradeAddress, actor, ip); err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
 		return c.Redirect("/settings?tab=general")
+	}
+	if h.ftpService != nil {
+		if err := h.ftpService.ReconcileConfig(c.Context(), actor, ip); err != nil {
+			h.base.Sessions.SetFlash(c, err.Error())
+			return c.Redirect("/settings?tab=general")
+		}
 	}
 	if panelTimezone != "" {
 		normalizedTZ, err := h.service.NormalizeTimezone(panelTimezone)
@@ -409,6 +433,12 @@ func (h *SettingsHandler) RuntimeVersionAdd(c *fiber.Ctx) error {
 		h.base.Sessions.SetFlash(c, err.Error())
 		return c.Redirect("/settings?tab=services")
 	}
+	if h.runtimeService != nil {
+		if err := h.runtimeService.InstallVersion(c.Context(), runtime, version, currentUserID(c), c.IP()); err != nil {
+			h.base.Sessions.SetFlash(c, err.Error())
+			return c.Redirect("/settings?tab=services")
+		}
+	}
 	h.base.Sessions.SetFlash(c, "version added")
 	return c.Redirect("/settings?tab=services")
 }
@@ -442,6 +472,12 @@ func (h *SettingsHandler) RuntimeVersionRemove(c *fiber.Ctx) error {
 		h.base.Sessions.SetFlash(c, err.Error())
 		return c.Redirect("/settings?tab=services")
 	}
+	if h.runtimeService != nil {
+		if err := h.runtimeService.RemoveVersion(c.Context(), runtime, version, currentUserID(c), c.IP()); err != nil {
+			h.base.Sessions.SetFlash(c, err.Error())
+			return c.Redirect("/settings?tab=services")
+		}
+	}
 	h.base.Sessions.SetFlash(c, "version removed")
 	return c.Redirect("/settings?tab=services")
 }
@@ -451,6 +487,12 @@ func (h *SettingsHandler) FirewallCreate(c *fiber.Ctx) error {
 	if err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
 		return c.Redirect("/settings?tab=firewall")
+	}
+	if h.firewallService != nil {
+		if err := h.firewallService.ApplyRule(c.Context(), rule, currentUserID(c), c.IP()); err != nil {
+			h.base.Sessions.SetFlash(c, err.Error())
+			return c.Redirect("/settings?tab=firewall")
+		}
 	}
 	if err := h.firewalls.Create(rule); err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
@@ -477,6 +519,16 @@ func (h *SettingsHandler) FirewallUpdate(c *fiber.Ctx) error {
 		h.base.Sessions.SetFlash(c, err.Error())
 		return c.Redirect("/settings?tab=firewall")
 	}
+	if h.firewallService != nil {
+		if err := h.firewallService.DeleteRule(c.Context(), existing, currentUserID(c), c.IP()); err != nil {
+			h.base.Sessions.SetFlash(c, err.Error())
+			return c.Redirect("/settings?tab=firewall")
+		}
+		if err := h.firewallService.ApplyRule(c.Context(), rule, currentUserID(c), c.IP()); err != nil {
+			h.base.Sessions.SetFlash(c, err.Error())
+			return c.Redirect("/settings?tab=firewall")
+		}
+	}
 	existing.Name = rule.Name
 	existing.Protocol = rule.Protocol
 	existing.Port = rule.Port
@@ -498,6 +550,13 @@ func (h *SettingsHandler) FirewallDelete(c *fiber.Ctx) error {
 	if err != nil {
 		h.base.Sessions.SetFlash(c, "invalid firewall rule id")
 		return c.Redirect("/settings?tab=firewall")
+	}
+	existing, _ := h.firewalls.Find(id)
+	if h.firewallService != nil && existing != nil {
+		if err := h.firewallService.DeleteRule(c.Context(), existing, currentUserID(c), c.IP()); err != nil {
+			h.base.Sessions.SetFlash(c, err.Error())
+			return c.Redirect("/settings?tab=firewall")
+		}
 	}
 	if err := h.firewalls.Delete(id); err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())

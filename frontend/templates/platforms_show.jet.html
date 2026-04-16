@@ -301,10 +301,12 @@
             <td class="py-2.5 pr-4 font-mono text-xs ">{{ db.Database }}</td>
             <td class="py-2.5 pr-4 ">{{ db.Username }}</td>
             <td class="py-2.5">
-              <form action="/databases/connections/{{ db.ID }}/delete" method="post" style="display:inline" data-confirm-message="Delete this connection?">
-                <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
-                <button class="text-xs hover:underline" type="submit">Delete</button>
-              </form>
+              <div class="db-actions">
+                <form action="/apps/{{ Status.App.ID }}/manage/database/{{ db.ID }}/delete" method="post" data-confirm-message="Delete this connection?">
+                  <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+                  <button class="btn btn-danger" type="submit">Delete</button>
+                </form>
+              </div>
             </td>
           </tr>
           {{ end }}
@@ -316,7 +318,7 @@
     {{ end }}
     <details class="pt-3 border-t border-[var(--border)]">
       <summary class="cursor-pointer text-sm font-semibold hover:underline">Add MariaDB Database</summary>
-      <form class="mt-4 space-y-3" action="/apps/{{ Status.App.ID }}/manage/database" method="post">
+      <form class="mt-4 space-y-3" action="/apps/{{ Status.App.ID }}/manage/database" method="post" data-db-validate novalidate>
         <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
         <input type="hidden" name="engine" value="mariadb">
         <div class="form-grid">
@@ -324,10 +326,10 @@
             <input class="field mt-2" name="label" value="{{ Status.App.Name }}-db">
           </label>
           <label class="block text-sm font-medium">Host
-            <input class="field mt-2" name="host" value="127.0.0.1">
+            <input class="field mt-2" name="host" value="127.0.0.1" readonly>
           </label>
           <label class="block text-sm font-medium">Port
-            <input class="field mt-2" name="port" value="3306">
+            <input class="field mt-2" name="port" value="3306" readonly>
           </label>
           <label class="block text-sm font-medium">Database
             <input class="field mt-2" name="database" placeholder="app_db" required>
@@ -335,15 +337,16 @@
           <label class="block text-sm font-medium">Username
             <input class="field mt-2" name="username" placeholder="app_user" required>
           </label>
-          <label class="block text-sm font-medium">Password
+          <label class="block text-sm font-medium md:col-span-2">Password
             <div class="flex gap-2 mt-2">
               <input class="field flex-1" type="text" name="password" autocomplete="new-password" required>
               <button type="button" class="btn" onclick="this.previousElementSibling.value=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>String.fromCharCode(33+b%93)).join('')">Generate</button>
             </div>
           </label>
-        </div>
-        <div class="flex justify-end">
-          <button class="btn btn-primary" type="submit">Add Database</button>
+          <div class="md:col-span-2 flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-[var(--border)]">
+            <span class="text-xs opacity-70">Managed locally on `127.0.0.1:3306`. Username must be unique.</span>
+            <button class="btn btn-primary" type="submit">Add MariaDB Database</button>
+          </div>
         </div>
       </form>
     </details>
@@ -374,12 +377,14 @@
             <td class="py-2.5 pr-4 font-medium">{{ db.Label }}</td>
             <td class="py-2.5 pr-4 font-mono text-xs ">{{ db.Database }}</td>
             <td class="py-2.5 pr-4 ">{{ db.Username }}</td>
-            <td class="py-2.5 flex gap-2">
-              <a class="text-xs hover:underline" href="/databases/connections/{{ db.ID }}/postgres-gui" target="_blank">Open pgweb</a>
-              <form action="/databases/connections/{{ db.ID }}/delete" method="post" style="display:inline" data-confirm-message="Delete this connection?">
-                <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
-                <button class="text-xs hover:underline" type="submit">Delete</button>
-              </form>
+            <td class="py-2.5">
+              <div class="db-actions">
+                <a class="btn btn-ghost" href="/apps/{{ Status.App.ID }}/manage/database/{{ db.ID }}/postgres-gui" target="_blank">Open pgweb</a>
+                <form action="/apps/{{ Status.App.ID }}/manage/database/{{ db.ID }}/delete" method="post" data-confirm-message="Delete this connection?">
+                  <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+                  <button class="btn btn-danger" type="submit">Delete</button>
+                </form>
+              </div>
             </td>
           </tr>
           {{ end }}
@@ -391,7 +396,7 @@
     {{ end }}
     <details class="pt-3 border-t border-[var(--border)]">
       <summary class="cursor-pointer text-sm font-semibold hover:underline">Add PostgreSQL Database</summary>
-      <form class="mt-4 space-y-3" action="/apps/{{ Status.App.ID }}/manage/database" method="post">
+      <form class="mt-4 space-y-3" action="/apps/{{ Status.App.ID }}/manage/database" method="post" data-db-validate novalidate>
         <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
         <input type="hidden" name="engine" value="postgres">
         <div class="form-grid">
@@ -399,10 +404,10 @@
             <input class="field mt-2" name="label" value="{{ Status.App.Name }}-pg">
           </label>
           <label class="block text-sm font-medium">Host
-            <input class="field mt-2" name="host" value="127.0.0.1">
+            <input class="field mt-2" name="host" value="127.0.0.1" readonly>
           </label>
           <label class="block text-sm font-medium">Port
-            <input class="field mt-2" name="port" value="5432">
+            <input class="field mt-2" name="port" value="5432" readonly>
           </label>
           <label class="block text-sm font-medium">Database
             <input class="field mt-2" name="database" placeholder="app_db" required>
@@ -410,15 +415,16 @@
           <label class="block text-sm font-medium">Username
             <input class="field mt-2" name="username" placeholder="app_user" required>
           </label>
-          <label class="block text-sm font-medium">Password
+          <label class="block text-sm font-medium md:col-span-2">Password
             <div class="flex gap-2 mt-2">
               <input class="field flex-1" type="text" name="password" autocomplete="new-password" required>
               <button type="button" class="btn" onclick="this.previousElementSibling.value=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>String.fromCharCode(33+b%93)).join('')">Generate</button>
             </div>
           </label>
-        </div>
-        <div class="flex justify-end">
-          <button class="btn btn-primary" type="submit">Add Database</button>
+          <div class="md:col-span-2 flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-[var(--border)]">
+            <span class="text-xs opacity-70">Managed locally on `127.0.0.1:5432`. Username must be unique.</span>
+            <button class="btn btn-primary" type="submit">Add PostgreSQL Database</button>
+          </div>
         </div>
       </form>
     </details>
@@ -449,12 +455,14 @@
             <td class="py-2.5 pr-4 font-medium">{{ r.Label }}</td>
             <td class="py-2.5 pr-4 font-mono text-xs ">{{ r.Host }}:{{ r.Port }}</td>
             <td class="py-2.5 pr-4 ">{{ r.DB }}</td>
-            <td class="py-2.5 flex gap-2">
-              <a class="text-xs hover:underline" href="/databases/redis/{{ r.ID }}/info">Info</a>
-              <form action="/databases/redis/{{ r.ID }}/delete" method="post" style="display:inline" data-confirm-message="Delete this Redis connection?">
-                <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
-                <button class="text-xs hover:underline" type="submit">Delete</button>
-              </form>
+            <td class="py-2.5">
+              <div class="db-actions">
+                <a class="btn btn-ghost" href="/apps/{{ Status.App.ID }}/manage/redis/{{ r.ID }}/info">Info</a>
+                <form action="/apps/{{ Status.App.ID }}/manage/redis/{{ r.ID }}/delete" method="post" data-confirm-message="Delete this Redis connection?">
+                  <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+                  <button class="btn btn-danger" type="submit">Delete</button>
+                </form>
+              </div>
             </td>
           </tr>
           {{ end }}
@@ -466,7 +474,7 @@
     {{ end }}
     <details class="pt-3 border-t border-[var(--border)]">
       <summary class="cursor-pointer text-sm font-semibold hover:underline">Add Redis Connection</summary>
-      <form class="mt-4 space-y-3" action="/apps/{{ Status.App.ID }}/manage/redis" method="post">
+      <form class="mt-4 space-y-3" action="/apps/{{ Status.App.ID }}/manage/redis" method="post" data-db-validate novalidate>
         <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
         <div class="form-grid">
           <label class="block text-sm font-medium">Label
@@ -480,6 +488,7 @@
           </label>
           <label class="block text-sm font-medium">DB Number
             <input class="field mt-2" type="number" name="db" value="0" min="0">
+            <span class="text-xs opacity-70 mt-1 block">If this number is already used on the same Redis host, DeployCP will pick the next free one.</span>
           </label>
           <label class="block text-sm font-medium">Password
             <div class="flex gap-2 mt-2">
@@ -1322,10 +1331,12 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
             <td class="py-2.5 pr-4 font-mono text-xs ">{{ db.Database }}</td>
             <td class="py-2.5 pr-4 ">{{ db.Username }}</td>
             <td class="py-2.5">
-              <form action="/databases/connections/{{ db.ID }}/delete" method="post" style="display:inline" data-confirm-message="Delete this connection?">
-                <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
-                <button class="text-xs hover:underline" type="submit">Delete</button>
-              </form>
+              <div class="db-actions">
+                <form action="/websites/{{ Item.ID }}/manage/database/{{ db.ID }}/delete" method="post" data-confirm-message="Delete this connection?">
+                  <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+                  <button class="btn btn-danger" type="submit">Delete</button>
+                </form>
+              </div>
             </td>
           </tr>
           {{ end }}
@@ -1337,7 +1348,7 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
     {{ end }}
     <details class="pt-3 border-t border-[var(--border)]">
       <summary class="cursor-pointer text-sm font-semibold hover:underline">Add MariaDB Database</summary>
-      <form class="mt-4 space-y-3" action="/websites/{{ Item.ID }}/manage/database" method="post">
+      <form class="mt-4 space-y-3" action="/websites/{{ Item.ID }}/manage/database" method="post" data-db-validate novalidate>
         <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
         <input type="hidden" name="engine" value="mariadb">
         <div class="form-grid">
@@ -1345,10 +1356,10 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
             <input class="field mt-2" name="label" value="{{ Item.Name }}-db">
           </label>
           <label class="block text-sm font-medium">Host
-            <input class="field mt-2" name="host" value="127.0.0.1">
+            <input class="field mt-2" name="host" value="127.0.0.1" readonly>
           </label>
           <label class="block text-sm font-medium">Port
-            <input class="field mt-2" name="port" value="3306">
+            <input class="field mt-2" name="port" value="3306" readonly>
           </label>
           <label class="block text-sm font-medium">Database
             <input class="field mt-2" name="database" placeholder="app_db" required>
@@ -1356,15 +1367,16 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
           <label class="block text-sm font-medium">Username
             <input class="field mt-2" name="username" placeholder="app_user" required>
           </label>
-          <label class="block text-sm font-medium">Password
+          <label class="block text-sm font-medium md:col-span-2">Password
             <div class="flex gap-2 mt-2">
               <input class="field flex-1" type="text" name="password" id="mariadb-pw" autocomplete="new-password" required>
               <button type="button" class="btn" onclick="this.previousElementSibling.value=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>String.fromCharCode(33+b%93)).join('')">Generate</button>
             </div>
           </label>
-        </div>
-        <div class="flex justify-end">
-          <button class="btn btn-primary" type="submit">Add Database</button>
+          <div class="md:col-span-2 flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-[var(--border)]">
+            <span class="text-xs opacity-70">Managed locally on `127.0.0.1:3306`. Username must be unique.</span>
+            <button class="btn btn-primary" type="submit">Add MariaDB Database</button>
+          </div>
         </div>
       </form>
     </details>
@@ -1395,12 +1407,14 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
             <td class="py-2.5 pr-4 font-medium">{{ db.Label }}</td>
             <td class="py-2.5 pr-4 font-mono text-xs ">{{ db.Database }}</td>
             <td class="py-2.5 pr-4 ">{{ db.Username }}</td>
-            <td class="py-2.5 flex gap-2">
-              <a class="text-xs hover:underline" href="/databases/connections/{{ db.ID }}/postgres-gui" target="_blank">Open pgweb</a>
-              <form action="/databases/connections/{{ db.ID }}/delete" method="post" style="display:inline" data-confirm-message="Delete this connection?">
-                <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
-                <button class="text-xs hover:underline" type="submit">Delete</button>
-              </form>
+            <td class="py-2.5">
+              <div class="db-actions">
+                <a class="btn btn-ghost" href="/websites/{{ Item.ID }}/manage/database/{{ db.ID }}/postgres-gui" target="_blank">Open pgweb</a>
+                <form action="/websites/{{ Item.ID }}/manage/database/{{ db.ID }}/delete" method="post" data-confirm-message="Delete this connection?">
+                  <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+                  <button class="btn btn-danger" type="submit">Delete</button>
+                </form>
+              </div>
             </td>
           </tr>
           {{ end }}
@@ -1412,7 +1426,7 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
     {{ end }}
     <details class="pt-3 border-t border-[var(--border)]">
       <summary class="cursor-pointer text-sm font-semibold hover:underline">Add PostgreSQL Database</summary>
-      <form class="mt-4 space-y-3" action="/websites/{{ Item.ID }}/manage/database" method="post">
+      <form class="mt-4 space-y-3" action="/websites/{{ Item.ID }}/manage/database" method="post" data-db-validate novalidate>
         <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
         <input type="hidden" name="engine" value="postgres">
         <div class="form-grid">
@@ -1420,10 +1434,10 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
             <input class="field mt-2" name="label" value="{{ Item.Name }}-pg">
           </label>
           <label class="block text-sm font-medium">Host
-            <input class="field mt-2" name="host" value="127.0.0.1">
+            <input class="field mt-2" name="host" value="127.0.0.1" readonly>
           </label>
           <label class="block text-sm font-medium">Port
-            <input class="field mt-2" name="port" value="5432">
+            <input class="field mt-2" name="port" value="5432" readonly>
           </label>
           <label class="block text-sm font-medium">Database
             <input class="field mt-2" name="database" placeholder="app_db" required>
@@ -1431,15 +1445,16 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
           <label class="block text-sm font-medium">Username
             <input class="field mt-2" name="username" placeholder="app_user" required>
           </label>
-          <label class="block text-sm font-medium">Password
+          <label class="block text-sm font-medium md:col-span-2">Password
             <div class="flex gap-2 mt-2">
               <input class="field flex-1" type="text" name="password" autocomplete="new-password" required>
               <button type="button" class="btn" onclick="this.previousElementSibling.value=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>String.fromCharCode(33+b%93)).join('')">Generate</button>
             </div>
           </label>
-        </div>
-        <div class="flex justify-end">
-          <button class="btn btn-primary" type="submit">Add Database</button>
+          <div class="md:col-span-2 flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-[var(--border)]">
+            <span class="text-xs opacity-70">Managed locally on `127.0.0.1:5432`. Username must be unique.</span>
+            <button class="btn btn-primary" type="submit">Add PostgreSQL Database</button>
+          </div>
         </div>
       </form>
     </details>
@@ -1470,12 +1485,14 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
             <td class="py-2.5 pr-4 font-medium">{{ r.Label }}</td>
             <td class="py-2.5 pr-4 font-mono text-xs ">{{ r.Host }}:{{ r.Port }}</td>
             <td class="py-2.5 pr-4 ">{{ r.DB }}</td>
-            <td class="py-2.5 flex gap-2">
-              <a class="text-xs hover:underline" href="/databases/redis/{{ r.ID }}/info">Info</a>
-              <form action="/databases/redis/{{ r.ID }}/delete" method="post" style="display:inline" data-confirm-message="Delete this Redis connection?">
-                <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
-                <button class="text-xs hover:underline" type="submit">Delete</button>
-              </form>
+            <td class="py-2.5">
+              <div class="db-actions">
+                <a class="btn btn-ghost" href="/websites/{{ Item.ID }}/manage/redis/{{ r.ID }}/info">Info</a>
+                <form action="/websites/{{ Item.ID }}/manage/redis/{{ r.ID }}/delete" method="post" data-confirm-message="Delete this Redis connection?">
+                  <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+                  <button class="btn btn-danger" type="submit">Delete</button>
+                </form>
+              </div>
             </td>
           </tr>
           {{ end }}
@@ -1487,7 +1504,7 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
     {{ end }}
     <details class="pt-3 border-t border-[var(--border)]">
       <summary class="cursor-pointer text-sm font-semibold hover:underline">Add Redis Connection</summary>
-      <form class="mt-4 space-y-3" action="/websites/{{ Item.ID }}/manage/redis" method="post">
+      <form class="mt-4 space-y-3" action="/websites/{{ Item.ID }}/manage/redis" method="post" data-db-validate novalidate>
         <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
         <div class="form-grid">
           <label class="block text-sm font-medium">Label
@@ -1501,6 +1518,7 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
           </label>
           <label class="block text-sm font-medium">DB Number
             <input class="field mt-2" type="number" name="db" value="0" min="0">
+            <span class="text-xs opacity-70 mt-1 block">If this number is already used on the same Redis host, DeployCP will pick the next free one.</span>
           </label>
           <label class="block text-sm font-medium">Password
             <div class="flex gap-2 mt-2">
@@ -1593,12 +1611,12 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
             <td class="py-2.5 pr-4"><span class="badge {{ if cert.Status == "active" }}badge-ok{{ else }}badge-warn{{ end }}">{{ cert.Status }}</span></td>
             <td class="py-2.5 flex gap-2">
               {{ if cert.Status == "active" }}
-              <form action="/ssl/{{ cert.ID }}/renew" method="post" style="display:inline">
+              <form action="/websites/{{ Item.ID }}/manage/ssl/{{ cert.ID }}/renew" method="post" style="display:inline">
                 <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
                 <button class="text-xs hover:underline" type="submit">Renew</button>
               </form>
               {{ end }}
-              <form action="/ssl/{{ cert.ID }}/delete" method="post" style="display:inline" data-confirm-message="Delete this certificate?">
+              <form action="/websites/{{ Item.ID }}/manage/ssl/{{ cert.ID }}/delete" method="post" style="display:inline" data-confirm-message="Delete this certificate?">
                 <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
                 <button class="text-xs hover:underline" type="submit">Delete</button>
               </form>
@@ -2554,6 +2572,86 @@ $(function () {
     $('#ca-pm').on('change', toggleCaPm);
     toggleCaRuntime();
   }
+
+  $('[data-db-validate]').each(function () {
+    var $form = $(this);
+
+    function dbFieldLabel($field) {
+      var fallback = ($field.attr('name') || 'This field').replace(/_/g, ' ');
+      var $label = $field.closest('label');
+      if (!$label.length) return fallback;
+      var txt = $.trim($label.clone().children().remove().end().text().replace(/\*/g, ''));
+      return txt || fallback;
+    }
+
+    function dbFieldErrorEl($field) {
+      var $label = $field.closest('label');
+      if ($label.length) {
+        var $err = $label.children('.db-field-error');
+        if (!$err.length) {
+          $err = $('<span class="pw-error db-field-error" aria-live="polite"></span>');
+          $label.append($err);
+        }
+        return $err.first();
+      }
+      var $nextErr = $field.next('.db-field-error');
+      if ($nextErr.length) return $nextErr.first();
+      var $newErr = $('<span class="pw-error db-field-error" aria-live="polite"></span>');
+      $field.after($newErr);
+      return $newErr;
+    }
+
+    function dbSetError($field, msg) {
+      if (msg) {
+        $field.addClass('pw-input-error').attr('aria-invalid', 'true');
+      } else {
+        $field.removeClass('pw-input-error').removeAttr('aria-invalid');
+      }
+      dbFieldErrorEl($field).text(msg || '');
+    }
+
+    function dbValidateField($field) {
+      if (!$field.length || $field.prop('disabled') || $field.prop('readonly')) return true;
+      var type = ($field.attr('type') || '').toLowerCase();
+      if (type === 'hidden' || type === 'checkbox' || type === 'radio') return true;
+
+      var rawVal = $field.val();
+      var label = dbFieldLabel($field);
+      var hasValue = !!String(rawVal || '').trim();
+
+      if ($field.prop('required') && !hasValue) {
+        dbSetError($field, label + ' is required.');
+        return false;
+      }
+
+      dbSetError($field, '');
+      return true;
+    }
+
+    $form.on('submit', function (e) {
+      var firstInvalid = null;
+      var valid = true;
+      $form.find('.pw-input-error').removeClass('pw-input-error').removeAttr('aria-invalid');
+      $form.find('.db-field-error').text('');
+
+      $form.find('input, select, textarea').each(function () {
+        var $field = $(this);
+        if (!dbValidateField($field)) {
+          valid = false;
+          if (!firstInvalid) firstInvalid = $field;
+        }
+      });
+
+      if (!valid) {
+        e.preventDefault();
+        if (firstInvalid) firstInvalid.trigger('focus');
+      }
+    });
+
+    $form.on('input change', 'input, select, textarea', function () {
+      dbValidateField($(this));
+    });
+  });
 });
 if (typeof lucide !== 'undefined') lucide.createIcons();
 </script>

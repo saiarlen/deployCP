@@ -54,10 +54,11 @@ type AppService struct {
 	websites *WebsiteService
 	adapter  platform.Adapter
 	audit    *AuditService
+	runtime  *RuntimeService
 }
 
-func NewAppService(cfg *config.Config, repo *repositories.GoAppRepository, services *repositories.ManagedServiceRepository, websites *WebsiteService, adapter platform.Adapter, audit *AuditService) *AppService {
-	return &AppService{cfg: cfg, repo: repo, services: services, websites: websites, adapter: adapter, audit: audit}
+func NewAppService(cfg *config.Config, repo *repositories.GoAppRepository, services *repositories.ManagedServiceRepository, websites *WebsiteService, adapter platform.Adapter, audit *AuditService, runtime *RuntimeService) *AppService {
+	return &AppService{cfg: cfg, repo: repo, services: services, websites: websites, adapter: adapter, audit: audit, runtime: runtime}
 }
 
 func (s *AppService) List() ([]models.GoApp, error) {
@@ -106,6 +107,9 @@ func (s *AppService) Create(ctx context.Context, in AppInput, actor *uint, ip st
 	if err := s.repo.Create(app, in.Env); err != nil {
 		return nil, err
 	}
+	if s.runtime != nil {
+		_ = s.runtime.ApplyPlatformRuntime(app.WorkingDirectory, app.Runtime, in.Env["RUNTIME_VERSION"], actor, ip)
+	}
 	if err := s.installService(ctx, app, in.Env); err != nil {
 		return nil, err
 	}
@@ -146,6 +150,9 @@ func (s *AppService) Update(ctx context.Context, id uint, in AppInput, actor *ui
 	app.Enabled = in.Enabled
 	if err := s.repo.Update(app, in.Env); err != nil {
 		return err
+	}
+	if s.runtime != nil {
+		_ = s.runtime.ApplyPlatformRuntime(app.WorkingDirectory, app.Runtime, in.Env["RUNTIME_VERSION"], actor, ip)
 	}
 	if err := s.installService(ctx, app, in.Env); err != nil {
 		return err
@@ -294,6 +301,11 @@ func (s *AppService) UpdateRuntimeSettings(ctx context.Context, id uint, process
 	if err := s.repo.Update(app, envMap); err != nil {
 		return err
 	}
+	if s.runtime != nil {
+		if err := s.runtime.ApplyPlatformRuntime(app.WorkingDirectory, app.Runtime, envMap["RUNTIME_VERSION"], actor, ip); err != nil {
+			return err
+		}
+	}
 	if err := s.websites.ApplyAppProxy(ctx, app.WebsiteID, app.Host, app.Port, actor, ip); err != nil {
 		return err
 	}
@@ -324,9 +336,35 @@ func (s *AppService) UpdateRuntimeSettings(ctx context.Context, id uint, process
 	return nil
 }
 
+func (s *AppService) Reconcile(ctx context.Context, id uint, actor *uint, ip string) error {
+	app, err := s.repo.Find(id)
+	if err != nil {
+		return err
+	}
+	envMap := make(map[string]string, len(app.EnvVars))
+	for _, ev := range app.EnvVars {
+		envMap[ev.Key] = ev.Value
+	}
+	if s.runtime != nil {
+		if err := s.runtime.ApplyPlatformRuntime(app.WorkingDirectory, app.Runtime, envMap["RUNTIME_VERSION"], actor, ip); err != nil {
+			return err
+		}
+	}
+	if err := s.websites.ApplyAppProxy(ctx, app.WebsiteID, app.Host, app.Port, actor, ip); err != nil {
+		return err
+	}
+	return s.installService(ctx, app, envMap)
+}
+
 func (s *AppService) installService(ctx context.Context, app *models.GoApp, env map[string]string) error {
 	if !s.cfg.Features.EnableServiceManage {
 		return nil
+	}
+	if s.runtime != nil {
+		env = s.runtime.MergeRuntimeEnv(app.Runtime, env["RUNTIME_VERSION"], env)
+		if resolvedBinary, err := s.runtime.ResolveBinary(app.Runtime, env["RUNTIME_VERSION"], app.BinaryPath); err == nil {
+			app.BinaryPath = resolvedBinary
+		}
 	}
 	def := buildAppServiceDefinition(app, env)
 	unitPath, err := s.adapter.Services().Install(ctx, def)

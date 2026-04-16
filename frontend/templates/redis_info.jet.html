@@ -1,5 +1,5 @@
 <div class="page-top">
-  <a class="btn" href="/databases"><i data-lucide="arrow-left"></i> Back to Databases</a>
+  <a class="btn" href="{{ if BackURL }}{{ BackURL }}{{ else }}/platforms{{ end }}"><i data-lucide="arrow-left"></i> Back</a>
 </div>
 
 <div style="display:grid;gap:var(--space-3);grid-template-columns:repeat(2,minmax(0,1fr));margin-bottom:var(--space-4)" class="sm:grid-cols-4">

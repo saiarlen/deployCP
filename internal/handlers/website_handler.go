@@ -37,6 +37,9 @@ type WebsiteHandler struct {
 	basicAuths      *repositories.BasicAuthRepository
 	ftpUsers        *repositories.FTPUserRepository
 	appService      *services.AppService
+	cronService     *services.CronService
+	ftpService      *services.FTPService
+	varnishService  *services.VarnishService
 }
 
 type websiteFormInput struct {
@@ -64,6 +67,9 @@ func NewWebsiteHandler(
 	basicAuths *repositories.BasicAuthRepository,
 	ftpUsers *repositories.FTPUserRepository,
 	appService *services.AppService,
+	cronService *services.CronService,
+	ftpService *services.FTPService,
+	varnishService *services.VarnishService,
 ) *WebsiteHandler {
 	return &WebsiteHandler{
 		base:            &BaseHandler{Config: cfg, Sessions: sessions},
@@ -83,6 +89,9 @@ func NewWebsiteHandler(
 		basicAuths:      basicAuths,
 		ftpUsers:        ftpUsers,
 		appService:      appService,
+		cronService:     cronService,
+		ftpService:      ftpService,
+		varnishService:  varnishService,
 	}
 }
 
@@ -214,7 +223,6 @@ func (h *WebsiteHandler) ShowByID(c *fiber.Ctx, id uint) error {
 		"RedisItems":           scopedRedis,
 		"SSLItems":             websiteSSLItems(item, sslItems),
 		"AdminerURL":           h.databaseService.AdminerURL(),
-		"PostgresGUIBase":      h.base.Config.Integrations.PostgresGUIURL,
 		"VhostContent":         vhostContent,
 		"CronJobs":             cronJobs,
 		"VarnishCfg":           varnishCfg,
@@ -283,11 +291,15 @@ func (h *WebsiteHandler) ManageCreateDatabase(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(404).SendString("website not found")
 	}
-	port, _ := strconv.Atoi(c.FormValue("port", "3306"))
+	host, port, err := managedDatabaseTarget(strings.TrimSpace(c.FormValue("engine")))
+	if err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect(platformURLWithTab("website", id, "db"))
+	}
 	in := services.DBConnectionInput{
 		Label:       strings.TrimSpace(c.FormValue("label")),
 		Engine:      strings.TrimSpace(c.FormValue("engine")),
-		Host:        strings.TrimSpace(c.FormValue("host")),
+		Host:        host,
 		Port:        port,
 		Database:    strings.TrimSpace(c.FormValue("database")),
 		Username:    strings.TrimSpace(c.FormValue("username")),
@@ -297,9 +309,6 @@ func (h *WebsiteHandler) ManageCreateDatabase(c *fiber.Ctx) error {
 	}
 	if in.Label == "" {
 		in.Label = site.Name + "-db"
-	}
-	if in.Host == "" {
-		in.Host = "127.0.0.1"
 	}
 	if in.Environment == "" {
 		in.Environment = "production"
@@ -318,11 +327,14 @@ func (h *WebsiteHandler) createDatabaseFromScopedForm(c *fiber.Ctx, fallbackLabe
 		return nil
 	}
 	wid := websiteID
-	port, _ := strconv.Atoi(c.FormValue("db_port", "3306"))
+	host, port, err := managedDatabaseTarget(strings.TrimSpace(c.FormValue("db_engine")))
+	if err != nil {
+		return err
+	}
 	in := services.DBConnectionInput{
 		Label:       strings.TrimSpace(c.FormValue("db_label")),
 		Engine:      strings.TrimSpace(c.FormValue("db_engine")),
-		Host:        strings.TrimSpace(c.FormValue("db_host")),
+		Host:        host,
 		Port:        port,
 		Database:    database,
 		Username:    strings.TrimSpace(c.FormValue("db_username")),
@@ -335,9 +347,6 @@ func (h *WebsiteHandler) createDatabaseFromScopedForm(c *fiber.Ctx, fallbackLabe
 	}
 	if in.Engine == "" {
 		in.Engine = "mariadb"
-	}
-	if in.Host == "" {
-		in.Host = "127.0.0.1"
 	}
 	if in.Environment == "" {
 		in.Environment = "production"
@@ -477,11 +486,12 @@ func (h *WebsiteHandler) ManageSSLLetsEncrypt(c *fiber.Ctx) error {
 		return c.Redirect(platformURLWithTab("website", id, "ssl"))
 	}
 	for _, d := range site.Domains {
-		if err := h.sslService.Create(d.Domain, currentUserID(c), c.IP()); err != nil {
+		if err := h.sslService.CreateForWebsite(c.Context(), site, d.Domain, currentUserID(c), c.IP()); err != nil {
 			h.base.Sessions.SetFlash(c, "Let's Encrypt for "+d.Domain+": "+err.Error())
 			return c.Redirect(platformURLWithTab("website", id, "ssl"))
 		}
 	}
+	_ = h.service.RefreshConfig(c.Context(), id)
 	h.base.Sessions.SetFlash(c, "Let's Encrypt certificate requested for all domains")
 	return c.Redirect(platformURLWithTab("website", id, "ssl"))
 }
@@ -509,6 +519,7 @@ func (h *WebsiteHandler) ManageSSLImport(c *fiber.Ctx) error {
 	if err := h.sslService.CreateImport(domain, privateKey, certificate, bundle, currentUserID(c), c.IP()); err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
 	} else {
+		_ = h.service.RefreshConfig(c.Context(), id)
 		h.base.Sessions.SetFlash(c, "Certificate imported for "+domain)
 	}
 	return c.Redirect(platformURLWithTab("website", id, "ssl"))
@@ -533,6 +544,7 @@ func (h *WebsiteHandler) ManageSSLSelfSigned(c *fiber.Ctx) error {
 	if err := h.sslService.CreateSelfSigned(domain, currentUserID(c), c.IP()); err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
 	} else {
+		_ = h.service.RefreshConfig(c.Context(), id)
 		h.base.Sessions.SetFlash(c, "Self-signed certificate created for "+domain)
 	}
 	return c.Redirect(platformURLWithTab("website", id, "ssl"))
@@ -577,6 +589,142 @@ func (h *WebsiteHandler) ManageCreateRedis(c *fiber.Ctx) error {
 	return c.Redirect(platformURLWithTab("website", id, "databases"))
 }
 
+func (h *WebsiteHandler) ManageDeleteDatabase(c *fiber.Ctx) error {
+	id, err := repositories.ParseID(c.Params("id"))
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	dbid, err := repositories.ParseID(c.Params("dbid"))
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	site, item, err := h.websiteDatabaseItem(id, dbid)
+	if err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect(platformURLWithTab("website", id, "databases"))
+	}
+	if err := h.databaseService.DeleteDatabase(item.ID, currentUserID(c), c.IP()); err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect(platformURLWithTab("website", site.ID, "databases"))
+	}
+	h.base.Sessions.SetFlash(c, "Database connection deleted")
+	return c.Redirect(platformURLWithTab("website", site.ID, "databases"))
+}
+
+func (h *WebsiteHandler) ManageOpenPostgresGUI(c *fiber.Ctx) error {
+	id, err := repositories.ParseID(c.Params("id"))
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	dbid, err := repositories.ParseID(c.Params("dbid"))
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	_, item, err := h.websiteDatabaseItem(id, dbid)
+	if err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect(platformURLWithTab("website", id, "databases"))
+	}
+	url, err := h.databaseService.PostgresGUIURL(item.ID)
+	if err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect(platformURLWithTab("website", id, "databases"))
+	}
+	return c.Redirect(url)
+}
+
+func (h *WebsiteHandler) ManageRedisInfo(c *fiber.Ctx) error {
+	id, err := repositories.ParseID(c.Params("id"))
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	rid, err := repositories.ParseID(c.Params("rid"))
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	_, item, err := h.websiteRedisItem(id, rid)
+	if err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect(platformURLWithTab("website", id, "databases"))
+	}
+	info, err := h.databaseService.RedisInfo(item.ID)
+	if err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect(platformURLWithTab("website", id, "databases"))
+	}
+	return h.base.Render(c, "redis_info", fiber.Map{
+		"Title":   "Redis Diagnostics",
+		"Info":    info,
+		"BackURL": platformURLWithTab("website", id, "databases"),
+	})
+}
+
+func (h *WebsiteHandler) ManageDeleteRedis(c *fiber.Ctx) error {
+	id, err := repositories.ParseID(c.Params("id"))
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	rid, err := repositories.ParseID(c.Params("rid"))
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	site, item, err := h.websiteRedisItem(id, rid)
+	if err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect(platformURLWithTab("website", id, "databases"))
+	}
+	if err := h.databaseService.DeleteRedis(item.ID, currentUserID(c), c.IP()); err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect(platformURLWithTab("website", site.ID, "databases"))
+	}
+	h.base.Sessions.SetFlash(c, "Redis connection deleted")
+	return c.Redirect(platformURLWithTab("website", site.ID, "databases"))
+}
+
+func (h *WebsiteHandler) ManageRenewSSL(c *fiber.Ctx) error {
+	id, err := repositories.ParseID(c.Params("id"))
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	cid, err := repositories.ParseID(c.Params("cid"))
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	_, cert, err := h.websiteCertificateItem(id, cid)
+	if err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect(platformURLWithTab("website", id, "ssl"))
+	}
+	if err := h.sslService.Renew(cert.ID, currentUserID(c), c.IP()); err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+	} else {
+		h.base.Sessions.SetFlash(c, "renewal hook executed")
+	}
+	return c.Redirect(platformURLWithTab("website", id, "ssl"))
+}
+
+func (h *WebsiteHandler) ManageDeleteSSL(c *fiber.Ctx) error {
+	id, err := repositories.ParseID(c.Params("id"))
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	cid, err := repositories.ParseID(c.Params("cid"))
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	_, cert, err := h.websiteCertificateItem(id, cid)
+	if err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect(platformURLWithTab("website", id, "ssl"))
+	}
+	if err := h.sslService.Delete(cert.ID, currentUserID(c), c.IP()); err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+	} else {
+		h.base.Sessions.SetFlash(c, "Certificate deleted")
+	}
+	return c.Redirect(platformURLWithTab("website", id, "ssl"))
+}
+
 // ── Cron Jobs ──
 
 func (h *WebsiteHandler) ManageCreateCronJob(c *fiber.Ctx) error {
@@ -590,8 +738,24 @@ func (h *WebsiteHandler) ManageCreateCronJob(c *fiber.Ctx) error {
 		h.base.Sessions.SetFlash(c, "schedule and command are required")
 		return c.Redirect(platformURLWithTab("website", id, "cron-jobs"))
 	}
-	if err := h.cronJobs.Create(&models.CronJob{WebsiteID: id, Schedule: schedule, Command: command}); err != nil {
+	site, err := h.service.Find(id)
+	if err != nil {
+		return c.Status(404).SendString("website not found")
+	}
+	job := &models.CronJob{WebsiteID: id, Schedule: schedule, Command: command}
+	if err := h.cronJobs.Create(job); err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
+	} else if h.cronService != nil {
+		var siteUser *models.SiteUser
+		if site.SiteUser != nil {
+			siteUser = site.SiteUser
+		}
+		if err := h.cronService.UpsertWebsiteJob(c.Context(), site, siteUser, job, currentUserID(c), c.IP()); err != nil {
+			_ = h.cronJobs.Delete(job.ID)
+			h.base.Sessions.SetFlash(c, err.Error())
+			return c.Redirect(platformURLWithTab("website", id, "cron-jobs"))
+		}
+		h.base.Sessions.SetFlash(c, "Cron job added")
 	} else {
 		h.base.Sessions.SetFlash(c, "Cron job added")
 	}
@@ -603,6 +767,12 @@ func (h *WebsiteHandler) ManageDeleteCronJob(c *fiber.Ctx) error {
 	cid, err := repositories.ParseID(c.Params("cid"))
 	if err != nil {
 		return c.Status(400).SendString(err.Error())
+	}
+	if h.cronService != nil {
+		if err := h.cronService.DeleteJob(c.Context(), cid, currentUserID(c), c.IP()); err != nil {
+			h.base.Sessions.SetFlash(c, err.Error())
+			return c.Redirect(platformURLWithTab("website", id, "cron-jobs"))
+		}
 	}
 	if err := h.cronJobs.Delete(cid); err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
@@ -629,9 +799,17 @@ func (h *WebsiteHandler) ManageUpdateVarnish(c *fiber.Ctx) error {
 		ExcludedParams: strings.TrimSpace(c.FormValue("excluded_params")),
 		Excludes:       strings.TrimSpace(c.FormValue("excludes")),
 	}
+	site, findErr := h.service.Find(id)
+	if findErr != nil {
+		return c.Status(404).SendString("website not found")
+	}
 	if err := h.varnish.Upsert(item); err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
 	} else {
+		if h.varnishService != nil {
+			_ = h.varnishService.ApplyWebsiteConfig(c.Context(), site, item, currentUserID(c), c.IP())
+		}
+		_ = h.service.RefreshConfig(c.Context(), id)
 		h.base.Sessions.SetFlash(c, "Varnish config saved")
 	}
 	return c.Redirect(platformURLWithTab("website", id, "varnish"))
@@ -652,6 +830,7 @@ func (h *WebsiteHandler) ManageAddIPBlock(c *fiber.Ctx) error {
 	if err := h.ipBlocks.Create(&models.IPBlock{WebsiteID: id, IP: ip}); err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
 	} else {
+		_ = h.service.RefreshConfig(c.Context(), id)
 		h.base.Sessions.SetFlash(c, "IP blocked")
 	}
 	return c.Redirect(platformURLWithTab("website", id, "security"))
@@ -664,6 +843,7 @@ func (h *WebsiteHandler) ManageDeleteIPBlock(c *fiber.Ctx) error {
 		return c.Status(400).SendString(err.Error())
 	}
 	_ = h.ipBlocks.Delete(bid)
+	_ = h.service.RefreshConfig(c.Context(), id)
 	return c.Redirect(platformURLWithTab("website", id, "security"))
 }
 
@@ -682,6 +862,7 @@ func (h *WebsiteHandler) ManageAddBotBlock(c *fiber.Ctx) error {
 	if err := h.botBlocks.Create(&models.BotBlock{WebsiteID: id, BotName: name}); err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
 	} else {
+		_ = h.service.RefreshConfig(c.Context(), id)
 		h.base.Sessions.SetFlash(c, "Bot blocked")
 	}
 	return c.Redirect(platformURLWithTab("website", id, "security"))
@@ -694,6 +875,7 @@ func (h *WebsiteHandler) ManageDeleteBotBlock(c *fiber.Ctx) error {
 		return c.Status(400).SendString(err.Error())
 	}
 	_ = h.botBlocks.Delete(bid)
+	_ = h.service.RefreshConfig(c.Context(), id)
 	return c.Redirect(platformURLWithTab("website", id, "security"))
 }
 
@@ -714,6 +896,7 @@ func (h *WebsiteHandler) ManageUpdateBasicAuth(c *fiber.Ctx) error {
 	if err := h.basicAuths.Upsert(item); err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
 	} else {
+		_ = h.service.RefreshConfig(c.Context(), id)
 		h.base.Sessions.SetFlash(c, "Basic auth settings saved")
 	}
 	return c.Redirect(platformURLWithTab("website", id, "security"))
@@ -746,11 +929,19 @@ func (h *WebsiteHandler) ManageCreateFTPUser(c *fiber.Ctx) error {
 			homeDir = strings.TrimSuffix(h.base.Config.Paths.DefaultSiteRoot, "/") + "/" + site.Name
 		}
 	}
-	if err := h.ftpUsers.Create(&models.FTPUser{WebsiteID: id, Username: username, Password: password, HomeDir: homeDir}); err != nil {
+	item := &models.FTPUser{WebsiteID: id, Username: username, Password: password, HomeDir: homeDir}
+	if h.ftpService != nil {
+		if err := h.ftpService.Create(c.Context(), item, currentUserID(c), c.IP()); err != nil {
+			h.base.Sessions.SetFlash(c, err.Error())
+			return c.Redirect(platformURLWithTab("website", id, "ssh"))
+		}
+	} else if err := h.ftpUsers.Create(item); err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
 	} else {
 		h.base.Sessions.SetFlash(c, "FTP user created")
+		return c.Redirect(platformURLWithTab("website", id, "ssh"))
 	}
+	h.base.Sessions.SetFlash(c, "FTP user created")
 	return c.Redirect(platformURLWithTab("website", id, "ssh"))
 }
 
@@ -760,7 +951,11 @@ func (h *WebsiteHandler) ManageDeleteFTPUser(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(400).SendString(err.Error())
 	}
-	_ = h.ftpUsers.Delete(fid)
+	if h.ftpService != nil {
+		_ = h.ftpService.DeleteByID(c.Context(), fid, currentUserID(c), c.IP())
+	} else {
+		_ = h.ftpUsers.Delete(fid)
+	}
 	return c.Redirect(platformURLWithTab("website", id, "ssh"))
 }
 
@@ -866,6 +1061,60 @@ func websiteSSLItems(item *models.Website, all []models.SSLCertificate) []models
 		}
 	}
 	return out
+}
+
+func (h *WebsiteHandler) websiteDatabaseItem(websiteID, dbID uint) (*models.Website, *models.DatabaseConnection, error) {
+	site, err := h.service.Find(websiteID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("website not found")
+	}
+	items, err := h.databases.List()
+	if err != nil {
+		return site, nil, err
+	}
+	for _, item := range websiteDBItems(site, items) {
+		if item.ID == dbID {
+			db := item
+			return site, &db, nil
+		}
+	}
+	return site, nil, fmt.Errorf("database connection not found for this platform")
+}
+
+func (h *WebsiteHandler) websiteRedisItem(websiteID, redisID uint) (*models.Website, *models.RedisConnection, error) {
+	site, err := h.service.Find(websiteID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("website not found")
+	}
+	items, err := h.databaseService.ListRedis()
+	if err != nil {
+		return site, nil, err
+	}
+	for _, item := range websiteRedisItems(site, items) {
+		if item.ID == redisID {
+			redis := item
+			return site, &redis, nil
+		}
+	}
+	return site, nil, fmt.Errorf("redis connection not found for this platform")
+}
+
+func (h *WebsiteHandler) websiteCertificateItem(websiteID, certID uint) (*models.Website, *models.SSLCertificate, error) {
+	site, err := h.service.Find(websiteID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("website not found")
+	}
+	items, err := h.sslRepo.List()
+	if err != nil {
+		return site, nil, err
+	}
+	for _, item := range websiteSSLItems(site, items) {
+		if item.ID == certID {
+			cert := item
+			return site, &cert, nil
+		}
+	}
+	return site, nil, fmt.Errorf("certificate not found for this platform")
 }
 
 func websiteRuntimeApp(item *models.Website) *models.GoApp {
@@ -1041,6 +1290,17 @@ func websiteNameFromDomain(domain string) string {
 		return "website"
 	}
 	return name
+}
+
+func managedDatabaseTarget(engine string) (string, int, error) {
+	switch strings.ToLower(strings.TrimSpace(engine)) {
+	case "", "mariadb":
+		return "127.0.0.1", 3306, nil
+	case "postgres":
+		return "127.0.0.1", 5432, nil
+	default:
+		return "", 0, fmt.Errorf("unsupported database engine")
+	}
 }
 
 func (h *WebsiteHandler) phpVersions() []string {

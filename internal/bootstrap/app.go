@@ -39,15 +39,27 @@ type Application struct {
 
 	Sessions *middleware.SessionManager
 
+	RuntimeService   *services.RuntimeService
+	FirewallService  *services.FirewallService
+	CronService      *services.CronService
+	DatabaseService  *services.DatabaseService
+	FTPService       *services.FTPService
+	VarnishService   *services.VarnishService
+	WebsiteService   *services.WebsiteService
+	AppService       *services.AppService
+	SettingsService  *services.SettingsService
+	PreflightService *services.PreflightService
+	ReconcileService *services.ReconcileService
+	HostLifecycle    *services.HostLifecycleService
+	UpdateService    *services.UpdateService
+
 	AuthHandler      *handlers.AuthHandler
 	DashboardHandler *handlers.DashboardHandler
 	WebsiteHandler   *handlers.WebsiteHandler
 	AppHandler       *handlers.AppHandler
-	SiteUserHandler  *handlers.SiteUserHandler
 	ServiceHandler   *handlers.ServiceHandler
-	DatabaseHandler  *handlers.DatabaseHandler
 	SettingsHandler  *handlers.SettingsHandler
-	SSLHandler       *handlers.SSLHandler
+	UpdateHandler    *handlers.UpdateHandler
 	ElfinderHandler  *handlers.ElfinderHandler
 }
 
@@ -90,6 +102,14 @@ func Build() (*Application, error) {
 
 	dashboardService := services.NewDashboardService(repos)
 	dashboardService.StartCollector()
+	runtimeService := services.NewRuntimeService(cfg, runner, auditService)
+	firewallService := services.NewFirewallService(cfg, runner, auditService)
+	cronService := services.NewCronService(cfg, runner, auditService)
+	databaseService := services.NewDatabaseService(cfg, repos.Databases, repos.Redis, repos.Services, platformAdapter, auditService)
+	ftpService := services.NewFTPService(cfg, repos.FTPUsers, repos.SiteUsers, repos.Settings, runner, auditService)
+	varnishService := services.NewVarnishService(cfg, runner, auditService)
+	sslService := services.NewSSLService(cfg, repos.SSL, repos.Settings, runner, auditService)
+	packageService := services.NewSystemPackageService(cfg, runner)
 	websiteService := services.NewWebsiteService(
 		cfg,
 		repos.Websites,
@@ -101,19 +121,32 @@ func Build() (*Application, error) {
 		repos.Databases,
 		repos.Redis,
 		repos.SSL,
+		repos.Varnish,
+		repos.IPBlocks,
+		repos.BotBlocks,
+		repos.BasicAuths,
 		platformAdapter,
 		auditService,
+		sslService,
+		runtimeService,
+		cronService,
+		databaseService,
+		ftpService,
+		varnishService,
 	)
-	appService := services.NewAppService(cfg, repos.GoApps, repos.Services, websiteService, platformAdapter, auditService)
+	appService := services.NewAppService(cfg, repos.GoApps, repos.Services, websiteService, platformAdapter, auditService, runtimeService)
 	siteUserService := services.NewSiteUserService(cfg, repos.SiteUsers, platformAdapter, auditService)
-	serviceService := services.NewServiceService(cfg, repos.Services, repos.Settings, platformAdapter, auditService)
-	databaseService := services.NewDatabaseService(cfg, repos.Databases, repos.Redis, auditService)
+	serviceService := services.NewServiceService(cfg, repos.Services, repos.Settings, platformAdapter, auditService, packageService)
 	settingsService := services.NewSettingsService(cfg, repos.Settings, repos.UserPrefs, auditService)
 	if err := settingsService.ApplyConfiguredTimezone(); err != nil {
 		_ = settingsService.ApplyTimezone("UTC")
 	}
+	updateService := services.NewUpdateService(cfg, repos.Settings, auditService)
+	updateService.Start()
 	panelUserService := services.NewPanelUserService(repos.Users, repos.UserPlatformAccess, auditService)
-	sslService := services.NewSSLService(cfg, repos.SSL, repos.Settings, runner, auditService)
+	preflightService := services.NewPreflightService(cfg, repos, platformAdapter)
+	reconcileService := services.NewReconcileService(repos, websiteService, appService, firewallService, cronService, ftpService, varnishService, databaseService)
+	hostLifecycleService := services.NewHostLifecycleService(cfg, repos, platformAdapter, websiteService, appService, siteUserService, databaseService, firewallService, ftpService, sslService)
 
 	engine := views.NewEngine(cfg)
 
@@ -174,6 +207,12 @@ func Build() (*Application, error) {
 
 	app.Use(middleware.InjectAuthUser(sessionManager, repos.Users, repos.UserPlatformAccess))
 	app.Use(middleware.InjectTheme(sessionManager, repos.Settings, repos.UserPrefs))
+	app.Use(func(c *fiber.Ctx) error {
+		view := updateService.FooterView()
+		c.Locals("app_version_display", view.DisplayVersion)
+		c.Locals("app_version_is_dev", view.IsDev)
+		return c.Next()
+	})
 	app.Use(middleware.PanelBasicAuth(repos.Settings))
 	if cfg.Security.CSRFEnabled {
 		sm := sessionManager
@@ -220,15 +259,26 @@ func Build() (*Application, error) {
 		Repos:            repos,
 		Platform:         platformAdapter,
 		Sessions:         sessionManager,
+		RuntimeService:   runtimeService,
+		FirewallService:  firewallService,
+		CronService:      cronService,
+		DatabaseService:  databaseService,
+		FTPService:       ftpService,
+		VarnishService:   varnishService,
+		WebsiteService:   websiteService,
+		AppService:       appService,
+		SettingsService:  settingsService,
+		PreflightService: preflightService,
+		ReconcileService: reconcileService,
+		HostLifecycle:    hostLifecycleService,
+		UpdateService:    updateService,
 		AuthHandler:      handlers.NewAuthHandler(cfg, sessionManager, authService, settingsService),
 		DashboardHandler: handlers.NewDashboardHandler(cfg, sessionManager, dashboardService),
-		WebsiteHandler:   handlers.NewWebsiteHandler(cfg, sessionManager, websiteService, repos.SiteUsers, siteUserService, databaseService, sslService, repos.Databases, repos.SSL, settingsService, repos.NginxSites, repos.CronJobs, repos.Varnish, repos.IPBlocks, repos.BotBlocks, repos.BasicAuths, repos.FTPUsers, appService),
-		AppHandler:       handlers.NewAppHandler(cfg, sessionManager, appService, websiteService, settingsService, siteUserService, repos.SiteUsers, databaseService, sslService, repos.Databases, repos.FTPUsers),
-		SiteUserHandler:  handlers.NewSiteUserHandler(cfg, sessionManager, siteUserService),
+		WebsiteHandler:   handlers.NewWebsiteHandler(cfg, sessionManager, websiteService, repos.SiteUsers, siteUserService, databaseService, sslService, repos.Databases, repos.SSL, settingsService, repos.NginxSites, repos.CronJobs, repos.Varnish, repos.IPBlocks, repos.BotBlocks, repos.BasicAuths, repos.FTPUsers, appService, cronService, ftpService, varnishService),
+		AppHandler:       handlers.NewAppHandler(cfg, sessionManager, appService, websiteService, settingsService, siteUserService, repos.SiteUsers, databaseService, sslService, repos.Databases, repos.FTPUsers, ftpService),
 		ServiceHandler:   handlers.NewServiceHandler(cfg, sessionManager, serviceService),
-		DatabaseHandler:  handlers.NewDatabaseHandler(cfg, sessionManager, databaseService),
-		SettingsHandler:  handlers.NewSettingsHandler(cfg, sessionManager, settingsService, serviceService, panelUserService, repos.Audit, repos.Firewalls, repos.UserPlatformAccess, websiteService, appService, auditService),
-		SSLHandler:       handlers.NewSSLHandler(cfg, sessionManager, sslService),
+		SettingsHandler:  handlers.NewSettingsHandler(cfg, sessionManager, settingsService, serviceService, panelUserService, repos.Audit, repos.Firewalls, repos.UserPlatformAccess, websiteService, appService, auditService, firewallService, runtimeService, ftpService, updateService),
+		UpdateHandler:    handlers.NewUpdateHandler(cfg, sessionManager, updateService),
 		ElfinderHandler:  handlers.NewElfinderHandler(cfg, sessionManager, websiteService),
 	}
 
@@ -256,27 +306,13 @@ func (a *Application) registerRoutes() {
 	secured.Post("/profile/password", a.AuthHandler.PasswordUpdate)
 	secured.Post("/profile/theme", a.AuthHandler.ThemeUpdate)
 
-	secured.Get("/websites", func(c *fiber.Ctx) error { return c.Redirect("/platforms") })
-	secured.Get("/websites/new", func(c *fiber.Ctx) error { return c.Redirect("/platforms/new") })
 	secured.Post("/websites", a.WebsiteHandler.Create)
-	secured.Get("/websites/:id", func(c *fiber.Ctx) error {
-		id, err := repositories.ParseID(c.Params("id"))
-		if err != nil {
-			return c.Status(400).SendString(err.Error())
-		}
-		return c.Redirect(utils.PlatformShowURL("website", id))
-	})
-	secured.Get("/websites/:id/edit", func(c *fiber.Ctx) error {
-		id, err := repositories.ParseID(c.Params("id"))
-		if err != nil {
-			return c.Status(400).SendString(err.Error())
-		}
-		return c.Redirect(utils.PlatformShowURL("website", id))
-	})
 	secured.Post("/websites/:id", a.WebsiteHandler.Update)
 	secured.Post("/websites/:id/delete", a.WebsiteHandler.Delete)
 	secured.Post("/websites/:id/toggle", a.WebsiteHandler.Toggle)
 	secured.Post("/websites/:id/manage/database", a.WebsiteHandler.ManageCreateDatabase)
+	secured.Post("/websites/:id/manage/database/:dbid/delete", a.WebsiteHandler.ManageDeleteDatabase)
+	secured.Get("/websites/:id/manage/database/:dbid/postgres-gui", a.WebsiteHandler.ManageOpenPostgresGUI)
 	secured.Post("/websites/:id/manage/site-user", a.WebsiteHandler.ManageCreateSiteUser)
 	secured.Post("/websites/:id/manage/site-user/password", a.WebsiteHandler.ManageResetSiteUserPassword)
 	secured.Post("/websites/:id/manage/site-user/:uid/delete", a.WebsiteHandler.ManageDeleteSiteUser)
@@ -284,7 +320,11 @@ func (a *Application) registerRoutes() {
 	secured.Post("/websites/:id/manage/ssl/letsencrypt", a.WebsiteHandler.ManageSSLLetsEncrypt)
 	secured.Post("/websites/:id/manage/ssl/import", a.WebsiteHandler.ManageSSLImport)
 	secured.Post("/websites/:id/manage/ssl/self-signed", a.WebsiteHandler.ManageSSLSelfSigned)
+	secured.Post("/websites/:id/manage/ssl/:cid/renew", a.WebsiteHandler.ManageRenewSSL)
+	secured.Post("/websites/:id/manage/ssl/:cid/delete", a.WebsiteHandler.ManageDeleteSSL)
 	secured.Post("/websites/:id/manage/redis", a.WebsiteHandler.ManageCreateRedis)
+	secured.Get("/websites/:id/manage/redis/:rid/info", a.WebsiteHandler.ManageRedisInfo)
+	secured.Post("/websites/:id/manage/redis/:rid/delete", a.WebsiteHandler.ManageDeleteRedis)
 	secured.Post("/websites/:id/manage/vhost", a.WebsiteHandler.ManageSaveVhost)
 	secured.Post("/websites/:id/manage/cron-jobs", a.WebsiteHandler.ManageCreateCronJob)
 	secured.Post("/websites/:id/manage/cron-jobs/:cid/delete", a.WebsiteHandler.ManageDeleteCronJob)
@@ -306,7 +346,6 @@ func (a *Application) registerRoutes() {
 	secured.Get("/websites/:id/elfinder", a.ElfinderHandler.Connector)
 	secured.Post("/websites/:id/elfinder", a.ElfinderHandler.Connector)
 
-	secured.Get("/apps", func(c *fiber.Ctx) error { return c.Redirect("/platforms") })
 	secured.Get("/platforms", a.AppHandler.SitesApps)
 	secured.Get("/platforms/new", a.AppHandler.SitesAppsNew)
 	secured.Get("/platforms/:ref", func(c *fiber.Ctx) error {
@@ -324,27 +363,16 @@ func (a *Application) registerRoutes() {
 		}
 	})
 	secured.Post("/platforms", a.AppHandler.SitesAppsCreate)
-	secured.Get("/apps/new", func(c *fiber.Ctx) error { return c.Redirect("/platforms/new") })
 	secured.Post("/apps", a.AppHandler.Create)
-	secured.Get("/apps/:id", func(c *fiber.Ctx) error {
-		id, err := repositories.ParseID(c.Params("id"))
-		if err != nil {
-			return c.Status(400).SendString(err.Error())
-		}
-		return c.Redirect(utils.PlatformShowURL("app", id))
-	})
-	secured.Get("/apps/:id/edit", func(c *fiber.Ctx) error {
-		id, err := repositories.ParseID(c.Params("id"))
-		if err != nil {
-			return c.Status(400).SendString(err.Error())
-		}
-		return c.Redirect(utils.PlatformShowURL("app", id))
-	})
 	secured.Post("/apps/:id", a.AppHandler.Update)
 	secured.Post("/apps/:id/delete", a.AppHandler.Delete)
 	secured.Post("/apps/:id/actions/:action", a.AppHandler.Action)
 	secured.Post("/apps/:id/manage/database", a.AppHandler.ManageCreateDatabase)
+	secured.Post("/apps/:id/manage/database/:dbid/delete", a.AppHandler.ManageDeleteDatabase)
+	secured.Get("/apps/:id/manage/database/:dbid/postgres-gui", a.AppHandler.ManageOpenPostgresGUI)
 	secured.Post("/apps/:id/manage/redis", a.AppHandler.ManageCreateRedis)
+	secured.Get("/apps/:id/manage/redis/:rid/info", a.AppHandler.ManageRedisInfo)
+	secured.Post("/apps/:id/manage/redis/:rid/delete", a.AppHandler.ManageDeleteRedis)
 	secured.Post("/apps/:id/manage/site-user", a.AppHandler.ManageCreateSiteUser)
 	secured.Post("/apps/:id/manage/site-user/:uid/delete", a.AppHandler.ManageDeleteSiteUser)
 	secured.Post("/apps/:id/manage/ftp-users", a.AppHandler.ManageCreateFTPUser)
@@ -361,30 +389,6 @@ func (a *Application) registerRoutes() {
 	secured.Post("/services/:ref/actions/:action", adminOnly, a.ServiceHandler.Action)
 	secured.Get("/services/:ref/logs", adminOnly, a.ServiceHandler.Logs)
 
-	secured.Get("/site-users", a.SiteUserHandler.Index)
-	secured.Get("/site-users/new", a.SiteUserHandler.New)
-	secured.Post("/site-users", a.SiteUserHandler.Create)
-	secured.Get("/site-users/:id", a.SiteUserHandler.Show)
-	secured.Post("/site-users/:id/reset-password", a.SiteUserHandler.ResetPassword)
-	secured.Post("/site-users/:id/toggle", a.SiteUserHandler.Toggle)
-	secured.Post("/site-users/:id/delete", a.SiteUserHandler.Delete)
-
-	secured.Get("/databases", a.DatabaseHandler.Index)
-	secured.Get("/databases/adminer", a.DatabaseHandler.Adminer)
-	secured.Post("/databases/connections", a.DatabaseHandler.CreateDatabase)
-	secured.Post("/databases/connections/:id/test", a.DatabaseHandler.TestDatabase)
-	secured.Post("/databases/connections/:id/delete", a.DatabaseHandler.DeleteDatabase)
-	secured.Get("/databases/connections/:id/postgres-gui", a.DatabaseHandler.OpenPostgresGUI)
-	secured.Post("/databases/redis", a.DatabaseHandler.CreateRedis)
-	secured.Post("/databases/redis/:id/test", a.DatabaseHandler.TestRedis)
-	secured.Get("/databases/redis/:id/info", a.DatabaseHandler.RedisInfo)
-	secured.Post("/databases/redis/:id/delete", a.DatabaseHandler.DeleteRedis)
-
-	secured.Get("/ssl", a.SSLHandler.Index)
-	secured.Post("/ssl", a.SSLHandler.Create)
-	secured.Post("/ssl/:id/renew", a.SSLHandler.Renew)
-	secured.Post("/ssl/:id/delete", a.SSLHandler.Delete)
-
 	secured.Get("/settings", adminOnly, a.SettingsHandler.Index)
 	secured.Post("/settings", adminOnly, a.SettingsHandler.Update)
 	secured.Post("/settings/general", adminOnly, a.SettingsHandler.UpdateGeneral)
@@ -396,6 +400,10 @@ func (a *Application) registerRoutes() {
 	secured.Post("/settings/firewall", adminOnly, a.SettingsHandler.FirewallCreate)
 	secured.Post("/settings/firewall/:id", adminOnly, a.SettingsHandler.FirewallUpdate)
 	secured.Post("/settings/firewall/:id/delete", adminOnly, a.SettingsHandler.FirewallDelete)
+	secured.Get("/updates", adminOnly, a.UpdateHandler.Index)
+	secured.Get("/updates/status", adminOnly, a.UpdateHandler.Status)
+	secured.Post("/updates/check", adminOnly, a.UpdateHandler.Check)
+	secured.Post("/updates/install", adminOnly, a.UpdateHandler.Install)
 
 	secured.Get("/logs", adminOnly, func(c *fiber.Ctx) error { return c.Redirect("/settings?tab=events") })
 }

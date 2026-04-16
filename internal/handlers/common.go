@@ -41,6 +41,9 @@ func (h *BaseHandler) Render(c *fiber.Ctx, page string, data fiber.Map) error {
 	data["Theme"] = theme
 	data["CSRFToken"] = csrfTokenFromContext(c)
 	data["AssetVersion"] = assetVersion()
+	data["CurrentYear"] = time.Now().Year()
+	data["AppVersion"] = strings.TrimSpace(fmt.Sprintf("%v", c.Locals("app_version_display")))
+	data["AppVersionIsDev"] = strings.EqualFold(strings.TrimSpace(fmt.Sprintf("%v", c.Locals("app_version_is_dev"))), "true")
 	return c.Render(page, data, "layouts_base")
 }
 
@@ -200,6 +203,7 @@ func sectionFromPage(page string) string {
 		"ssl",
 		"logs",
 		"settings",
+		"updates",
 		"auth",
 	}
 	for _, prefix := range known {

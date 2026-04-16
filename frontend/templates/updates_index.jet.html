@@ -1,0 +1,134 @@
+<div class="card update-page-card">
+  <div class="update-page-head">
+    <div>
+      <div class="badge badge-neutral">System Updates</div>
+      <h2 class="update-page-title">DeployCP updater</h2>
+      <p class="update-page-subtitle">Checks the installed release against GitHub, shows update state, and runs the packaged host update flow.</p>
+    </div>
+    <div class="update-page-actions">
+      <button id="update-install-btn" type="button" class="btn btn-primary" {{ if !UpdateView.UpdateAvailable || UpdateView.State == "running" || UpdateView.IsDev }}disabled{{ end }}>
+        {{ if UpdateView.State == "running" }}Update Running{{ else }}Pull And Install Update{{ end }}
+      </button>
+    </div>
+  </div>
+
+  <div class="update-summary-grid">
+    <div class="metric-card">
+      <span class="metric-label">Installed</span>
+      <strong id="update-current-version">{{ UpdateView.DisplayVersion }}</strong>
+    </div>
+    <div class="metric-card">
+      <span class="metric-label">Latest</span>
+      <strong id="update-latest-version">{{ if UpdateView.LatestVersion != "" }}{{ UpdateView.LatestVersion }}{{ else }}Unknown{{ end }}</strong>
+    </div>
+    <div class="metric-card">
+      <span class="metric-label">Status</span>
+      <strong id="update-state">{{ UpdateView.State }}</strong>
+    </div>
+    <div class="metric-card">
+      <span class="metric-label">Last Checked</span>
+      <strong id="update-checked-at">{{ if UpdateView.LastCheckedAt != "" }}{{ UpdateView.LastCheckedAt }}{{ else }}Never{{ end }}</strong>
+    </div>
+  </div>
+
+  <div class="callout {{ if UpdateView.UpdateAvailable }}warn{{ else }}ok{{ end }}" id="update-message-box">
+    <strong id="update-message-title">{{ if UpdateView.UpdateAvailable }}Update available{{ else }}Update status{{ end }}</strong>
+    <p id="update-message-body">
+      {{ if UpdateView.IsDev }}
+        Development mode is active. Live release updates are disabled while the panel is running as a dev build.
+      {{ else if UpdateView.UpdateAvailable }}
+        A newer release is available. Start the updater to download the latest GitHub release and install it on this host.
+      {{ else }}
+        This host is already aligned with the latest known release, or no newer release has been detected yet.
+      {{ end }}
+    </p>
+  </div>
+
+  <div class="update-terminal-wrap">
+    <div class="update-terminal-head">
+      <span>Update Terminal</span>
+      <span id="update-target-version">{{ if UpdateView.TargetVersion != "" }}Target {{ UpdateView.TargetVersion }}{{ end }}</span>
+    </div>
+    <pre id="update-terminal" class="update-terminal">{{ if UpdateView.Log != "" }}{{ UpdateView.Log }}{{ else }}Waiting for updater output...{{ end }}</pre>
+  </div>
+</div>
+
+<script>
+  (function () {
+    var installBtn = document.getElementById('update-install-btn');
+    var stateEl = document.getElementById('update-state');
+    var currentEl = document.getElementById('update-current-version');
+    var latestEl = document.getElementById('update-latest-version');
+    var checkedEl = document.getElementById('update-checked-at');
+    var terminalEl = document.getElementById('update-terminal');
+    var messageTitle = document.getElementById('update-message-title');
+    var messageBody = document.getElementById('update-message-body');
+    var targetEl = document.getElementById('update-target-version');
+    var csrfToken = '{{ CSRFToken }}';
+
+    function renderStatus(data) {
+      stateEl.textContent = data.state || 'idle';
+      currentEl.textContent = data.display_version || data.current_version || 'dev';
+      latestEl.textContent = data.latest_version || 'Unknown';
+      checkedEl.textContent = data.last_checked_at || 'Never';
+      terminalEl.textContent = data.log && data.log.trim() ? data.log : 'Waiting for updater output...';
+      targetEl.textContent = data.target_version ? 'Target ' + data.target_version : '';
+
+      if (data.is_dev) {
+        messageTitle.textContent = 'Development mode';
+        messageBody.textContent = 'Live release updates are disabled while the panel is running as a dev build.';
+      } else if (data.state === 'running') {
+        messageTitle.textContent = 'Update running';
+        messageBody.textContent = data.message || 'DeployCP is currently pulling and installing the update.';
+      } else if (data.update_available) {
+        messageTitle.textContent = 'Update available';
+        messageBody.textContent = data.message || 'A newer release is available for this host.';
+      } else {
+        messageTitle.textContent = 'Up to date';
+        messageBody.textContent = data.message || 'No newer release is currently available for this host.';
+      }
+
+      if (installBtn) {
+        installBtn.disabled = !!data.is_dev || data.state === 'running' || !data.update_available;
+        installBtn.textContent = data.state === 'running' ? 'Update Running' : 'Pull And Install Update';
+      }
+    }
+
+    function poll() {
+      fetch('/updates/status', { headers: { 'Accept': 'application/json' } })
+        .then(function (resp) { return resp.json(); })
+        .then(renderStatus)
+        .catch(function () {});
+    }
+
+    if (installBtn) {
+      installBtn.addEventListener('click', function () {
+        installBtn.disabled = true;
+        fetch('/updates/install', {
+          method: 'POST',
+          headers: {
+            'Accept': 'application/json',
+            'X-CSRF-Token': csrfToken
+          }
+        })
+          .then(function (resp) {
+            return resp.json().then(function (data) {
+              if (!resp.ok) throw new Error(data.error || 'Unable to start update');
+              return data;
+            });
+          })
+          .then(function () {
+            poll();
+          })
+          .catch(function (err) {
+            messageTitle.textContent = 'Update error';
+            messageBody.textContent = err.message || 'Unable to start update.';
+            installBtn.disabled = false;
+          });
+      });
+    }
+
+    poll();
+    window.setInterval(poll, 4000);
+  })();
+</script>

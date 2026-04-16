@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DeployCP Install</title>
+  <meta name="description" content="One-command install, version-pinned install, update, and uninstall for DeployCP on Linux.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body data-page="install">
+  <div class="site-bg"></div>
+
+  <nav class="topnav">
+    <a class="nav-brand" href="index.html">
+      <span class="mark">D</span>
+      <span>DeployCP</span>
+    </a>
+    <button class="mobile-menu-btn" type="button" aria-label="Toggle navigation" aria-expanded="false">Menu</button>
+    <div class="nav-links">
+      <a href="index.html">Overview</a>
+      <a class="active" href="install.html">Install</a>
+      <a href="operations.html">Operations</a>
+      <a href="troubleshooting.html">Troubleshooting</a>
+    </div>
+  </nav>
+
+  <div class="page-shell">
+    <div class="page">
+      <main class="content">
+        <header class="hero hero-compact">
+          <div class="hero-copy">
+            <div class="eyebrow">Install Guide</div>
+            <h1>Install or update DeployCP from one remote command.</h1>
+            <p class="hero-lead">The public path is the bootstrap installer. It picks the correct Linux release bundle, stages the binary, runs the packaged install or update script, and leaves the service ready for verification.</p>
+          </div>
+          <div class="hero-side">
+            <div class="command-spotlight">
+              <div class="terminal-head">
+                <div class="dots"><span></span><span></span><span></span></div>
+                <span class="title">Latest Release</span>
+              </div>
+              <pre><code>curl -fsSL https://raw.githubusercontent.com/saiarlen/deployCP/main/scripts/linux/install-remote.sh | sudo bash</code></pre>
+            </div>
+          </div>
+        </header>
+
+        <section class="section anchor-section" id="latest-install">
+          <div class="section-head">
+            <div class="section-label">Fresh Install</div>
+            <h2>Install the latest release.</h2>
+          </div>
+          <div class="code-block"><pre><code>curl -fsSL https://raw.githubusercontent.com/saiarlen/deployCP/main/scripts/linux/install-remote.sh | sudo bash</code></pre></div>
+          <div class="callout ok">
+            <strong>This is the primary install flow.</strong>
+            <p>No manual binary download or extract step is required for the normal operator path.</p>
+          </div>
+        </section>
+
+        <section class="section anchor-section" id="pinned-install">
+          <div class="section-head">
+            <div class="section-label">Pinned Version</div>
+            <h2>Install a specific tagged release.</h2>
+          </div>
+          <div class="code-block"><pre><code>curl -fsSL https://raw.githubusercontent.com/saiarlen/deployCP/main/scripts/linux/install-remote.sh | sudo DEPLOYCP_VERSION=v1.2.3 bash</code></pre></div>
+          <p>Use this when you want a controlled rollout instead of the latest published release.</p>
+        </section>
+
+        <section class="section anchor-section" id="update-flow">
+          <div class="section-head">
+            <div class="section-label">Update</div>
+            <h2>Update an existing host with the same bootstrap entrypoint.</h2>
+          </div>
+          <div class="code-block"><pre><code>curl -fsSL https://raw.githubusercontent.com/saiarlen/deployCP/main/scripts/linux/install-remote.sh | sudo bash -s -- --update</code></pre></div>
+          <p>The updater downloads the selected release bundle, stages the new binary, runs the packaged update script, reconciles managed state, and verifies the host afterward.</p>
+        </section>
+
+        <section class="section anchor-section" id="what-happens">
+          <div class="section-head">
+            <div class="section-label">Bootstrap Steps</div>
+            <h2>What the packaged installer does.</h2>
+          </div>
+          <div class="timeline">
+            <article class="timeline-item">
+              <div class="timeline-index">01</div>
+              <div>
+                <h3>Validates root and host prerequisites</h3>
+                <p>Detects distro family, installs required packages, resolves service names and binary paths, and checks the system can run live Linux operations.</p>
+              </div>
+            </article>
+            <article class="timeline-item">
+              <div class="timeline-index">02</div>
+              <div>
+                <h3>Creates the managed DeployCP layout</h3>
+                <p>Creates the <code>deploycp</code> OS user, home directory, core layout, runtime state folders, generated config directories, logs, metadata, backups, temp paths, and helper script locations.</p>
+              </div>
+            </article>
+            <article class="timeline-item">
+              <div class="timeline-index">03</div>
+              <div>
+                <h3>Installs and starts DeployCP</h3>
+                <p>Writes the environment file, stages the release binary into <code>/home/deploycp/core/bin/deploycp</code>, installs <code>deploycp.service</code>, runs host bootstrap, and starts the service.</p>
+              </div>
+            </article>
+            <article class="timeline-item">
+              <div class="timeline-index">04</div>
+              <div>
+                <h3>Runs host verification</h3>
+                <p>Performs post-install verification so the operator can fix missing host-level prerequisites before creating live platforms.</p>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="section anchor-section" id="post-install">
+          <div class="section-head">
+            <div class="section-label">After Install</div>
+            <h2>Immediate checks and values to set.</h2>
+          </div>
+          <div class="feature-grid">
+            <article class="feature-card">
+              <h3>Service health</h3>
+              <div class="code-block"><pre><code>sudo systemctl status deploycp --no-pager</code></pre></div>
+            </article>
+            <article class="feature-card">
+              <h3>Host verification</h3>
+              <div class="code-block"><pre><code>sudo /home/deploycp/core/bin/deploycp verify-host</code></pre></div>
+            </article>
+            <article class="feature-card">
+              <h3>Environment file</h3>
+              <p>Review <code>/home/deploycp/core/.env</code> and set the real <code>APP_BASE_URL</code>, bootstrap admin credentials, and local DB admin passwords if managed DB provisioning is required.</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="section anchor-section" id="uninstall-flow">
+          <div class="section-head">
+            <div class="section-label">Uninstall</div>
+            <h2>Remove DeployCP from the host.</h2>
+          </div>
+          <div class="callout danger">
+            <strong>This removes live managed resources.</strong>
+            <p>The uninstall flow stops the service, tears down DeployCP-managed host state, removes the <code>deploycp</code> user, and deletes the managed home directory.</p>
+          </div>
+          <div class="code-block"><pre><code>sudo /home/deploycp/core/scripts/linux/uninstall.sh</code></pre></div>
+        </section>
+
+        <section class="section anchor-section" id="manual-fallback">
+          <div class="section-head">
+            <div class="section-label">Fallback Only</div>
+            <h2>Manual tarball install when remote bootstrap is not allowed.</h2>
+          </div>
+          <p>This is a fallback path, not the primary public install recommendation.</p>
+          <div class="code-block"><pre><code>tar -xzf deploycp-v1.2.3-linux-amd64.tar.gz
+cd deploycp-v1.2.3-linux-amd64
+sudo ./scripts/linux/install.sh</code></pre></div>
+        </section>
+      </main>
+
+      <aside class="toc">
+        <div class="toc-title">Install Guide</div>
+        <ul class="toc-list">
+          <li><a href="#latest-install">Latest Install</a></li>
+          <li><a href="#pinned-install">Pinned Version</a></li>
+          <li><a href="#update-flow">Update</a></li>
+          <li><a href="#what-happens">Bootstrap Steps</a></li>
+          <li><a href="#post-install">After Install</a></li>
+          <li><a href="#uninstall-flow">Uninstall</a></li>
+          <li><a href="#manual-fallback">Fallback</a></li>
+        </ul>
+      </aside>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

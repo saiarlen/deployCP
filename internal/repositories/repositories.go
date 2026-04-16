@@ -302,6 +302,13 @@ func (r *SiteUserRepository) Find(id uint) (*models.SiteUser, error) {
 	}
 	return &item, nil
 }
+func (r *SiteUserRepository) FindByUsername(username string) (*models.SiteUser, error) {
+	var item models.SiteUser
+	if err := r.db.Where("LOWER(username) = LOWER(?)", username).First(&item).Error; err != nil {
+		return nil, err
+	}
+	return &item, nil
+}
 func (r *SiteUserRepository) ListByWebsite(websiteID uint) ([]models.SiteUser, error) {
 	var items []models.SiteUser
 	err := r.db.Where("website_id = ?", websiteID).Order("id asc").Find(&items).Error
@@ -928,10 +935,30 @@ func (r *BasicAuthRepository) DeleteByWebsite(websiteID uint) error {
 
 type FTPUserRepository struct{ db *gorm.DB }
 
+func (r *FTPUserRepository) List() ([]models.FTPUser, error) {
+	var items []models.FTPUser
+	err := r.db.Order("id desc").Find(&items).Error
+	return items, err
+}
+
 func (r *FTPUserRepository) ListByWebsite(websiteID uint) ([]models.FTPUser, error) {
 	var items []models.FTPUser
 	err := r.db.Where("website_id = ?", websiteID).Order("id desc").Find(&items).Error
 	return items, err
+}
+func (r *FTPUserRepository) Find(id uint) (*models.FTPUser, error) {
+	var item models.FTPUser
+	if err := r.db.First(&item, id).Error; err != nil {
+		return nil, err
+	}
+	return &item, nil
+}
+func (r *FTPUserRepository) FindByUsername(username string) (*models.FTPUser, error) {
+	var item models.FTPUser
+	if err := r.db.Where("LOWER(username) = LOWER(?)", username).First(&item).Error; err != nil {
+		return nil, err
+	}
+	return &item, nil
 }
 func (r *FTPUserRepository) Create(item *models.FTPUser) error { return r.db.Create(item).Error }
 func (r *FTPUserRepository) Delete(id uint) error {

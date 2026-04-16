@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DeployCP Operations</title>
+  <meta name="description" content="Operational behavior for runtime management, nginx, SSL, cron, firewall, DB, FTP, Redis, Varnish, and logs in DeployCP.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body data-page="operations">
+  <div class="site-bg"></div>
+
+  <nav class="topnav">
+    <a class="nav-brand" href="index.html">
+      <span class="mark">D</span>
+      <span>DeployCP</span>
+    </a>
+    <button class="mobile-menu-btn" type="button" aria-label="Toggle navigation" aria-expanded="false">Menu</button>
+    <div class="nav-links">
+      <a href="index.html">Overview</a>
+      <a href="install.html">Install</a>
+      <a class="active" href="operations.html">Operations</a>
+      <a href="troubleshooting.html">Troubleshooting</a>
+    </div>
+  </nav>
+
+  <div class="page-shell">
+    <div class="page">
+      <main class="content">
+        <header class="hero hero-compact">
+          <div class="hero-copy">
+            <div class="eyebrow">Managed Operations</div>
+            <h1>What the panel writes, starts, reloads, and cleans up on Linux.</h1>
+            <p class="hero-lead">DeployCP keeps the existing panel flow, but the work behind it is real host behavior: scoped users, directories, runtime selection, config generation, service units, firewall rules, and lifecycle cleanup.</p>
+          </div>
+        </header>
+
+        <section class="section anchor-section" id="platform-scope">
+          <div class="section-head">
+            <div class="section-label">Platform Scope</div>
+            <h2>Per-platform resources are host-backed.</h2>
+          </div>
+          <div class="feature-grid">
+            <article class="feature-card">
+              <h3>Site users</h3>
+              <p>Platform site users are real Linux users with scoped home and folder access. SSH and runtime defaults are applied through the platform environment.</p>
+            </article>
+            <article class="feature-card">
+              <h3>Platform folders</h3>
+              <p>Each platform gets a real directory tree for web files, logs, temp state, runtime metadata, and generated process files.</p>
+            </article>
+            <article class="feature-card">
+              <h3>Cleanup</h3>
+              <p>Platform deletion removes scoped Linux resources in cleanup order rather than only deleting SQLite rows.</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="section anchor-section" id="runtime">
+          <div class="section-head">
+            <div class="section-label">Runtime Strategy</div>
+            <h2>Runtime version selection is per platform, not global guesswork.</h2>
+          </div>
+          <div class="timeline">
+            <article class="timeline-item">
+              <div class="timeline-index">01</div>
+              <div>
+                <h3>Catalog changes install or remove runtimes</h3>
+                <p>Node, PHP, Python, and Go version actions call the runtime installer and keep side-by-side versions when supported.</p>
+              </div>
+            </article>
+            <article class="timeline-item">
+              <div class="timeline-index">02</div>
+              <div>
+                <h3>Platform defaults are written into runtime env files</h3>
+                <p>Each platform gets <code>.deploycp/runtime.env</code>, which is then sourced by SSH shells, cron wrappers, and generated service units.</p>
+              </div>
+            </article>
+            <article class="timeline-item">
+              <div class="timeline-index">03</div>
+              <div>
+                <h3>In-use versions are protected</h3>
+                <p>DeployCP blocks runtime removal when platforms still depend on that version.</p>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="section anchor-section" id="web-edge">
+          <div class="section-head">
+            <div class="section-label">Web And Edge</div>
+            <h2>Nginx, SSL, firewall, and Varnish are all wired to the host.</h2>
+          </div>
+          <div class="feature-grid">
+            <article class="feature-card">
+              <h3>Nginx</h3>
+              <p>Writes real config, validates it before reload, supports redirects, ACME challenge paths, IP restrictions, auth, and managed platform log files.</p>
+            </article>
+            <article class="feature-card">
+              <h3>SSL</h3>
+              <p>Uses Let's Encrypt when Certbot is available and supports imported or self-signed certificates stored in managed SSL storage.</p>
+            </article>
+            <article class="feature-card">
+              <h3>Firewall</h3>
+              <p>Applies real host rules from the settings page using <code>ufw</code>, <code>firewall-cmd</code>, or <code>iptables</code>.</p>
+            </article>
+            <article class="feature-card">
+              <h3>Varnish</h3>
+              <p>Generates per-site VCL fragments, validates them with <code>varnishd -C</code>, and reloads the configured Varnish service.</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="section anchor-section" id="services-data">
+          <div class="section-head">
+            <div class="section-label">Services And Data</div>
+            <h2>Panel actions map to service-backed resources.</h2>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Area</th><th>Host behavior</th></tr>
+              </thead>
+              <tbody>
+                <tr><td><code>system services</code></td><td>Detects installed state, installs packages when needed for supported services, and runs start/stop/restart/status via systemd.</td></tr>
+                <tr><td><code>MariaDB / PostgreSQL</code></td><td>Creates and drops managed local databases and users when admin credentials are configured.</td></tr>
+                <tr><td><code>FTP</code></td><td>Creates real Linux FTP users with a no-login shell and updates managed ProFTPD config snippets.</td></tr>
+                <tr><td><code>Redis</code></td><td>Creates dedicated Redis instances as systemd units and keeps DB numbering and ports unique where applicable.</td></tr>
+                <tr><td><code>cron</code></td><td>Writes wrapper scripts plus <code>/etc/cron.d</code> entries and removes them during cleanup.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="section anchor-section" id="logs-cleanup">
+          <div class="section-head">
+            <div class="section-label">Logs And Delete Flow</div>
+            <h2>Logs stay mapped to real files, and delete cleans real resources.</h2>
+          </div>
+          <div class="stack">
+            <div class="info-strip">
+              <strong>Logs:</strong>
+              <span>Access, error, and app logs are read from actual platform log paths, not fake sample output.</span>
+            </div>
+            <div class="info-strip">
+              <strong>Delete:</strong>
+              <span>Platform deletion removes scoped users, folders, nginx config, SSL assets, cron entries, FTP users, managed DB resources, Redis units, and generated runtime state.</span>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <aside class="toc">
+        <div class="toc-title">Operations</div>
+        <ul class="toc-list">
+          <li><a href="#platform-scope">Platform Scope</a></li>
+          <li><a href="#runtime">Runtime Strategy</a></li>
+          <li><a href="#web-edge">Web And Edge</a></li>
+          <li><a href="#services-data">Services And Data</a></li>
+          <li><a href="#logs-cleanup">Logs And Delete</a></li>
+        </ul>
+      </aside>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -148,8 +148,12 @@ allowed=$(cat "$HOME/.deploycp_allowed_root" 2>/dev/null || echo "$HOME")
 if [ ! -d "$allowed" ]; then
   allowed="$HOME"
 fi
+export PATH=/usr/local/bin:/usr/bin:/bin
+runtime_env="$allowed/.deploycp/runtime.env"
+if [ -f "$runtime_env" ]; then
+  . "$runtime_env"
+fi
 cd "$allowed"
-export PATH=/usr/bin:/bin
 exec /bin/rbash
 `
 	if err := utils.WriteFileAtomic(shellPath, []byte(script), 0o755); err != nil {

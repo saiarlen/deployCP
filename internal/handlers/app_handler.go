@@ -27,6 +27,7 @@ type AppHandler struct {
 	sslService      *services.SSLService
 	databases       *repositories.DatabaseConnectionRepository
 	ftpUsers        *repositories.FTPUserRepository
+	ftpService      *services.FTPService
 }
 
 func NewAppHandler(
@@ -41,6 +42,7 @@ func NewAppHandler(
 	sslService *services.SSLService,
 	databases *repositories.DatabaseConnectionRepository,
 	ftpUsers *repositories.FTPUserRepository,
+	ftpService *services.FTPService,
 ) *AppHandler {
 	return &AppHandler{
 		base:            &BaseHandler{Config: cfg, Sessions: sessions},
@@ -53,6 +55,7 @@ func NewAppHandler(
 		sslService:      sslService,
 		databases:       databases,
 		ftpUsers:        ftpUsers,
+		ftpService:      ftpService,
 	}
 }
 
@@ -408,7 +411,6 @@ func (h *AppHandler) ShowByID(c *fiber.Ctx, id uint) error {
 		"PostgresItems":    filterAppDBByEngine(scopedDB, "postgres"),
 		"RedisItems":       scopedRedis,
 		"AdminerURL":       h.databaseService.AdminerURL(),
-		"PostgresGUIBase":  h.base.Config.Integrations.PostgresGUIURL,
 		"SSHUsers":         sshUsers,
 		"PrimarySSHUserID": primarySSHUserID,
 		"FTPUsers":         ftpUsers,
@@ -478,11 +480,15 @@ func (h *AppHandler) ManageCreateDatabase(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(404).SendString("application not found")
 	}
-	port, _ := strconv.Atoi(c.FormValue("port", "3306"))
+	host, port, err := managedDatabaseTarget(strings.TrimSpace(c.FormValue("engine")))
+	if err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect(platformURLWithTab("app", id, "databases"))
+	}
 	in := services.DBConnectionInput{
 		Label:       strings.TrimSpace(c.FormValue("label")),
 		Engine:      strings.TrimSpace(c.FormValue("engine")),
-		Host:        strings.TrimSpace(c.FormValue("host")),
+		Host:        host,
 		Port:        port,
 		Database:    strings.TrimSpace(c.FormValue("database")),
 		Username:    strings.TrimSpace(c.FormValue("username")),
@@ -493,9 +499,6 @@ func (h *AppHandler) ManageCreateDatabase(c *fiber.Ctx) error {
 	if in.Label == "" {
 		in.Label = app.Name + "-db"
 	}
-	if in.Host == "" {
-		in.Host = "127.0.0.1"
-	}
 	if in.Environment == "" {
 		in.Environment = "production"
 	}
@@ -504,7 +507,51 @@ func (h *AppHandler) ManageCreateDatabase(c *fiber.Ctx) error {
 	} else {
 		h.base.Sessions.SetFlash(c, "Database connection saved")
 	}
-	return c.Redirect(platformURLWithTab("app", id, "db"))
+	return c.Redirect(platformURLWithTab("app", id, "databases"))
+}
+
+func (h *AppHandler) ManageDeleteDatabase(c *fiber.Ctx) error {
+	id, err := repositories.ParseID(c.Params("id"))
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	dbid, err := repositories.ParseID(c.Params("dbid"))
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	app, item, err := h.appDatabaseItem(id, dbid)
+	if err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect(platformURLWithTab("app", id, "databases"))
+	}
+	if err := h.databaseService.DeleteDatabase(item.ID, currentUserID(c), c.IP()); err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect(platformURLWithTab("app", app.ID, "databases"))
+	}
+	h.base.Sessions.SetFlash(c, "Database connection deleted")
+	return c.Redirect(platformURLWithTab("app", app.ID, "databases"))
+}
+
+func (h *AppHandler) ManageOpenPostgresGUI(c *fiber.Ctx) error {
+	id, err := repositories.ParseID(c.Params("id"))
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	dbid, err := repositories.ParseID(c.Params("dbid"))
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	_, item, err := h.appDatabaseItem(id, dbid)
+	if err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect(platformURLWithTab("app", id, "databases"))
+	}
+	url, err := h.databaseService.PostgresGUIURL(item.ID)
+	if err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect(platformURLWithTab("app", id, "databases"))
+	}
+	return c.Redirect(url)
 }
 
 func (h *AppHandler) runtimeVersions(runtime string) []string {
@@ -532,11 +579,14 @@ func (h *AppHandler) createDatabaseFromScopedForm(c *fiber.Ctx, fallbackLabel st
 		return nil
 	}
 	gid := appID
-	port, _ := strconv.Atoi(c.FormValue("db_port", "3306"))
+	host, port, err := managedDatabaseTarget(strings.TrimSpace(c.FormValue("db_engine")))
+	if err != nil {
+		return err
+	}
 	in := services.DBConnectionInput{
 		Label:       strings.TrimSpace(c.FormValue("db_label")),
 		Engine:      strings.TrimSpace(c.FormValue("db_engine")),
-		Host:        strings.TrimSpace(c.FormValue("db_host")),
+		Host:        host,
 		Port:        port,
 		Database:    database,
 		Username:    strings.TrimSpace(c.FormValue("db_username")),
@@ -549,9 +599,6 @@ func (h *AppHandler) createDatabaseFromScopedForm(c *fiber.Ctx, fallbackLabel st
 	}
 	if in.Engine == "" {
 		in.Engine = "mariadb"
-	}
-	if in.Host == "" {
-		in.Host = "127.0.0.1"
 	}
 	if in.Environment == "" {
 		in.Environment = "production"
@@ -651,11 +698,19 @@ func (h *AppHandler) ManageCreateFTPUser(c *fiber.Ctx) error {
 			homeDir = strings.TrimSuffix(h.base.Config.Paths.DefaultSiteRoot, "/") + "/" + app.Name
 		}
 	}
-	if err := h.ftpUsers.Create(&models.FTPUser{WebsiteID: *app.WebsiteID, Username: username, Password: password, HomeDir: homeDir}); err != nil {
+	item := &models.FTPUser{WebsiteID: *app.WebsiteID, Username: username, Password: password, HomeDir: homeDir}
+	if h.ftpService != nil {
+		if err := h.ftpService.Create(c.Context(), item, currentUserID(c), c.IP()); err != nil {
+			h.base.Sessions.SetFlash(c, err.Error())
+			return c.Redirect(platformURLWithTab("app", id, "ssh"))
+		}
+	} else if err := h.ftpUsers.Create(item); err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
 	} else {
 		h.base.Sessions.SetFlash(c, "FTP user created")
+		return c.Redirect(platformURLWithTab("app", id, "ssh"))
 	}
+	h.base.Sessions.SetFlash(c, "FTP user created")
 	return c.Redirect(platformURLWithTab("app", id, "ssh"))
 }
 
@@ -665,7 +720,11 @@ func (h *AppHandler) ManageDeleteFTPUser(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(400).SendString(err.Error())
 	}
-	_ = h.ftpUsers.Delete(fid)
+	if h.ftpService != nil {
+		_ = h.ftpService.DeleteByID(c.Context(), fid, currentUserID(c), c.IP())
+	} else {
+		_ = h.ftpUsers.Delete(fid)
+	}
 	return c.Redirect(platformURLWithTab("app", id, "ssh"))
 }
 
@@ -716,14 +775,28 @@ func (h *AppHandler) ManageSSLLetsEncrypt(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(400).SendString(err.Error())
 	}
+	app, err := h.service.Find(id)
+	if err != nil {
+		return c.Status(404).SendString("application not found")
+	}
 	domain := strings.TrimSpace(c.FormValue("domain"))
 	if domain == "" {
 		h.base.Sessions.SetFlash(c, "domain is required")
 		return c.Redirect(platformURLWithTab("app", id, "ssl"))
 	}
-	if err := h.sslService.Create(domain, currentUserID(c), c.IP()); err != nil {
+	websiteID := id
+	if app.WebsiteID != nil && *app.WebsiteID > 0 {
+		websiteID = *app.WebsiteID
+	}
+	site, _ := h.websiteService.Find(websiteID)
+	if site == nil {
+		h.base.Sessions.SetFlash(c, "linked website not found")
+		return c.Redirect(platformURLWithTab("app", id, "ssl"))
+	}
+	if err := h.sslService.CreateForWebsite(c.Context(), site, domain, currentUserID(c), c.IP()); err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
 	} else {
+		_ = h.websiteService.RefreshConfig(c.Context(), websiteID)
 		h.base.Sessions.SetFlash(c, "Let's Encrypt certificate requested for "+domain)
 	}
 	return c.Redirect(platformURLWithTab("app", id, "ssl"))
@@ -734,6 +807,10 @@ func (h *AppHandler) ManageSSLImport(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(400).SendString(err.Error())
 	}
+	app, err := h.service.Find(id)
+	if err != nil {
+		return c.Status(404).SendString("application not found")
+	}
 	domain := strings.TrimSpace(c.FormValue("domain"))
 	if domain == "" {
 		h.base.Sessions.SetFlash(c, "domain is required")
@@ -742,6 +819,11 @@ func (h *AppHandler) ManageSSLImport(c *fiber.Ctx) error {
 	if err := h.sslService.CreateImport(domain, c.FormValue("private_key"), c.FormValue("certificate"), c.FormValue("certificate_chain"), currentUserID(c), c.IP()); err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
 	} else {
+		websiteID := id
+		if app.WebsiteID != nil && *app.WebsiteID > 0 {
+			websiteID = *app.WebsiteID
+		}
+		_ = h.websiteService.RefreshConfig(c.Context(), websiteID)
 		h.base.Sessions.SetFlash(c, "Certificate imported for "+domain)
 	}
 	return c.Redirect(platformURLWithTab("app", id, "ssl"))
@@ -752,6 +834,10 @@ func (h *AppHandler) ManageSSLSelfSigned(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(400).SendString(err.Error())
 	}
+	app, err := h.service.Find(id)
+	if err != nil {
+		return c.Status(404).SendString("application not found")
+	}
 	domain := strings.TrimSpace(c.FormValue("domain"))
 	if domain == "" {
 		h.base.Sessions.SetFlash(c, "domain is required")
@@ -760,6 +846,11 @@ func (h *AppHandler) ManageSSLSelfSigned(c *fiber.Ctx) error {
 	if err := h.sslService.CreateSelfSigned(domain, currentUserID(c), c.IP()); err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
 	} else {
+		websiteID := id
+		if app.WebsiteID != nil && *app.WebsiteID > 0 {
+			websiteID = *app.WebsiteID
+		}
+		_ = h.websiteService.RefreshConfig(c.Context(), websiteID)
 		h.base.Sessions.SetFlash(c, "Self-signed certificate created for "+domain)
 	}
 	return c.Redirect(platformURLWithTab("app", id, "ssl"))
@@ -802,6 +893,54 @@ func (h *AppHandler) ManageCreateRedis(c *fiber.Ctx) error {
 	return c.Redirect(platformURLWithTab("app", id, "databases"))
 }
 
+func (h *AppHandler) ManageRedisInfo(c *fiber.Ctx) error {
+	id, err := repositories.ParseID(c.Params("id"))
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	rid, err := repositories.ParseID(c.Params("rid"))
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	_, item, err := h.appRedisItem(id, rid)
+	if err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect(platformURLWithTab("app", id, "databases"))
+	}
+	info, err := h.databaseService.RedisInfo(item.ID)
+	if err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect(platformURLWithTab("app", id, "databases"))
+	}
+	return h.base.Render(c, "redis_info", fiber.Map{
+		"Title":   "Redis Diagnostics",
+		"Info":    info,
+		"BackURL": platformURLWithTab("app", id, "databases"),
+	})
+}
+
+func (h *AppHandler) ManageDeleteRedis(c *fiber.Ctx) error {
+	id, err := repositories.ParseID(c.Params("id"))
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	rid, err := repositories.ParseID(c.Params("rid"))
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	app, item, err := h.appRedisItem(id, rid)
+	if err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect(platformURLWithTab("app", id, "databases"))
+	}
+	if err := h.databaseService.DeleteRedis(item.ID, currentUserID(c), c.IP()); err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect(platformURLWithTab("app", app.ID, "databases"))
+	}
+	h.base.Sessions.SetFlash(c, "Redis connection deleted")
+	return c.Redirect(platformURLWithTab("app", app.ID, "databases"))
+}
+
 func appDBItems(appID uint, appName string, all []models.DatabaseConnection) []models.DatabaseConnection {
 	out := make([]models.DatabaseConnection, 0, len(all))
 	prefix := strings.ToLower(strings.TrimSpace(appName))
@@ -820,6 +959,24 @@ func appDBItems(appID uint, appName string, all []models.DatabaseConnection) []m
 		}
 	}
 	return out
+}
+
+func (h *AppHandler) appDatabaseItem(appID, dbID uint) (*models.GoApp, *models.DatabaseConnection, error) {
+	app, err := h.service.Find(appID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("application not found")
+	}
+	items, err := h.databases.List()
+	if err != nil {
+		return app, nil, err
+	}
+	for _, item := range appDBItems(app.ID, app.Name, items) {
+		if item.ID == dbID {
+			db := item
+			return app, &db, nil
+		}
+	}
+	return app, nil, fmt.Errorf("database connection not found for this platform")
 }
 
 func filterAppDBByEngine(items []models.DatabaseConnection, engine string) []models.DatabaseConnection {
@@ -850,6 +1007,24 @@ func appRedisItems(appID uint, appName string, all []models.RedisConnection) []m
 		}
 	}
 	return out
+}
+
+func (h *AppHandler) appRedisItem(appID, redisID uint) (*models.GoApp, *models.RedisConnection, error) {
+	app, err := h.service.Find(appID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("application not found")
+	}
+	items, err := h.databaseService.ListRedis()
+	if err != nil {
+		return app, nil, err
+	}
+	for _, item := range appRedisItems(app.ID, app.Name, items) {
+		if item.ID == redisID {
+			redis := item
+			return app, &redis, nil
+		}
+	}
+	return app, nil, fmt.Errorf("redis connection not found for this platform")
 }
 
 func appNameFromDomain(domain string) string {

@@ -1,168 +1,288 @@
-# DeployCP
+<p align="center">
+  <strong>DeployCP</strong><br>
+  Self-hosted Linux hosting and cloud management panel
+</p>
 
-DeployCP is a self-hosted control panel (Go + Fiber + Jet) for managing platforms, services, users, databases, SSL, and server operations on Linux/macOS.
+<p align="center">
+  <a href="https://github.com/saiarlen/deployCP/releases/latest"><img src="https://img.shields.io/github/v/release/saiarlen/deployCP?style=flat-square" alt="Latest Release"></a>
+  <a href="https://github.com/saiarlen/deployCP/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/saiarlen/deployCP/release.yml?style=flat-square&label=build" alt="Build Status"></a>
+  <a href="https://github.com/saiarlen/deployCP/blob/main/LICENSE"><img src="https://img.shields.io/github/license/saiarlen/deployCP?style=flat-square" alt="License"></a>
+  <img src="https://img.shields.io/badge/platform-linux-blue?style=flat-square" alt="Platform">
+  <img src="https://img.shields.io/badge/go-1.25+-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go Version">
+</p>
 
-This file is the main app guide. Detailed architecture and decisions are in the `readme/` folder.
+---
 
-## Docs Map
-- `readme/README.md` -> documentation index
-- `readme/PROJECT_CONTEXT.md` -> product/runtime context
-- `readme/CURRENT_STATE.md` -> current implemented behavior + gaps
-- `readme/ARCHITECTURE.md` -> architecture, data flows, route map
-- `readme/DECISIONS.md` -> architectural decisions
-- `readme/AI_RULES.md` -> contributor/AI guardrails
+DeployCP is a single-binary control panel that manages real Linux server infrastructure from a web UI. It provisions site users, nginx configs, SSL certificates, runtimes, databases, cron jobs, firewall rules, FTP accounts, Redis instances, Varnish caching, and systemd services — with full cleanup on delete.
 
-## What The Application Provides
-- Unified **Platforms** flow (`/platforms`) for:
-  - website platforms: `static`, `php`
-  - runtime platforms: `go`, `python`, `node`, `binary`
-- Platform manage UI (single template): runtime controls, databases, SSL, SSH/FTP, logs.
-- Settings tabs:
-  - General
-  - Users
-  - Events (paginated)
-  - Services
-  - Firewall
-- Dashboard telemetry and history.
-- Auth/session management + login captcha.
+Built with Go, Fiber, Jet templates, GORM, and SQLite. No external dependencies beyond standard Linux packages.
 
-## Navigation
-- Dashboard: `/`
-- Platforms: `/platforms`
-- Settings (admin): `/settings`
-- Profile: `/profile`
+## Quick Start
 
-Compatibility routes still exist for `/websites` and `/apps` and redirect/alias into the unified platform flow.
+**One-click install** (latest release):
 
-## Architecture (High Level)
-DeployCP uses a layered monolith architecture:
-1. `middleware`
-2. `handlers`
-3. `services`
-4. `repositories`
-5. `models`
-
-Key principles from architecture docs:
-- high-risk system operations are orchestrated in services
-- OS-specific behavior is isolated in platform adapters
-- handlers own HTTP/form flow only
-
-## Tech Stack
-- Go module: `deploycp`
-- Web framework: Fiber
-- ORM: GORM
-- DB: SQLite (panel metadata + `fiber_sessions`)
-- Templates: Jet (`frontend/templates/*.jet.html`)
-- Frontend libs: Tailwind CDN, Notyf, Lucide, Chart.js
-
-## Folder Structure
-```text
-main.go
-frontend/
-  assets/
-  templates/
-internal/
-  bootstrap/
-  config/
-  handlers/
-  middleware/
-  models/
-  platform/
-  repositories/
-  services/
-  system/
-  utils/
-  validators/
-  views/
-database/
-readme/
-scripts/
-storage/
-```
-
-## Data Model Summary
-Primary entities:
-- Identity/session: `User`, `AuthSession`
-- Access scope: `UserPlatformAccess`
-- Platforms: `Website`, `GoApp`, `WebsiteDomain`, `SiteUser`
-- Runtime metadata: `AppEnvVar`, `ManagedService`
-- Data integrations: `DatabaseConnection`, `RedisConnection`
-- Security/TLS: `SSLCertificate`
-- Settings/preferences: `Setting`, `UserPreference`, `NginxSiteConfig`
-- Audit/telemetry: `AuditLog`, `ActivityLog`, `SystemMetricSnapshot`
-
-Database model is unified on the physical table `platforms` (legacy website/app tables converged).
-
-## Canonical Route Summary
-Source of truth: `internal/bootstrap/app.go` -> `registerRoutes`
-
-- Public:
-  - `GET /login`
-  - `GET /login/captcha`
-  - `POST /login`
-  - `POST /logout`
-  - `POST /theme`
-- Secured:
-  - `GET /`
-  - `GET /dashboard/live`
-  - `GET /dashboard/history`
-  - `GET /profile`
-  - `POST /profile`
-  - `GET /profile/password` (redirect to `/profile`)
-  - `POST /profile/password`
-  - `POST /profile/theme`
-- Platform hub:
-  - `GET /platforms`
-  - `GET /platforms/new`
-  - `POST /platforms`
-  - `GET /platforms/:ref`
-- Services:
-  - `GET /services` redirects to `/settings?tab=services`
-  - service APIs remain under `POST /services...`
-- Logs:
-  - `GET /logs` redirects to `/settings?tab=events`
-
-## Security and Access
-- Auth/session middleware gates secured routes.
-- CSRF is enforced when enabled in config.
-- Login rate limit is applied on `POST /login`.
-- Role behavior:
-  - `admin`: full access
-  - `site_manager`: platform access only (no settings/services/logs)
-  - `user`: restricted to assigned platforms
-- Destructive actions use confirmation modal UX.
-- Platform delete requires typed `DELETE` confirmation.
-
-## Platform Modes
-- Normal mode: real OS adapter actions.
-- `PLATFORM_MODE=dryrun`:
-  - safe local simulation
-  - no real system/user/nginx mutations
-  - privileged paths redirected under `./storage/dryrun`
-
-## Run Locally
-1. Configure `.env` (start from `.env.example`).
-2. Start app:
 ```bash
-go run main.go
+curl -fsSL https://raw.githubusercontent.com/saiarlen/deployCP/main/scripts/linux/install-remote.sh | sudo bash
 ```
 
-## Validation
-Use local cache in sandboxed/dev environments:
+**Pin a specific version:**
+
 ```bash
-GOCACHE=$(pwd)/storage/cache/.gocache go test ./...
-GOCACHE=$(pwd)/storage/cache/.gocache go vet ./...
+curl -fsSL https://raw.githubusercontent.com/saiarlen/deployCP/main/scripts/linux/install-remote.sh | sudo DEPLOYCP_VERSION=v1.0.0 bash
 ```
 
-## Operational Notes
-- Settings timezone (`panel_timezone`) is applied app-wide (`time.Local`).
-- Runtime version catalogs in Settings feed create/manage runtime selectors.
-- Runtime version deletion is protected: if in use by platforms, removal is blocked.
-- Toast classification marks failure phrases (`cannot`, `blocked`, `in use`) as error notifications.
+**Update an existing installation:**
 
-## Primary Files To Change
-- Route wiring: `internal/bootstrap/app.go`
-- Platform lifecycle: `internal/services/website_service.go`, `internal/services/app_service.go`
-- Settings behavior: `internal/handlers/settings_handler.go`, `internal/services/settings_service.go`
-- Shared UI shell + confirm/toasts: `frontend/templates/layouts_base.jet.html`
-- Core CSS: `frontend/assets/css/app.css`
+```bash
+curl -fsSL https://raw.githubusercontent.com/saiarlen/deployCP/main/scripts/linux/install-remote.sh | sudo bash -s -- --update
+```
+
+**Uninstall:**
+
+```bash
+sudo /home/deploycp/core/scripts/linux/uninstall.sh
+```
+
+After install, open `http://your-server-ip:8080` and log in with the credentials printed during installation (also stored in `/home/deploycp/core/.env`).
+
+## What It Does
+
+| Area | What DeployCP manages |
+|---|---|
+| **Platforms** | Create, update, delete websites and apps from a unified UI |
+| **Site Users** | Real Linux users with restricted shells and scoped SSH access |
+| **Runtimes** | Side-by-side Node, PHP, Python, Go versions with per-platform defaults |
+| **Nginx** | Config generation, validation, reload, SSL termination, cleanup |
+| **SSL** | Let's Encrypt via Certbot, imported certificates, self-signed certs |
+| **Processes** | systemd units for apps with pm2, gunicorn, uwsgi support |
+| **Cron** | Real `/etc/cron.d` entries with generated wrapper scripts |
+| **Firewall** | ufw, firewalld, or iptables — auto-detected |
+| **Databases** | MariaDB and PostgreSQL provisioning (create DB, user, grants, drop) |
+| **FTP** | Real Linux FTP users with managed ProFTPD config |
+| **Redis** | Dedicated managed instances with per-platform config |
+| **Varnish** | Per-site VCL fragments, aggregate include, validate, reload |
+| **Logs** | Real filesystem log paths surfaced in the panel |
+
+## Supported Platforms
+
+Release binaries are built for:
+
+| Architecture | Target |
+|---|---|
+| `linux/amd64` | Standard x86_64 servers and VMs |
+| `linux/arm64` | ARM64 servers (AWS Graviton, Oracle Ampere, etc.) |
+| `linux/arm/v7` | 32-bit ARM (Raspberry Pi, etc.) |
+
+Tested on Ubuntu, Debian, Rocky Linux, AlmaLinux, CentOS Stream, Fedora, openSUSE, and Arch Linux. The installer auto-detects the package manager (`apt`, `dnf`, `yum`, `zypper`, `pacman`).
+
+## Install Layout
+
+```
+/home/deploycp/
+├── core/
+│   ├── bin/deploycp              # application binary
+│   ├── .env                      # configuration (0600)
+│   ├── frontend/                 # templates and static assets
+│   │   ├── assets/css/
+│   │   └── templates/
+│   ├── scripts/linux/            # helper scripts (runtime-manager, etc.)
+│   ├── docs/                     # HTML documentation
+│   └── storage/
+│       ├── db/deploycp.sqlite    # metadata database
+│       ├── generated/            # cron scripts, htpasswd, redis configs
+│       ├── logs/                 # internal logs
+│       ├── runtimes/             # installed runtime versions
+│       └── ssl/                  # imported/self-signed certificates
+└── platforms/
+    ├── sites/                    # managed platform root directories
+    ├── logs/                     # platform access/error logs
+    ├── backups/
+    └── tmp/
+```
+
+## Documentation
+
+| Document | Description |
+|---|---|
+| [Installation Guide](docs/install.html) | Step-by-step install, prerequisites, post-install checklist |
+| [Operations Guide](docs/operations.html) | Platform lifecycle, runtime management, service control |
+| [Troubleshooting](docs/troubleshooting.html) | Common issues, recovery procedures, log locations |
+| [Full Docs](docs/index.html) | Complete reference |
+
+## Architecture
+
+DeployCP is a layered monolith with a clean adapter pattern for OS operations:
+
+```
+HTTP Request
+  → Middleware (auth, CSRF, session, rate-limit)
+    → Handlers (HTTP orchestration only)
+      → Services (business logic, provisioning, cross-module workflows)
+        → Repositories (DB persistence only)
+        → Platform Adapter (linux | darwin | dryrun)
+          → System Runner (timeout, audit, stdout/stderr capture)
+            → Real OS commands
+```
+
+**Key design rules:**
+- Handlers never call OS commands directly
+- Services own all provisioning logic
+- All system commands go through a structured runner with timeout, audit logging, and exit code handling
+- OS behavior is isolated behind the platform adapter interface — swap `linux` for `dryrun` with one env var
+
+### Key Source Locations
+
+| File | Purpose |
+|---|---|
+| `main.go` | Entrypoint and CLI commands |
+| `internal/bootstrap/app.go` | Dependency wiring, routes |
+| `internal/config/config.go` | Configuration and env loading |
+| `internal/models/models.go` | Database schema (GORM models) |
+| `internal/platform/linux/manager.go` | Linux adapter (systemd, useradd, nginx) |
+| `internal/platform/dryrun/manager.go` | Dry-run adapter for local development |
+| `internal/system/command_runner.go` | Safe command execution abstraction |
+| `internal/system/nginx/generator.go` | Nginx config generation |
+| `internal/services/` | All business logic and provisioning |
+| `frontend/templates/` | Jet HTML templates |
+
+## CLI Commands
+
+The binary supports several operational commands beyond serving the web UI:
+
+```bash
+# Start the web panel (default)
+deploycp serve
+
+# Prepare host after fresh install
+deploycp bootstrap-host
+
+# Sync all managed resources to match DB state
+deploycp reconcile-managed
+
+# Check host readiness (binaries, dirs, services, config)
+deploycp verify-host
+
+# Remove all managed resources (platforms, users, services, firewall rules)
+deploycp teardown-managed
+```
+
+## Verification and Recovery
+
+```bash
+# Check panel service status
+sudo systemctl status deploycp --no-pager
+
+# View panel logs
+sudo journalctl -u deploycp -n 200 --no-pager
+
+# Run host verification
+sudo /home/deploycp/core/bin/deploycp verify-host
+
+# Re-sync all managed state
+sudo /home/deploycp/core/bin/deploycp reconcile-managed
+```
+
+**Recovery order:**
+
+1. `systemctl status deploycp` — check if the service is running
+2. `deploycp verify-host` — identify missing binaries, dirs, or config
+3. Fix any reported issues (install missing packages, set env values)
+4. `deploycp reconcile-managed` — re-sync managed resources
+5. Test the affected platform workflow
+
+## Local Development
+
+Run in dry-run mode to develop on macOS or Linux without real privileged operations:
+
+```bash
+# First-time setup
+cp .env.example .env
+mkdir -p storage/db storage/logs storage/sites
+
+# Run in dry-run mode
+PLATFORM_MODE=dryrun go run main.go
+```
+
+Dry-run mode redirects all system paths to `./storage/dryrun/` and replaces OS commands with `/bin/echo`. The full UI and business logic runs normally — only the OS-level mutations are simulated.
+
+```bash
+# Run tests
+go test ./...
+
+# Run vet
+go vet ./...
+```
+
+## Technology Stack
+
+| Component | Technology |
+|---|---|
+| Language | Go 1.25+ |
+| Web Framework | [Fiber](https://gofiber.io) |
+| ORM | [GORM](https://gorm.io) |
+| Database | SQLite |
+| Templates | [Jet](https://github.com/CloudyKit/jet) |
+| Frontend | Tailwind CSS (CDN), Lucide Icons, Notyf, Chart.js |
+
+## Release Process
+
+Releases are automated through GitHub Actions:
+
+1. Tag a commit: `git tag v1.0.0 && git push origin v1.0.0`
+2. The [release workflow](.github/workflows/release.yml) builds binaries for all three architectures with CGO cross-compilation
+3. Each build produces a tarball containing the binary, frontend assets, scripts, and docs
+4. Tarballs and SHA-256 checksums are published to [GitHub Releases](https://github.com/saiarlen/deployCP/releases)
+5. The one-click installer downloads the correct tarball for the host architecture
+
+To build locally:
+
+```bash
+./scripts/linux/build-release.sh
+# Output: dist/deploycp-<version>-linux-{amd64,arm64,armv7}.tar.gz
+```
+
+## Repository Layout
+
+```
+.
+├── main.go                     # entrypoint
+├── go.mod / go.sum
+├── .env.example                # reference configuration
+├── frontend/
+│   ├── assets/                 # CSS, JS
+│   └── templates/              # Jet HTML templates
+├── internal/
+│   ├── bootstrap/              # app wiring, DB migrations, seeding
+│   ├── config/                 # env loading and validation
+│   ├── handlers/               # HTTP handlers
+│   ├── middleware/              # auth, CSRF, sessions, rate-limit
+│   ├── models/                 # GORM schema
+│   ├── platform/               # OS adapters (linux, darwin, dryrun)
+│   ├── repositories/           # DB access layer
+│   ├── services/               # business logic and provisioning
+│   ├── system/                 # command runner, nginx generator
+│   ├── utils/                  # crypto, file, path helpers
+│   ├── validators/             # input validation
+│   └── views/                  # template engine setup
+├── scripts/
+│   └── linux/                  # install, update, uninstall, build, runtime-manager
+├── docs/                       # HTML documentation
+├── database/
+│   └── migrations/
+├── storage/                    # local dev storage (gitignored)
+└── .github/
+    └── workflows/
+        └── release.yml         # CI/CD release pipeline
+```
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/my-change`
+3. Run in dry-run mode to test: `PLATFORM_MODE=dryrun go run main.go`
+4. Run `go test ./...` and `go vet ./...`
+5. Submit a pull request
+
+## License
+
+See [LICENSE](LICENSE) for details.

@@ -55,8 +55,18 @@ type WebsiteService struct {
 	dbRepo    *repositories.DatabaseConnectionRepository
 	redisRepo *repositories.RedisConnectionRepository
 	sslRepo   *repositories.SSLCertificateRepository
+	varnish   *repositories.VarnishConfigRepository
+	ipBlocks  *repositories.IPBlockRepository
+	botBlocks *repositories.BotBlockRepository
+	basicAuth *repositories.BasicAuthRepository
 	adapter   platform.Adapter
 	audit     *AuditService
+	ssl       *SSLService
+	runtime   *RuntimeService
+	cron      *CronService
+	database  *DatabaseService
+	ftp       *FTPService
+	varnishOS *VarnishService
 }
 
 func NewWebsiteService(
@@ -70,8 +80,18 @@ func NewWebsiteService(
 	dbRepo *repositories.DatabaseConnectionRepository,
 	redisRepo *repositories.RedisConnectionRepository,
 	sslRepo *repositories.SSLCertificateRepository,
+	varnish *repositories.VarnishConfigRepository,
+	ipBlocks *repositories.IPBlockRepository,
+	botBlocks *repositories.BotBlockRepository,
+	basicAuth *repositories.BasicAuthRepository,
 	adapter platform.Adapter,
 	audit *AuditService,
+	ssl *SSLService,
+	runtime *RuntimeService,
+	cron *CronService,
+	database *DatabaseService,
+	ftp *FTPService,
+	varnishOS *VarnishService,
 ) *WebsiteService {
 	return &WebsiteService{
 		cfg:       cfg,
@@ -84,8 +104,18 @@ func NewWebsiteService(
 		dbRepo:    dbRepo,
 		redisRepo: redisRepo,
 		sslRepo:   sslRepo,
+		varnish:   varnish,
+		ipBlocks:  ipBlocks,
+		botBlocks: botBlocks,
+		basicAuth: basicAuth,
 		adapter:   adapter,
 		audit:     audit,
+		ssl:       ssl,
+		runtime:   runtime,
+		cron:      cron,
+		database:  database,
+		ftp:       ftp,
+		varnishOS: varnishOS,
 	}
 }
 
@@ -123,6 +153,9 @@ func (s *WebsiteService) Create(ctx context.Context, in WebsiteInput, actor *uin
 	if err := s.repo.Create(site, in.Domains); err != nil {
 		return nil, err
 	}
+	if err := s.applyPlatformRuntime(site, actor, ip); err != nil {
+		return nil, err
+	}
 	if err := s.writeNginxConfig(ctx, site); err != nil {
 		return nil, err
 	}
@@ -149,6 +182,9 @@ func (s *WebsiteService) Update(ctx context.Context, id uint, in WebsiteInput, a
 	if err := s.repo.Update(site, in.Domains); err != nil {
 		return err
 	}
+	if err := s.applyPlatformRuntime(site, actor, ip); err != nil {
+		return err
+	}
 	if err := s.writeNginxConfig(ctx, site); err != nil {
 		return err
 	}
@@ -171,6 +207,11 @@ func (s *WebsiteService) Delete(ctx context.Context, id uint, actor *uint, ip st
 	}
 	if err := s.deleteWebsiteLegacyData(site, actor, ip); err != nil {
 		return err
+	}
+	if s.cron != nil {
+		if err := s.cron.DeleteWebsiteJobs(ctx, site.ID, actor, ip); err != nil {
+			return err
+		}
 	}
 	if err := s.disableConfig(site.Name); err != nil && !os.IsNotExist(err) {
 		return err
@@ -321,14 +362,60 @@ func (s *WebsiteService) UpdatePhpSettings(id uint, phpVersion string, data PhpS
 	for _, d := range site.Domains {
 		domains = append(domains, d.Domain)
 	}
-	return s.repo.Update(site, domains)
+	if err := s.repo.Update(site, domains); err != nil {
+		return err
+	}
+	return s.applyPlatformRuntime(site, nil, "")
+}
+
+func (s *WebsiteService) RefreshConfig(ctx context.Context, id uint) error {
+	site, err := s.repo.Find(id)
+	if err != nil {
+		return err
+	}
+	if err := s.applyPlatformRuntime(site, nil, ""); err != nil {
+		return err
+	}
+	return s.writeNginxConfig(ctx, site)
 }
 
 func (s *WebsiteService) writeNginxConfig(ctx context.Context, site *models.Website) error {
 	if !s.cfg.Features.EnableNginxManage {
 		return nil
 	}
-	cfg := nginx.BuildWebsiteConfig(s.cfg, site)
+	var cert *models.SSLCertificate
+	if s.sslRepo != nil {
+		if items, err := s.sslRepo.List(); err == nil {
+			cert = firstWebsiteCert(site, items)
+		}
+	}
+	var basicAuth *models.BasicAuth
+	if s.basicAuth != nil {
+		basicAuth, _ = s.basicAuth.FindByWebsite(site.ID)
+	}
+	ipBlocks := []models.IPBlock{}
+	if s.ipBlocks != nil {
+		ipBlocks, _ = s.ipBlocks.ListByWebsite(site.ID)
+	}
+	botBlocks := []models.BotBlock{}
+	if s.botBlocks != nil {
+		botBlocks, _ = s.botBlocks.ListByWebsite(site.ID)
+	}
+	basicAuthPath := ""
+	if basicAuth != nil && basicAuth.Enabled && strings.TrimSpace(basicAuth.Username) != "" && strings.TrimSpace(basicAuth.Password) != "" {
+		path, err := s.ensureBasicAuthFile(site, basicAuth)
+		if err != nil {
+			return err
+		}
+		basicAuthPath = path
+	}
+	cfg := nginx.BuildWebsiteConfig(s.cfg, site, nginx.WebsiteConfigOptions{
+		Certificate:   cert,
+		BasicAuth:     basicAuth,
+		BasicAuthPath: basicAuthPath,
+		IPBlocks:      ipBlocks,
+		BotBlocks:     botBlocks,
+	})
 	if err := utils.WriteFileAtomic(cfg.ConfigPath, []byte(cfg.Content), 0o644); err != nil {
 		return err
 	}
@@ -347,6 +434,37 @@ func (s *WebsiteService) writeNginxConfig(ctx context.Context, site *models.Webs
 		return err
 	}
 	return s.adapter.Nginx().Reload(ctx, s.cfg.Paths.NginxBinary)
+}
+
+func (s *WebsiteService) applyPlatformRuntime(site *models.Website, actor *uint, ip string) error {
+	if s.runtime == nil || site == nil {
+		return nil
+	}
+	switch site.Type {
+	case "php":
+		return s.runtime.ApplyPlatformRuntime(site.RootPath, "php", site.PHPVersion, actor, ip)
+	case "proxy":
+		if strings.TrimSpace(site.AppRuntime) != "" {
+			version := runtimeVersionFromWebsite(site)
+			if version != "" {
+				return s.runtime.ApplyPlatformRuntime(site.RootPath, site.AppRuntime, version, actor, ip)
+			}
+		}
+	}
+	return s.runtime.ApplyPlatformRuntime(site.RootPath, "", "", actor, ip)
+}
+
+func (s *WebsiteService) ensureBasicAuthFile(site *models.Website, auth *models.BasicAuth) (string, error) {
+	path := filepath.Join(s.cfg.Paths.HTPasswdRoot, site.Name+".htpasswd")
+	hash, err := utils.HashPassword(auth.Password)
+	if err != nil {
+		return "", err
+	}
+	content := fmt.Sprintf("%s:%s\n", auth.Username, hash)
+	if err := utils.WriteFileAtomic(path, []byte(content), 0o640); err != nil {
+		return "", err
+	}
+	return path, nil
 }
 
 func (s *WebsiteService) enableConfig(source, link string) error {
@@ -450,7 +568,11 @@ func (s *WebsiteService) deleteWebsiteLegacyData(site *models.Website, actor *ui
 	if site == nil {
 		return nil
 	}
-	if err := s.ftpUsers.DeleteByWebsite(site.ID); err != nil {
+	if s.ftp != nil {
+		if err := s.ftp.DeleteByWebsite(context.Background(), site.ID, actor, ip); err != nil {
+			return err
+		}
+	} else if err := s.ftpUsers.DeleteByWebsite(site.ID); err != nil {
 		return err
 	}
 	domainSet := map[string]struct{}{}
@@ -468,14 +590,22 @@ func (s *WebsiteService) deleteWebsiteLegacyData(site *models.Website, actor *ui
 	siteToken := strings.ToLower(strings.TrimSpace(site.Name))
 	for _, db := range dbItems {
 		if db.WebsiteID != nil && *db.WebsiteID == site.ID {
-			if err := s.dbRepo.Delete(db.ID); err != nil {
+			if s.database != nil {
+				if err := s.database.DeleteDatabaseRecord(&db, actor, ip); err != nil {
+					return err
+				}
+			} else if err := s.dbRepo.Delete(db.ID); err != nil {
 				return err
 			}
 			s.audit.Record(actor, "database.delete", "database_connection", fmt.Sprintf("%d", db.ID), ip, map[string]any{"source": "website-delete"})
 			continue
 		}
 		if db.WebsiteID == nil && db.GoAppID == nil && siteToken != "" && strings.Contains(strings.ToLower(db.Label), siteToken) {
-			if err := s.dbRepo.Delete(db.ID); err != nil {
+			if s.database != nil {
+				if err := s.database.DeleteDatabaseRecord(&db, actor, ip); err != nil {
+					return err
+				}
+			} else if err := s.dbRepo.Delete(db.ID); err != nil {
 				return err
 			}
 			s.audit.Record(actor, "database.delete", "database_connection", fmt.Sprintf("%d", db.ID), ip, map[string]any{"source": "website-delete-legacy-label"})
@@ -488,14 +618,22 @@ func (s *WebsiteService) deleteWebsiteLegacyData(site *models.Website, actor *ui
 	}
 	for _, redis := range redisItems {
 		if redis.WebsiteID != nil && *redis.WebsiteID == site.ID {
-			if err := s.redisRepo.Delete(redis.ID); err != nil {
+			if s.database != nil {
+				if err := s.database.DeleteRedisRecord(&redis, actor, ip); err != nil {
+					return err
+				}
+			} else if err := s.redisRepo.Delete(redis.ID); err != nil {
 				return err
 			}
 			s.audit.Record(actor, "redis.delete", "redis_connection", fmt.Sprintf("%d", redis.ID), ip, map[string]any{"source": "website-delete"})
 			continue
 		}
 		if redis.WebsiteID == nil && redis.GoAppID == nil && siteToken != "" && strings.Contains(strings.ToLower(redis.Label), siteToken) {
-			if err := s.redisRepo.Delete(redis.ID); err != nil {
+			if s.database != nil {
+				if err := s.database.DeleteRedisRecord(&redis, actor, ip); err != nil {
+					return err
+				}
+			} else if err := s.redisRepo.Delete(redis.ID); err != nil {
 				return err
 			}
 			s.audit.Record(actor, "redis.delete", "redis_connection", fmt.Sprintf("%d", redis.ID), ip, map[string]any{"source": "website-delete-legacy-label"})
@@ -510,10 +648,21 @@ func (s *WebsiteService) deleteWebsiteLegacyData(site *models.Website, actor *ui
 		if _, ok := domainSet[strings.ToLower(strings.TrimSpace(cert.Domain))]; !ok {
 			continue
 		}
-		if err := s.sslRepo.Delete(cert.ID); err != nil {
-			return err
+		if s.ssl != nil {
+			if err := s.ssl.Delete(cert.ID, actor, ip); err != nil {
+				return err
+			}
+		} else {
+			if err := s.sslRepo.Delete(cert.ID); err != nil {
+				return err
+			}
 		}
 		s.audit.Record(actor, "ssl.delete", "ssl_certificate", fmt.Sprintf("%d", cert.ID), ip, map[string]any{"source": "website-delete", "domain": cert.Domain})
+	}
+	if s.varnishOS != nil {
+		if err := s.varnishOS.DeleteWebsiteConfig(context.Background(), site.ID, actor, ip); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -529,14 +678,22 @@ func (s *WebsiteService) deleteLegacyAppDatabases(app *models.GoApp, actor *uint
 	appToken := strings.ToLower(strings.TrimSpace(app.Name))
 	for _, db := range dbItems {
 		if db.GoAppID != nil && *db.GoAppID == app.ID {
-			if err := s.dbRepo.Delete(db.ID); err != nil {
+			if s.database != nil {
+				if err := s.database.DeleteDatabaseRecord(&db, actor, ip); err != nil {
+					return err
+				}
+			} else if err := s.dbRepo.Delete(db.ID); err != nil {
 				return err
 			}
 			s.audit.Record(actor, "database.delete", "database_connection", fmt.Sprintf("%d", db.ID), ip, map[string]any{"source": "app-delete"})
 			continue
 		}
 		if db.WebsiteID == nil && db.GoAppID == nil && appToken != "" && strings.Contains(strings.ToLower(db.Label), appToken) {
-			if err := s.dbRepo.Delete(db.ID); err != nil {
+			if s.database != nil {
+				if err := s.database.DeleteDatabaseRecord(&db, actor, ip); err != nil {
+					return err
+				}
+			} else if err := s.dbRepo.Delete(db.ID); err != nil {
 				return err
 			}
 			s.audit.Record(actor, "database.delete", "database_connection", fmt.Sprintf("%d", db.ID), ip, map[string]any{"source": "app-delete-legacy-label"})
@@ -549,14 +706,22 @@ func (s *WebsiteService) deleteLegacyAppDatabases(app *models.GoApp, actor *uint
 	}
 	for _, redis := range redisItems {
 		if redis.GoAppID != nil && *redis.GoAppID == app.ID {
-			if err := s.redisRepo.Delete(redis.ID); err != nil {
+			if s.database != nil {
+				if err := s.database.DeleteRedisRecord(&redis, actor, ip); err != nil {
+					return err
+				}
+			} else if err := s.redisRepo.Delete(redis.ID); err != nil {
 				return err
 			}
 			s.audit.Record(actor, "redis.delete", "redis_connection", fmt.Sprintf("%d", redis.ID), ip, map[string]any{"source": "app-delete"})
 			continue
 		}
 		if redis.WebsiteID == nil && redis.GoAppID == nil && appToken != "" && strings.Contains(strings.ToLower(redis.Label), appToken) {
-			if err := s.redisRepo.Delete(redis.ID); err != nil {
+			if s.database != nil {
+				if err := s.database.DeleteRedisRecord(&redis, actor, ip); err != nil {
+					return err
+				}
+			} else if err := s.redisRepo.Delete(redis.ID); err != nil {
 				return err
 			}
 			s.audit.Record(actor, "redis.delete", "redis_connection", fmt.Sprintf("%d", redis.ID), ip, map[string]any{"source": "app-delete-legacy-label"})
@@ -706,6 +871,47 @@ func (s *WebsiteService) ReadLogFile(id uint, filename string, lines int) (strin
 		return "", err
 	}
 	return content, nil
+}
+
+func firstWebsiteCert(site *models.Website, items []models.SSLCertificate) *models.SSLCertificate {
+	if site == nil {
+		return nil
+	}
+	domainSet := make(map[string]struct{}, len(site.Domains))
+	for _, item := range site.Domains {
+		domainSet[strings.ToLower(strings.TrimSpace(item.Domain))] = struct{}{}
+	}
+	for i := range items {
+		if _, ok := domainSet[strings.ToLower(strings.TrimSpace(items[i].Domain))]; !ok {
+			continue
+		}
+		if strings.TrimSpace(items[i].CertPath) == "" || strings.TrimSpace(items[i].KeyPath) == "" {
+			continue
+		}
+		return &items[i]
+	}
+	return nil
+}
+
+func runtimeVersionFromWebsite(site *models.Website) string {
+	if site == nil {
+		return ""
+	}
+	switch strings.ToLower(strings.TrimSpace(site.AppRuntime)) {
+	case "node":
+		return "node20"
+	case "python":
+		return "python3.12"
+	case "go":
+		return "go1.25"
+	case "php":
+		if strings.TrimSpace(site.PHPVersion) != "" {
+			return strings.TrimSpace(site.PHPVersion)
+		}
+		return "8.3"
+	default:
+		return ""
+	}
 }
 
 func tailFile(path string, lines int) (string, error) {

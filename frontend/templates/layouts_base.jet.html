@@ -147,8 +147,15 @@
         <div class="page-body">
           {{ embed() }}
         </div>
+
       </div>
     </main>
+
+    <footer class="app-footer">
+      <span>&copy; {{ CurrentYear }} DeployCP by <a href="https://saiarlen.com" target="_blank" rel="noopener">Saiarlen</a></span>
+      <span class="app-footer-dot">·</span>
+      <span>{{ AppVersion }}{{ if AppVersionIsDev }} <span class="badge badge-neutral">dev</span>{{ end }}</span>
+    </footer>
   </div>
 
   <div id="action-confirm-modal" class="confirm-modal hidden" aria-hidden="true">

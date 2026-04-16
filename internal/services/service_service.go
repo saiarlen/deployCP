@@ -29,6 +29,7 @@ type ServiceEntry struct {
 	Status        platform.ServiceStatus
 	State         string
 	CategoryLabel string
+	Installed     bool
 }
 
 type ServiceInput struct {
@@ -63,10 +64,11 @@ type ServiceService struct {
 	settings *repositories.SettingRepository
 	adapter  platform.Adapter
 	audit    *AuditService
+	packages *SystemPackageService
 }
 
-func NewServiceService(cfg *config.Config, repo *repositories.ManagedServiceRepository, settings *repositories.SettingRepository, adapter platform.Adapter, audit *AuditService) *ServiceService {
-	return &ServiceService{cfg: cfg, repo: repo, settings: settings, adapter: adapter, audit: audit}
+func NewServiceService(cfg *config.Config, repo *repositories.ManagedServiceRepository, settings *repositories.SettingRepository, adapter platform.Adapter, audit *AuditService, packages *SystemPackageService) *ServiceService {
+	return &ServiceService{cfg: cfg, repo: repo, settings: settings, adapter: adapter, audit: audit, packages: packages}
 }
 
 func (s *ServiceService) List(ctx context.Context) ([]ServiceEntry, error) {
@@ -76,7 +78,8 @@ func (s *ServiceService) List(ctx context.Context) ([]ServiceEntry, error) {
 	}
 	out := make([]ServiceEntry, 0, len(items))
 	for _, item := range items {
-		status, _ := s.adapter.Services().Status(ctx, item.Name)
+		resolvedName := s.resolvedServiceName(ctx, item.Name)
+		status, _ := s.adapter.Services().Status(ctx, resolvedName)
 		state := "stopped"
 		if status.Active {
 			state = "running"
@@ -89,6 +92,7 @@ func (s *ServiceService) List(ctx context.Context) ([]ServiceEntry, error) {
 			Status:        status,
 			State:         state,
 			CategoryLabel: s.categoryTitle(item.Type),
+			Installed:     s.installedState(ctx, item.Name),
 		})
 	}
 	return out, nil
@@ -115,7 +119,8 @@ func (s *ServiceService) ListSystem(ctx context.Context) ([]ServiceEntry, error)
 		if trackedItem, ok := trackedByName[key]; ok {
 			record = trackedItem
 		}
-		status, _ := s.adapter.Services().Status(ctx, record.Name)
+		resolvedName := s.resolvedServiceName(ctx, record.Name)
+		status, _ := s.adapter.Services().Status(ctx, resolvedName)
 		state := "stopped"
 		if status.Active {
 			state = "running"
@@ -128,6 +133,7 @@ func (s *ServiceService) ListSystem(ctx context.Context) ([]ServiceEntry, error)
 			Status:        status,
 			State:         state,
 			CategoryLabel: s.categoryTitle(record.Type),
+			Installed:     s.installedState(ctx, record.Name),
 		})
 	}
 
@@ -139,7 +145,8 @@ func (s *ServiceService) ListSystem(ctx context.Context) ([]ServiceEntry, error)
 		if !isSystemManagedService(item) {
 			continue
 		}
-		status, _ := s.adapter.Services().Status(ctx, item.Name)
+		resolvedName := s.resolvedServiceName(ctx, item.Name)
+		status, _ := s.adapter.Services().Status(ctx, resolvedName)
 		state := "stopped"
 		if status.Active {
 			state = "running"
@@ -152,6 +159,7 @@ func (s *ServiceService) ListSystem(ctx context.Context) ([]ServiceEntry, error)
 			Status:        status,
 			State:         state,
 			CategoryLabel: s.categoryTitle(item.Type),
+			Installed:     s.installedState(ctx, item.Name),
 		})
 	}
 
@@ -348,21 +356,37 @@ func (s *ServiceService) Action(ctx context.Context, item *models.ManagedService
 	}
 	svc := s.adapter.Services()
 	var err error
+	targetName := s.resolvedServiceName(ctx, item.Name)
+	if targetName == "" {
+		targetName = item.Name
+	}
 
 	switch action {
 	case "start":
-		err = svc.Start(ctx, item.Name)
+		if err = s.ensureInstalledIfRequested(ctx, item.Name, action, actor, ip); err != nil {
+			return err
+		}
+		err = svc.Start(ctx, targetName)
 	case "stop":
-		err = svc.Stop(ctx, item.Name)
+		err = svc.Stop(ctx, targetName)
 	case "restart":
-		err = svc.Restart(ctx, item.Name)
+		if err = s.ensureInstalledIfRequested(ctx, item.Name, action, actor, ip); err != nil {
+			return err
+		}
+		err = svc.Restart(ctx, targetName)
 	case "reload":
 		// Not every service manager has a direct reload API; restart is the safest fallback.
-		err = svc.Restart(ctx, item.Name)
+		if err = s.ensureInstalledIfRequested(ctx, item.Name, action, actor, ip); err != nil {
+			return err
+		}
+		err = svc.Restart(ctx, targetName)
 	case "enable":
-		err = svc.Enable(ctx, item.Name)
+		if err = s.ensureInstalledIfRequested(ctx, item.Name, action, actor, ip); err != nil {
+			return err
+		}
+		err = svc.Enable(ctx, targetName)
 	case "disable":
-		err = svc.Disable(ctx, item.Name)
+		err = svc.Disable(ctx, targetName)
 	}
 	if err != nil {
 		return err
@@ -373,7 +397,7 @@ func (s *ServiceService) Action(ctx context.Context, item *models.ManagedService
 		_ = s.repo.Update(item)
 	}
 
-	s.audit.Record(actor, "service.action."+action, "service", item.Name, ip, map[string]any{"service_id": item.ID})
+	s.audit.Record(actor, "service.action."+action, "service", item.Name, ip, map[string]any{"service_id": item.ID, "resolved_name": targetName})
 	return nil
 }
 
@@ -403,7 +427,8 @@ func (s *ServiceService) LogsByRef(ctx context.Context, ref string, lines int) (
 	if err != nil {
 		return "", "", err
 	}
-	logs, err := s.adapter.Services().Logs(ctx, item.Name, lines)
+	targetName := s.resolvedServiceName(ctx, item.Name)
+	logs, err := s.adapter.Services().Logs(ctx, targetName, lines)
 	return item.Name, logs, err
 }
 
@@ -456,7 +481,17 @@ func (s *ServiceService) findByRef(ref string) (*models.ManagedService, error) {
 	if id, err := strconv.ParseUint(ref, 10, 64); err == nil {
 		return s.repo.Find(uint(id))
 	}
-	return s.repo.FindByName(ref)
+	item, err := s.repo.FindByName(ref)
+	if err == nil {
+		return item, nil
+	}
+	for _, candidate := range s.coreSystemServices() {
+		if strings.EqualFold(strings.TrimSpace(candidate.Name), ref) {
+			copy := candidate
+			return &copy, nil
+		}
+	}
+	return nil, err
 }
 
 func (s *ServiceService) phpVersions() []string {
@@ -548,4 +583,30 @@ func isSystemManagedService(item models.ManagedService) bool {
 	default:
 		return true
 	}
+}
+
+func (s *ServiceService) installedState(ctx context.Context, serviceName string) bool {
+	if s.packages == nil {
+		return true
+	}
+	return s.packages.IsInstalled(ctx, serviceName)
+}
+
+func (s *ServiceService) resolvedServiceName(ctx context.Context, serviceName string) string {
+	if s.packages == nil {
+		return serviceName
+	}
+	return s.packages.ResolveServiceUnit(ctx, serviceName)
+}
+
+func (s *ServiceService) ensureInstalledIfRequested(ctx context.Context, serviceName, action string, actor *uint, ip string) error {
+	switch action {
+	case "start", "restart", "reload", "enable":
+	default:
+		return nil
+	}
+	if s.packages == nil || !s.packages.KnownService(serviceName) {
+		return nil
+	}
+	return s.packages.EnsureInstalled(ctx, serviceName, actor, ip)
 }

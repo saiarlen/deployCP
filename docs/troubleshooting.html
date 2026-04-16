@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DeployCP Troubleshooting</title>
+  <meta name="description" content="Verification, reconciliation, and recovery steps for DeployCP production hosts.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body data-page="troubleshooting">
+  <div class="site-bg"></div>
+
+  <nav class="topnav">
+    <a class="nav-brand" href="index.html">
+      <span class="mark">D</span>
+      <span>DeployCP</span>
+    </a>
+    <button class="mobile-menu-btn" type="button" aria-label="Toggle navigation" aria-expanded="false">Menu</button>
+    <div class="nav-links">
+      <a href="index.html">Overview</a>
+      <a href="install.html">Install</a>
+      <a href="operations.html">Operations</a>
+      <a class="active" href="troubleshooting.html">Troubleshooting</a>
+    </div>
+  </nav>
+
+  <div class="page-shell">
+    <div class="page">
+      <main class="content">
+        <header class="hero hero-compact">
+          <div class="hero-copy">
+            <div class="eyebrow">Troubleshooting</div>
+            <h1>Verify first. Reconcile second. Repair from there.</h1>
+            <p class="hero-lead">Use the built-in verification and reconciliation commands first whenever the panel, nginx config, runtimes, or managed host resources drift away from expected state.</p>
+          </div>
+          <div class="hero-side">
+            <div class="command-spotlight">
+              <div class="terminal-head">
+                <div class="dots"><span></span><span></span><span></span></div>
+                <span class="title">Core Recovery Commands</span>
+              </div>
+              <pre><code>sudo /home/deploycp/core/bin/deploycp verify-host
+sudo /home/deploycp/core/bin/deploycp reconcile-managed</code></pre>
+            </div>
+          </div>
+        </header>
+
+        <section class="section anchor-section" id="verify">
+          <div class="section-head">
+            <div class="section-label">Step 1</div>
+            <h2>Run host verification.</h2>
+          </div>
+          <div class="code-block"><pre><code>sudo /home/deploycp/core/bin/deploycp verify-host</code></pre></div>
+          <p>The command validates root access, required binaries, service paths, configured directories, firewall backend support, and the configuration needed for local managed DB operations.</p>
+        </section>
+
+        <section class="section anchor-section" id="reconcile">
+          <div class="section-head">
+            <div class="section-label">Step 2</div>
+            <h2>Re-apply managed state.</h2>
+          </div>
+          <div class="code-block"><pre><code>sudo /home/deploycp/core/bin/deploycp reconcile-managed</code></pre></div>
+          <p>This re-renders and re-applies generated config, service units, cron entries, firewall rules, Redis instances, FTP configuration, and Varnish includes from the saved metadata.</p>
+        </section>
+
+        <section class="section anchor-section" id="service-health">
+          <div class="section-head">
+            <div class="section-label">Core Checks</div>
+            <h2>Check the panel service and web stack.</h2>
+          </div>
+          <div class="feature-grid">
+            <article class="feature-card">
+              <h3>DeployCP service</h3>
+              <div class="code-block"><pre><code>sudo systemctl status deploycp --no-pager</code></pre></div>
+            </article>
+            <article class="feature-card">
+              <h3>Panel journal</h3>
+              <div class="code-block"><pre><code>sudo journalctl -u deploycp -n 200 --no-pager</code></pre></div>
+            </article>
+            <article class="feature-card">
+              <h3>Nginx validation</h3>
+              <div class="code-block"><pre><code>sudo nginx -t</code></pre></div>
+            </article>
+            <article class="feature-card">
+              <h3>Bootstrap host</h3>
+              <div class="code-block"><pre><code>sudo /home/deploycp/core/bin/deploycp bootstrap-host</code></pre></div>
+            </article>
+          </div>
+        </section>
+
+        <section class="section anchor-section" id="common-failures">
+          <div class="section-head">
+            <div class="section-label">Common Cases</div>
+            <h2>What to check when a live action fails.</h2>
+          </div>
+          <div class="stack">
+            <div class="callout warn">
+              <strong>Managed DB creation fails</strong>
+              <p>Check the admin credentials in <code>/home/deploycp/core/.env</code> for MariaDB and PostgreSQL before retrying the action.</p>
+            </div>
+            <div class="callout warn">
+              <strong>Nginx updates do not go live</strong>
+              <p>Run <code>sudo nginx -t</code>. DeployCP aborts reload when config validation fails.</p>
+            </div>
+            <div class="callout warn">
+              <strong>Runtime installation fails</strong>
+              <p>Fix the host package or runtime availability issue first, then rerun reconciliation so generated platform state stays aligned.</p>
+            </div>
+            <div class="callout warn">
+              <strong>Varnish looks configured but traffic is unchanged</strong>
+              <p>Confirm that live traffic really passes through Varnish before nginx. Valid generated VCL alone does not mean active caching.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section anchor-section" id="recovery-order">
+          <div class="section-head">
+            <div class="section-label">Recommended Order</div>
+            <h2>Use this recovery sequence on production hosts.</h2>
+          </div>
+          <div class="timeline">
+            <article class="timeline-item">
+              <div class="timeline-index">01</div>
+              <div><h3>Inspect service state</h3><p>Start with <code>systemctl status deploycp</code> and the journal.</p></div>
+            </article>
+            <article class="timeline-item">
+              <div class="timeline-index">02</div>
+              <div><h3>Run verification</h3><p>Use <code>deploycp verify-host</code> to surface broken prerequisites and env issues.</p></div>
+            </article>
+            <article class="timeline-item">
+              <div class="timeline-index">03</div>
+              <div><h3>Fix missing prerequisites</h3><p>Correct binary paths, admin passwords, service availability, or env values on the host.</p></div>
+            </article>
+            <article class="timeline-item">
+              <div class="timeline-index">04</div>
+              <div><h3>Reconcile managed state</h3><p>Run <code>deploycp reconcile-managed</code> and validate nginx plus the affected app or platform service unit.</p></div>
+            </article>
+          </div>
+        </section>
+      </main>
+
+      <aside class="toc">
+        <div class="toc-title">Troubleshooting</div>
+        <ul class="toc-list">
+          <li><a href="#verify">Verify</a></li>
+          <li><a href="#reconcile">Reconcile</a></li>
+          <li><a href="#service-health">Service Health</a></li>
+          <li><a href="#common-failures">Common Cases</a></li>
+          <li><a href="#recovery-order">Recovery Order</a></li>
+        </ul>
+      </aside>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

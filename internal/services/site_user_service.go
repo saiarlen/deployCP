@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	"deploycp/internal/repositories"
 	"deploycp/internal/utils"
 	"deploycp/internal/validators"
+	"gorm.io/gorm"
 )
 
 type SiteUserInput struct {
@@ -45,6 +47,11 @@ func (s *SiteUserService) Find(id uint) (*models.SiteUser, error) {
 
 func (s *SiteUserService) Create(ctx context.Context, in SiteUserInput, actor *uint, ip string) (*models.SiteUser, string, error) {
 	if err := validators.ValidateUsername(in.Username); err != nil {
+		return nil, "", err
+	}
+	if _, err := s.repo.FindByUsername(in.Username); err == nil {
+		return nil, "", fmt.Errorf("site username already exists")
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, "", err
 	}
 	if err := validators.ValidatePath(in.HomeDirectory); err != nil {

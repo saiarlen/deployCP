@@ -1,0 +1,67 @@
+name: release
+
+permissions:
+  contents: write
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            cc: gcc
+          - goos: linux
+            goarch: arm64
+            cc: aarch64-linux-gnu-gcc
+          - goos: linux
+            goarch: arm
+            goarm: "7"
+            cc: arm-linux-gnueabihf-gcc
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install CGO cross toolchains
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf libc6-dev-arm64-cross libc6-dev-armhf-cross
+      - name: Build
+        run: |
+          mkdir -p dist
+          export CGO_ENABLED=1
+          export GOOS=${{ matrix.goos }}
+          export GOARCH=${{ matrix.goarch }}
+          export CC=${{ matrix.cc }}
+          if [ -n "${{ matrix.goarm || '' }}" ]; then export GOARM=${{ matrix.goarm }}; fi
+          out="dist/deploycp-${{ github.ref_name }}-${{ matrix.goos }}-${{ matrix.goarch }}"
+          if [ -n "${{ matrix.goarm || '' }}" ]; then out="${out}v${{ matrix.goarm }}"; fi
+          mkdir -p "$out/scripts/linux" "$out/docs" "$out/frontend"
+          go build -o "$out/deploycp" ./main.go
+          cp .env.example "$out/"
+          cp readme.md "$out/"
+          cp scripts/linux/*.sh "$out/scripts/linux/"
+          cp -R docs/. "$out/docs/"
+          cp -R frontend/. "$out/frontend/"
+          tar -czf "${out}.tar.gz" -C dist "$(basename "$out")"
+          sha256sum "${out}.tar.gz" > "${out}.tar.gz.sha256"
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploycp-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*.tar.gz*
+      - name: Publish release assets
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.tar.gz
+            dist/*.tar.gz.sha256

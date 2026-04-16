@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DeployCP Docs</title>
+  <meta name="description" content="DeployCP public Linux production docs with one-command install, operations, and troubleshooting.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body data-page="overview">
+  <div class="site-bg"></div>
+
+  <nav class="topnav">
+    <a class="nav-brand" href="index.html">
+      <span class="mark">D</span>
+      <span>DeployCP</span>
+    </a>
+    <button class="mobile-menu-btn" type="button" aria-label="Toggle navigation" aria-expanded="false">Menu</button>
+    <div class="nav-links">
+      <a class="active" href="index.html">Overview</a>
+      <a href="install.html">Install</a>
+      <a href="operations.html">Operations</a>
+      <a href="troubleshooting.html">Troubleshooting</a>
+    </div>
+  </nav>
+
+  <div class="page-shell">
+    <div class="page">
+      <main class="content">
+        <header class="hero">
+          <div class="hero-copy">
+            <div class="eyebrow">DeployCP Linux Docs</div>
+            <h1>Production hosting docs with a real one-command install.</h1>
+            <p class="hero-lead">DeployCP is built to install fast, wire real Linux resources, and keep platform operations behind the existing panel flow. These docs focus on what operators need first: install, verify, run, recover.</p>
+
+            <div class="hero-actions">
+              <a class="btn btn-primary" href="install.html">Install DeployCP</a>
+              <a class="btn" href="operations.html">See Managed Operations</a>
+            </div>
+
+            <div class="command-spotlight">
+              <div class="terminal-head">
+                <div class="dots"><span></span><span></span><span></span></div>
+                <span class="title">Quick Install</span>
+              </div>
+              <pre><code>curl -fsSL https://raw.githubusercontent.com/saiarlen/deployCP/main/scripts/linux/install-remote.sh | sudo bash</code></pre>
+            </div>
+          </div>
+
+          <div class="hero-side">
+            <div class="hero-panel">
+              <div class="panel-kicker">Built for live Linux hosts</div>
+              <ul class="check-list">
+                <li>Creates the <code>deploycp</code> OS user and managed directory layout</li>
+                <li>Stages the correct release binary for <code>amd64</code>, <code>arm64</code>, or <code>armv7</code></li>
+                <li>Bootstraps services, reconciles managed state, and verifies host wiring</li>
+              </ul>
+            </div>
+            <div class="stat-grid">
+              <article class="stat-card">
+                <div class="stat-value">1 command</div>
+                <p>No manual tar download in the primary flow.</p>
+              </article>
+              <article class="stat-card">
+                <div class="stat-value">Real Linux ops</div>
+                <p>Users, nginx, SSL, cron, firewall, Redis, DB, FTP, Varnish.</p>
+              </article>
+              <article class="stat-card">
+                <div class="stat-value">GitHub Releases</div>
+                <p>Release tarballs and checksums power install and update.</p>
+              </article>
+            </div>
+          </div>
+        </header>
+
+        <section class="section anchor-section" id="start">
+          <div class="section-head">
+            <div class="section-label">Start Here</div>
+            <h2>The shortest path from fresh server to live panel.</h2>
+          </div>
+          <div class="timeline">
+            <article class="timeline-item">
+              <div class="timeline-index">01</div>
+              <div>
+                <h3>Run the bootstrap installer</h3>
+                <p>Use the remote installer on a clean Linux server. It resolves the latest release, pulls the correct artifact, and runs the packaged installer automatically.</p>
+                <div class="code-block"><pre><code>curl -fsSL https://raw.githubusercontent.com/saiarlen/deployCP/main/scripts/linux/install-remote.sh | sudo bash</code></pre></div>
+              </div>
+            </article>
+            <article class="timeline-item">
+              <div class="timeline-index">02</div>
+              <div>
+                <h3>Verify the host after bootstrap</h3>
+                <p>Check the systemd unit and run the built-in verification command before creating live platforms.</p>
+                <div class="code-block"><pre><code>sudo systemctl status deploycp --no-pager
+sudo /home/deploycp/core/bin/deploycp verify-host</code></pre></div>
+              </div>
+            </article>
+            <article class="timeline-item">
+              <div class="timeline-index">03</div>
+              <div>
+                <h3>Set production values</h3>
+                <p>Update <code>/home/deploycp/core/.env</code> with the real base URL, bootstrap admin credentials, and any local DB admin passwords you want DeployCP to use for managed provisioning.</p>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="section anchor-section" id="why">
+          <div class="section-head">
+            <div class="section-label">Managed Scope</div>
+            <h2>What DeployCP actually changes on the host.</h2>
+          </div>
+          <div class="feature-grid">
+            <article class="feature-card">
+              <h3>Platform resources</h3>
+              <p>Creates platform folders, site users, runtime env files, scoped logs, cron wrappers, and app process units under the managed directory tree.</p>
+            </article>
+            <article class="feature-card">
+              <h3>Web stack</h3>
+              <p>Writes nginx config, validates before reload, issues or maps certificates, and keeps platform logs tied to their actual host files.</p>
+            </article>
+            <article class="feature-card">
+              <h3>Data and edge services</h3>
+              <p>Handles managed DB users and databases, FTP users, Redis instances, Varnish includes, and firewall rules from the panel flows.</p>
+            </article>
+            <article class="feature-card">
+              <h3>Lifecycle</h3>
+              <p>Install, update, reconcile, verify, and uninstall are all packaged with the release so the operator path stays consistent.</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="section anchor-section" id="layout">
+          <div class="section-head">
+            <div class="section-label">Filesystem Layout</div>
+            <h2>Default live layout after install.</h2>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Path</th><th>Role</th></tr>
+              </thead>
+              <tbody>
+                <tr><td><code>/home/deploycp</code></td><td>Dedicated DeployCP user home</td></tr>
+                <tr><td><code>/home/deploycp/core</code></td><td>Binary, env, scripts, generated state, metadata, backups, temp</td></tr>
+                <tr><td><code>/home/deploycp/platforms/sites</code></td><td>Managed platform roots and per-platform runtime files</td></tr>
+                <tr><td><code>/home/deploycp/platforms/logs</code></td><td>Per-platform nginx and app logs</td></tr>
+                <tr><td><code>/home/deploycp/core/storage/ssl</code></td><td>Imported and self-signed certificate storage</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="section anchor-section" id="release">
+          <div class="section-head">
+            <div class="section-label">Release Flow</div>
+            <h2>How installs and updates are sourced.</h2>
+          </div>
+          <div class="stack">
+            <div class="info-strip">
+              <strong>Primary install path:</strong>
+              <span>The remote bootstrap script downloads release assets directly from GitHub Releases and runs the packaged installer.</span>
+            </div>
+            <div class="tag-row">
+              <span class="tag">linux/amd64</span>
+              <span class="tag">linux/arm64</span>
+              <span class="tag">linux/arm/v7</span>
+              <span class="tag">checksums published</span>
+            </div>
+          </div>
+        </section>
+
+        <div class="page-footer">Primary public guide: <code>readme.md</code></div>
+      </main>
+
+      <aside class="toc">
+        <div class="toc-title">On this page</div>
+        <ul class="toc-list">
+          <li><a href="#start">Start Here</a></li>
+          <li><a href="#why">Managed Scope</a></li>
+          <li><a href="#layout">Filesystem Layout</a></li>
+          <li><a href="#release">Release Flow</a></li>
+        </ul>
+      </aside>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
