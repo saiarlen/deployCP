@@ -144,8 +144,10 @@ type userManager struct {
 
 func (u *userManager) EnsureRestrictedShell(ctx context.Context, shellPath string) error {
 	script := `#!/bin/bash
-set -euo pipefail
-allowed=$(cat "$HOME/.deploycp_allowed_root" 2>/dev/null || echo "$HOME")
+allowed="$HOME"
+if [ -f "$HOME/.deploycp_allowed_root" ]; then
+  read -r allowed < "$HOME/.deploycp_allowed_root" 2>/dev/null || true
+fi
 if [ ! -d "$allowed" ]; then
   allowed="$HOME"
 fi
@@ -154,8 +156,12 @@ runtime_env="$allowed/.deploycp/runtime.env"
 if [ -f "$runtime_env" ]; then
   . "$runtime_env"
 fi
-cd "$allowed"
-exec /bin/rbash
+cd "$allowed" 2>/dev/null || cd "$HOME"
+if [ -x /bin/rbash ]; then
+  exec /bin/rbash
+else
+  exec /bin/bash --restricted
+fi
 `
 	if err := utils.WriteFileAtomic(shellPath, []byte(script), 0o755); err != nil {
 		return err

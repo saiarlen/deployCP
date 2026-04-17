@@ -156,6 +156,10 @@ func (s *WebsiteService) Create(ctx context.Context, in WebsiteInput, actor *uin
 	if err := s.repo.Create(site, in.Domains); err != nil {
 		return nil, err
 	}
+	// Re-fetch so Domains association is loaded for nginx config generation.
+	if created, err := s.repo.Find(site.ID); err == nil {
+		site = created
+	}
 	if err := s.applyPlatformRuntime(site, actor, ip); err != nil {
 		return nil, err
 	}
@@ -576,9 +580,7 @@ func (s *WebsiteService) deleteWebsiteScopedUsers(ctx context.Context, site *mod
 		if !shouldDelete {
 			continue
 		}
-		if err := s.adapter.Users().Delete(ctx, user.Username); err != nil {
-			return err
-		}
+		_ = s.adapter.Users().Delete(ctx, user.Username)
 		if err := s.siteUsers.Delete(uid); err != nil {
 			return err
 		}

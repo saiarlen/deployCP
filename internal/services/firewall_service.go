@@ -260,7 +260,7 @@ func (s *FirewallService) iptablesStatus(ctx context.Context) (string, bool, []m
 }
 
 func (s *FirewallService) applyUFW(ctx context.Context, rule *models.PanelFirewallRule, actor *uint, ip string) error {
-	args, err := s.ufwRuleArgs([]string{"--force", rule.Action}, rule)
+	args, err := s.ufwRuleArgs([]string{rule.Action}, rule)
 	if err != nil {
 		return err
 	}
