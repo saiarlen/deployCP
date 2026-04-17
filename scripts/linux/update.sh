@@ -41,11 +41,14 @@ set_env_value() {
 stage_release_binary() {
   local candidate=""
   local target="${CORE_DIR}/bin/${BIN_NAME}"
+  local tmp_target="${target}.new"
   for candidate in "${PACKAGE_ROOT}/${BIN_NAME}" "$(pwd)/${BIN_NAME}"; do
     if [[ -x "$candidate" && "$candidate" != "$target" ]]; then
-      cp "$candidate" "$target"
-      chmod 0755 "$target"
-      chown "${APP_USER}:${APP_USER}" "$target"
+      mkdir -p "$(dirname "$target")"
+      cp "$candidate" "$tmp_target"
+      chmod 0755 "$tmp_target"
+      chown "${APP_USER}:${APP_USER}" "$tmp_target"
+      mv -f "$tmp_target" "$target"
       return 0
     fi
   done
@@ -89,18 +92,22 @@ if [[ "$(id -u)" -ne 0 ]]; then
   exit 1
 fi
 
-stage_release_binary || true
+systemctl stop "${SERVICE_NAME}" || true
+
+if ! stage_release_binary; then
+  echo "release binary not found in update package" >&2
+  exit 1
+fi
 stage_release_assets
-set_env_value "${CORE_DIR}/.env" "APP_VERSION" "$(resolved_release_version)"
-set_env_value "${CORE_DIR}/.env" "DEPLOYCP_REPO" "${DEPLOYCP_REPO:-saiarlen/deployCP}"
 
 if [[ ! -x "${CORE_DIR}/bin/${BIN_NAME}" ]]; then
   echo "binary not found at ${CORE_DIR}/bin/${BIN_NAME}" >&2
   exit 1
 fi
 
-systemctl stop "${SERVICE_NAME}" || true
 chown -R "${APP_USER}:${APP_USER}" "${CORE_DIR}"
+set_env_value "${CORE_DIR}/.env" "APP_VERSION" "$(resolved_release_version)"
+set_env_value "${CORE_DIR}/.env" "DEPLOYCP_REPO" "${DEPLOYCP_REPO:-saiarlen/deployCP}"
 systemctl daemon-reload
 "${CORE_DIR}/bin/${BIN_NAME}" bootstrap-host
 systemctl start "${SERVICE_NAME}"

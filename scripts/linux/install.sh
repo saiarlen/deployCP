@@ -68,11 +68,14 @@ set_env_value() {
 stage_release_binary() {
   local candidate=""
   local target="${CORE_DIR}/bin/${BIN_NAME}"
+  local tmp_target="${target}.new"
   for candidate in "${PACKAGE_ROOT}/${BIN_NAME}" "$(pwd)/${BIN_NAME}"; do
     if [[ -x "$candidate" && "$candidate" != "$target" ]]; then
-      cp "$candidate" "$target"
-      chmod 0755 "$target"
-      chown "${APP_USER}:${APP_USER}" "$target"
+      mkdir -p "$(dirname "$target")"
+      cp "$candidate" "$tmp_target"
+      chmod 0755 "$tmp_target"
+      chown "${APP_USER}:${APP_USER}" "$tmp_target"
+      mv -f "$tmp_target" "$target"
       return 0
     fi
   done
