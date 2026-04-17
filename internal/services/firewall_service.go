@@ -279,7 +279,7 @@ func (s *FirewallService) applyUFW(ctx context.Context, rule *models.PanelFirewa
 }
 
 func (s *FirewallService) deleteUFW(ctx context.Context, rule *models.PanelFirewallRule, actor *uint, ip string) error {
-	args, err := s.ufwRuleArgs([]string{"--force", "delete", rule.Action}, rule)
+	args, err := s.ufwRuleArgs([]string{"delete", rule.Action}, rule)
 	if err != nil {
 		return err
 	}

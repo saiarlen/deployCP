@@ -513,6 +513,7 @@ mkdir -p \
   "$VARNISH_CONFIG_DIR"
 
 chown -R "$APP_USER:$APP_USER" "$APP_HOME"
+chmod 755 "$APP_HOME" "$DATA_DIR" "${DATA_DIR}/sites" "${DATA_DIR}/logs" "${DATA_DIR}/tmp" "${DATA_DIR}/backups"
 ensure_nginx_integration
 ensure_varnish_integration
 stage_release_binary || true

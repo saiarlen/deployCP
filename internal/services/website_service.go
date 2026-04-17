@@ -134,6 +134,8 @@ func (s *WebsiteService) Create(ctx context.Context, in WebsiteInput, actor *uin
 	if err := os.MkdirAll(in.RootPath, 0o755); err != nil {
 		return nil, fmt.Errorf("create site root: %w", err)
 	}
+	// Ensure parent directories are world-traversable so nginx (www-data) can reach the site root.
+	ensurePathTraversable(in.RootPath)
 	if err := s.ensurePublicWebRoot(in.RootPath); err != nil {
 		return nil, err
 	}
@@ -153,6 +155,7 @@ func (s *WebsiteService) Create(ctx context.Context, in WebsiteInput, actor *uin
 	if err := os.MkdirAll(filepath.Dir(site.AccessLogPath), 0o755); err != nil {
 		return nil, err
 	}
+	ensurePathTraversable(filepath.Dir(site.AccessLogPath))
 	if err := s.repo.Create(site, in.Domains); err != nil {
 		return nil, err
 	}
@@ -469,6 +472,7 @@ func (s *WebsiteService) ensurePublicWebRoot(root string) error {
 	if root == "" {
 		return nil
 	}
+	// Site root must be world-readable and traversable for nginx (www-data).
 	if err := os.Chmod(root, 0o755); err != nil {
 		return fmt.Errorf("set site root permissions: %w", err)
 	}
@@ -476,6 +480,29 @@ func (s *WebsiteService) ensurePublicWebRoot(root string) error {
 	if stat, err := os.Stat(hiddenDir); err == nil && stat.IsDir() {
 		if chmodErr := os.Chmod(hiddenDir, 0o700); chmodErr != nil {
 			return fmt.Errorf("secure runtime metadata directory: %w", chmodErr)
+		}
+	}
+	indexPath := filepath.Join(root, "index.html")
+	if _, err := os.Stat(indexPath); os.IsNotExist(err) {
+		page := `<!doctype html>
+<html><head><meta charset="utf-8"><title>Welcome</title>
+<style>body{font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#0c0c0d;color:#e4e4e7}div{text-align:center}h1{font-size:1.5rem;font-weight:600;margin:0 0 .5rem}p{color:#71717a;font-size:.875rem}</style>
+</head><body><div><h1>Site Ready</h1><p>Replace this file with your content.</p></div></body></html>
+`
+		_ = os.WriteFile(indexPath, []byte(page), 0o644)
+	}
+	// Ensure all existing files in the root are world-readable so nginx can serve them.
+	entries, _ := os.ReadDir(root)
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		fp := filepath.Join(root, e.Name())
+		if info, err := os.Stat(fp); err == nil {
+			perm := info.Mode().Perm()
+			if perm&0o004 == 0 {
+				_ = os.Chmod(fp, perm|0o004)
+			}
 		}
 	}
 	return nil
@@ -960,4 +987,26 @@ func errorsIsNotFound(err error) bool {
 
 func errorsIsGormNotFound(err error) bool {
 	return err == gorm.ErrRecordNotFound
+}
+
+// ensurePathTraversable sets the world-execute bit (o+x) on every parent
+// directory of target so that nginx (www-data) and site users can traverse
+// the path. Only adds execute — does not grant read or write.
+func ensurePathTraversable(target string) {
+	target = filepath.Clean(target)
+	var dirs []string
+	for d := filepath.Dir(target); d != "/" && d != "." && d != target; d = filepath.Dir(d) {
+		dirs = append(dirs, d)
+		target = d
+	}
+	for _, d := range dirs {
+		info, err := os.Stat(d)
+		if err != nil {
+			continue
+		}
+		perm := info.Mode().Perm()
+		if perm&0o001 == 0 {
+			_ = os.Chmod(d, perm|0o001)
+		}
+	}
 }

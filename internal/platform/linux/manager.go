@@ -268,6 +268,9 @@ func (u *userManager) Create(ctx context.Context, spec platform.SiteUserSpec) (i
 	if err := os.MkdirAll(spec.HomeDir, 0o755); err != nil {
 		return 0, 0, err
 	}
+	// Ensure every parent directory up to the home is world-traversable (o+x)
+	// so SSH and the login shell can reach the home directory.
+	ensureParentTraversable(spec.HomeDir)
 	_, err := u.runner.Run(ctx, system.CommandRequest{Binary: "/usr/sbin/useradd", Args: []string{"-m", "-d", spec.HomeDir, "-s", spec.ShellPath, spec.Username}, Timeout: 20 * time.Second, AuditAction: "site_user.create"})
 	if err != nil {
 		return 0, 0, err
@@ -291,6 +294,28 @@ func (u *userManager) Create(ctx context.Context, spec platform.SiteUserSpec) (i
 	return 0, 0, nil
 }
 
+// ensureParentTraversable walks up from the given path and sets o+x on each
+// parent directory so that any Linux user can traverse the path to reach their
+// home directory. Stops at / or /home.
+func ensureParentTraversable(target string) {
+	target = filepath.Clean(target)
+	var dirs []string
+	for d := filepath.Dir(target); d != "/" && d != "." && d != target; d = filepath.Dir(d) {
+		dirs = append(dirs, d)
+		target = d
+	}
+	for _, d := range dirs {
+		info, err := os.Stat(d)
+		if err != nil {
+			continue
+		}
+		perm := info.Mode().Perm()
+		if perm&0o001 == 0 {
+			_ = os.Chmod(d, perm|0o001)
+		}
+	}
+}
+
 func (u *userManager) SetPassword(ctx context.Context, username, password string) error {
 	stdin := fmt.Sprintf("%s:%s\n", username, password)
 	_, err := u.runner.Run(ctx, system.CommandRequest{Binary: "/usr/sbin/chpasswd", Stdin: stdin, Timeout: 10 * time.Second, AuditAction: "site_user.password.reset"})
@@ -301,7 +326,11 @@ func (u *userManager) Disable(ctx context.Context, username string) error {
 	return err
 }
 func (u *userManager) Delete(ctx context.Context, username string) error {
-	_, err := u.runner.Run(ctx, system.CommandRequest{Binary: "/usr/sbin/userdel", Args: []string{"-r", username}, Timeout: 15 * time.Second, AuditAction: "site_user.delete"})
+	// Kill any running processes owned by this user first, otherwise userdel fails.
+	_, _ = u.runner.Run(ctx, system.CommandRequest{Binary: "/usr/bin/pkill", Args: []string{"-9", "-u", username}, Timeout: 5 * time.Second})
+	// Small delay to let the kernel reap the killed processes.
+	time.Sleep(500 * time.Millisecond)
+	_, err := u.runner.Run(ctx, system.CommandRequest{Binary: "/usr/sbin/userdel", Args: []string{"-rf", username}, Timeout: 15 * time.Second, AuditAction: "site_user.delete"})
 	return err
 }
 func (u *userManager) ChownRecursive(ctx context.Context, username, path string) error {
