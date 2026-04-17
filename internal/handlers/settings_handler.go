@@ -181,14 +181,8 @@ func (h *SettingsHandler) Index(c *fiber.Ctx) error {
 		eventsStart = (eventsPage-1)*eventsPerPage + 1
 		eventsEnd = eventsStart + len(events) - 1
 	}
-	firewallRules, fwErr := h.firewalls.List()
-	if fwErr != nil {
-		h.base.Sessions.SetFlash(c, fwErr.Error())
-		firewallRules = []models.PanelFirewallRule{}
-	}
 	firewallBackend := ""
 	firewallHostActive := false
-	hostFirewallRules := []models.PanelFirewallRule{}
 	if h.firewallService != nil {
 		backend, active, rules, err := h.firewallService.HostStatus(c.Context())
 		if err != nil {
@@ -196,8 +190,17 @@ func (h *SettingsHandler) Index(c *fiber.Ctx) error {
 		} else {
 			firewallBackend = backend
 			firewallHostActive = active
-			hostFirewallRules = rules
+			if active {
+				if err := h.syncHostFirewallRules(rules); err != nil {
+					h.base.Sessions.SetFlash(c, err.Error())
+				}
+			}
 		}
+	}
+	firewallRules, fwErr := h.firewalls.List()
+	if fwErr != nil {
+		h.base.Sessions.SetFlash(c, fwErr.Error())
+		firewallRules = []models.PanelFirewallRule{}
 	}
 
 	customDomain, _ := h.service.Get("panel_custom_domain")
@@ -244,7 +247,6 @@ func (h *SettingsHandler) Index(c *fiber.Ctx) error {
 		"EventsStart":              eventsStart,
 		"EventsEnd":                eventsEnd,
 		"FirewallRules":            firewallRules,
-		"HostFirewallRules":        hostFirewallRules,
 		"FirewallBackend":          firewallBackend,
 		"FirewallHostActive":       firewallHostActive,
 		"CustomDomain":             customDomain,
@@ -631,6 +633,69 @@ func (h *SettingsHandler) firewallInputFromForm(c *fiber.Ctx, id uint) (*models.
 		Description: description,
 		Enabled:     enabled,
 	}, nil
+}
+
+func (h *SettingsHandler) syncHostFirewallRules(hostRules []models.PanelFirewallRule) error {
+	if h.firewalls == nil || len(hostRules) == 0 {
+		return nil
+	}
+	existing, err := h.firewalls.List()
+	if err != nil {
+		return err
+	}
+	seen := make(map[string]struct{}, len(existing))
+	for _, item := range existing {
+		seen[firewallRuleSignature(item)] = struct{}{}
+	}
+	for _, rule := range hostRules {
+		sig := firewallRuleSignature(rule)
+		if sig == "" {
+			continue
+		}
+		if _, ok := seen[sig]; ok {
+			continue
+		}
+		copy := rule
+		copy.Name = normalizedImportedFirewallName(rule)
+		if strings.TrimSpace(copy.Description) == "" {
+			copy.Description = "Imported from active host firewall state"
+		}
+		copy.Enabled = true
+		if err := h.firewalls.Create(&copy); err != nil {
+			return err
+		}
+		seen[sig] = struct{}{}
+	}
+	return nil
+}
+
+func firewallRuleSignature(rule models.PanelFirewallRule) string {
+	return strings.ToLower(strings.Join([]string{
+		strings.TrimSpace(rule.Protocol),
+		strings.TrimSpace(rule.Port),
+		strings.TrimSpace(rule.Source),
+		strings.TrimSpace(rule.Action),
+	}, "|"))
+}
+
+func normalizedImportedFirewallName(rule models.PanelFirewallRule) string {
+	name := strings.TrimSpace(rule.Name)
+	if name != "" {
+		return name
+	}
+	port := strings.TrimSpace(rule.Port)
+	if port == "" {
+		port = "any"
+	}
+	protocol := strings.TrimSpace(rule.Protocol)
+	if protocol == "" {
+		protocol = "tcp"
+	}
+	source := strings.TrimSpace(rule.Source)
+	if source == "" {
+		source = "any"
+	}
+	return fmt.Sprintf("%s-%s-%s", port, protocol, source)
 }
 
 func (h *SettingsHandler) eventsForView(users []models.User, page, perPage int) ([]settingsEventView, int64) {

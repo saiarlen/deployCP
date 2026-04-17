@@ -35,6 +35,7 @@ func NewEngine(cfg *config.Config) *jet.Engine {
 	})
 	engine.AddFunc("websiteStackIconURL", WebsiteStackIconURL)
 	engine.AddFunc("appStackIconURL", AppStackIconURL)
+	engine.AddFunc("deployCPFaviconURL", DeployCPFaviconURL)
 	engine.AddFunc("platformShowURL", func(kind string, id any) string {
 		v, ok := anyToUint(id)
 		if !ok {

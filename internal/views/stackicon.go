@@ -36,6 +36,10 @@ func AppStackIconURL(runtime string) string {
 	return runtimeDeviconURL(r)
 }
 
+func DeployCPFaviconURL() string {
+	return "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='16' fill='%230b72ff'/><path d='M36 8L18 34h12l-2 22 18-26H34l2-22z' fill='white'/></svg>"
+}
+
 func runtimeDeviconURL(r string) string {
 	switch r {
 	case "go":

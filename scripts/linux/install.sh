@@ -356,6 +356,8 @@ ensure_firewall_access() {
 
   if command -v "$UFW_BINARY" >/dev/null 2>&1; then
     "$UFW_BINARY" allow "${ssh_port}/tcp" >/dev/null 2>&1 || true
+    "$UFW_BINARY" allow "80/tcp" >/dev/null 2>&1 || true
+    "$UFW_BINARY" allow "443/tcp" >/dev/null 2>&1 || true
     "$UFW_BINARY" allow "${app_port}/tcp" >/dev/null 2>&1 || true
     ufw_status="$("$UFW_BINARY" status 2>/dev/null || true)"
     if printf '%s' "$ufw_status" | grep -qi "Status: inactive"; then
@@ -367,6 +369,8 @@ ensure_firewall_access() {
   if command -v "$FIREWALLCMD_BINARY" >/dev/null 2>&1; then
     systemctl enable firewalld >/dev/null 2>&1 || true
     systemctl start firewalld >/dev/null 2>&1 || true
+    "$FIREWALLCMD_BINARY" --permanent --add-port="80/tcp" >/dev/null 2>&1 || true
+    "$FIREWALLCMD_BINARY" --permanent --add-port="443/tcp" >/dev/null 2>&1 || true
     "$FIREWALLCMD_BINARY" --permanent --add-port="${app_port}/tcp" >/dev/null 2>&1 || true
     if [[ "$ssh_port" == "22" ]]; then
       "$FIREWALLCMD_BINARY" --permanent --add-service=ssh >/dev/null 2>&1 || true
@@ -379,6 +383,8 @@ ensure_firewall_access() {
 
   if command -v "$IPTABLES_BINARY" >/dev/null 2>&1; then
     "$IPTABLES_BINARY" -C INPUT -p tcp --dport "$ssh_port" -j ACCEPT >/dev/null 2>&1 || "$IPTABLES_BINARY" -I INPUT -p tcp --dport "$ssh_port" -j ACCEPT >/dev/null 2>&1 || true
+    "$IPTABLES_BINARY" -C INPUT -p tcp --dport 80 -j ACCEPT >/dev/null 2>&1 || "$IPTABLES_BINARY" -I INPUT -p tcp --dport 80 -j ACCEPT >/dev/null 2>&1 || true
+    "$IPTABLES_BINARY" -C INPUT -p tcp --dport 443 -j ACCEPT >/dev/null 2>&1 || "$IPTABLES_BINARY" -I INPUT -p tcp --dport 443 -j ACCEPT >/dev/null 2>&1 || true
     "$IPTABLES_BINARY" -C INPUT -p tcp --dport "$app_port" -j ACCEPT >/dev/null 2>&1 || "$IPTABLES_BINARY" -I INPUT -p tcp --dport "$app_port" -j ACCEPT >/dev/null 2>&1 || true
   fi
 }

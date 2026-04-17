@@ -1160,6 +1160,12 @@ func (h *WebsiteHandler) payload(c *fiber.Ctx) (websiteFormInput, error) {
 
 	domains := utils.SplitLinesComma(c.FormValue("domains"))
 	if len(domains) == 0 {
+		applicationDomain := strings.TrimSpace(strings.ToLower(c.FormValue("application_domain")))
+		if applicationDomain != "" {
+			domains = []string{applicationDomain}
+		}
+	}
+	if len(domains) == 0 {
 		primaryDomain := strings.TrimSpace(strings.ToLower(c.FormValue("primary_domain")))
 		if primaryDomain != "" {
 			domains = []string{primaryDomain}

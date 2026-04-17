@@ -35,7 +35,7 @@
       {{ range _, w := Websites }}
       <article class="sa-card" data-kind="platform" data-type="{{ w.Type }}">
         <div class="sa-card-icon" aria-hidden="true">
-          <img class="sa-card-stack-img" src="{{ websiteStackIconURL(w.Type, w.AppRuntime) }}" alt="" width="22" height="22" loading="lazy" decoding="async" />
+          <img class="sa-card-stack-img" src="{{ deployCPFaviconURL() }}" alt="" width="22" height="22" loading="lazy" decoding="async" />
         </div>
         <div class="sa-card-main">
           <div class="sa-card-top">
@@ -87,7 +87,7 @@
       {{ range _, a := Apps }}
       <article class="sa-card" data-kind="platform" data-type="{{ a.Runtime }}">
         <div class="sa-card-icon" aria-hidden="true">
-          <img class="sa-card-stack-img" src="{{ appStackIconURL(a.Runtime) }}" alt="" width="22" height="22" loading="lazy" decoding="async" />
+          <img class="sa-card-stack-img" src="{{ deployCPFaviconURL() }}" alt="" width="22" height="22" loading="lazy" decoding="async" />
         </div>
         <div class="sa-card-main">
           <div class="sa-card-top">
