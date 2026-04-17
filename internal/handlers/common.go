@@ -121,6 +121,20 @@ func displayServerAddress(cfg *config.Config, requestHost string) string {
 
 	for _, raw := range candidates {
 		host := normalizeHostCandidate(raw)
+		if host == "" {
+			continue
+		}
+		if ip := net.ParseIP(host); ip != nil && !ip.IsLoopback() && !ip.IsUnspecified() {
+			return ip.String()
+		}
+	}
+
+	if detected := detectedServerIP(); detected != "" {
+		return detected
+	}
+
+	for _, raw := range candidates {
+		host := normalizeHostCandidate(raw)
 		switch strings.ToLower(host) {
 		case "", "0.0.0.0", "::", "[::]":
 			continue
@@ -131,6 +145,72 @@ func displayServerAddress(cfg *config.Config, requestHost string) string {
 		}
 	}
 	return "127.0.0.1"
+}
+
+func detectedServerIP() string {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return ""
+	}
+
+	privateCandidate := ""
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			ip := ipFromAddr(addr)
+			if ip == nil || ip.IsLoopback() || ip.IsUnspecified() {
+				continue
+			}
+			ip = ip.To4()
+			if ip == nil {
+				continue
+			}
+			if ip.IsGlobalUnicast() && !isPrivateIPv4(ip) {
+				return ip.String()
+			}
+			if privateCandidate == "" && ip.IsGlobalUnicast() {
+				privateCandidate = ip.String()
+			}
+		}
+	}
+	return privateCandidate
+}
+
+func ipFromAddr(addr net.Addr) net.IP {
+	switch value := addr.(type) {
+	case *net.IPNet:
+		return value.IP
+	case *net.IPAddr:
+		return value.IP
+	default:
+		return nil
+	}
+}
+
+func isPrivateIPv4(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+	privateRanges := []string{
+		"10.0.0.0/8",
+		"172.16.0.0/12",
+		"192.168.0.0/16",
+		"100.64.0.0/10",
+		"169.254.0.0/16",
+	}
+	for _, cidr := range privateRanges {
+		_, block, err := net.ParseCIDR(cidr)
+		if err == nil && block.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeHostCandidate(v string) string {

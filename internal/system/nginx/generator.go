@@ -81,6 +81,7 @@ func BuildWebsiteConfig(cfg *config.Config, site *models.Website, opts WebsiteCo
 }
 
 func renderServerContent(body *strings.Builder, site *models.Website, opts WebsiteConfigOptions) {
+	body.WriteString("    location ~ /\\. { deny all; }\n")
 	for _, block := range opts.IPBlocks {
 		if strings.TrimSpace(block.IP) == "" {
 			continue

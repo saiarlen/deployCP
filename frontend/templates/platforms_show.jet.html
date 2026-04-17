@@ -762,7 +762,7 @@ $(function () {
       onErr();
     }
   }
-  function copyServerIP(text, onOk, onErr) {
+  function copyTextValue(text, onOk, onErr) {
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text).then(onOk).catch(function () { copyFallback(text, onOk, onErr); });
       return;
@@ -776,10 +776,26 @@ $(function () {
       copyNotify(false, 'Nothing to copy');
       return;
     }
-    copyServerIP(value, function () {
+    copyTextValue(value, function () {
       $btn.addClass('is-copied');
       setTimeout(function () { $btn.removeClass('is-copied'); }, 900);
       copyNotify(true, 'Server IP copied');
+    }, function () {
+      copyNotify(false, 'Could not copy');
+    });
+  });
+  $('.platform-copy-action').on('click', function () {
+    var $btn = $(this);
+    var value = $.trim(String($btn.data('copyValue') || ''));
+    var successMessage = $.trim(String($btn.data('copySuccess') || 'Copied'));
+    if (!value) {
+      copyNotify(false, 'Nothing to copy');
+      return;
+    }
+    copyTextValue(value, function () {
+      $btn.addClass('is-copied');
+      setTimeout(function () { $btn.removeClass('is-copied'); }, 900);
+      copyNotify(true, successMessage);
     }, function () {
       copyNotify(false, 'Could not copy');
     });
@@ -882,36 +898,72 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
 
   <!-- Site User Settings -->
   <div class="platform-ssh-section">
-    <div class="platform-ssh-headline">
-      <h3 class="platform-ssh-title">SSH User Settings</h3>
-      {{ if Item.SiteUser }}
-      <div class="platform-ssh-meta">
-        <span class="platform-ssh-user">{{ Item.SiteUser.Username }}</span>
-        <span class="platform-ssh-sep">•</span>
-        <span class="platform-ssh-status {{ if Item.SiteUser.IsActive }}platform-ssh-status-active{{ else }}platform-ssh-status-inactive{{ end }}">{{ if Item.SiteUser.IsActive }}Active{{ else }}Inactive{{ end }}</span>
+    <div class="platform-ssh-shell">
+      <div class="platform-ssh-headline">
+        <div class="platform-ssh-heading-group">
+          <h3 class="platform-ssh-title">SSH User Settings</h3>
+          <p class="platform-ssh-subtitle">Manage the Linux SSH account used to access this platform root.</p>
+        </div>
+        {{ if Item.SiteUser }}
+        <div class="platform-ssh-meta">
+          <!-- <span class="platform-ssh-user">{{ Item.SiteUser.Username }}</span>
+          <span class="platform-ssh-sep">•</span> -->
+          <span class="platform-ssh-status {{ if Item.SiteUser.IsActive }}platform-ssh-status-active{{ else }}platform-ssh-status-inactive{{ end }}">{{ if Item.SiteUser.IsActive }}Active{{ else }}Inactive{{ end }}</span>
+        </div>
+        {{ else }}
+        <span class="platform-ssh-empty-state">Not configured</span>
+        {{ end }}
       </div>
+
+      {{ if Item.SiteUser }}
+      <div class="platform-ssh-overview">
+        <div class="platform-ssh-stat">
+          <span class="platform-ssh-card-label">SSH Username</span>
+          <div class="platform-ssh-copyline">
+            <span class="platform-ssh-copyvalue">{{ Item.SiteUser.Username }}</span>
+            <button type="button" class="platform-copy-action" data-copy-value="{{ Item.SiteUser.Username }}" data-copy-success="SSH username copied">Copy</button>
+          </div>
+        </div>
+        <div class="platform-ssh-stat">
+          <span class="platform-ssh-card-label">SSH Command</span>
+          <div class="platform-ssh-copyline">
+            <span class="platform-ssh-copyvalue">ssh {{ Item.SiteUser.Username }}@{{ ServerAddress }}</span>
+            <button type="button" class="platform-copy-action" data-copy-value="ssh {{ Item.SiteUser.Username }}@{{ ServerAddress }}" data-copy-success="SSH command copied">Copy</button>
+          </div>
+        </div>
+      </div>
+
+      <form action="/websites/{{ Item.ID }}/manage/site-user/password" method="post" class="platform-ssh-form platform-ssh-form-card">
+        <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+        <h4 class="platform-ssh-form-title">Reset SSH Password</h4>
+        <div class="platform-ssh-pass-row">
+          <input class="field" type="text" name="password" id="siteuser-pw" autocomplete="new-password" placeholder="New password (leave blank to auto-generate)">
+          <button type="button" class="btn" onclick="var c='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%',p='';for(var i=0;i<20;i++)p+=c[Math.floor(Math.random()*c.length)];document.getElementById('siteuser-pw').value=p;">Generate</button>
+          <button class="btn btn-primary" type="submit">Update Password</button>
+        </div>
+      </form>
+      {{ else }}
+      <form action="/websites/{{ Item.ID }}/manage/site-user" method="post" class="platform-ssh-form platform-ssh-form-card">
+        <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+        <h4 class="platform-ssh-form-title">Create SSH Access</h4>
+        <p class="platform-ssh-note">Provision a dedicated Linux user for this platform with restricted access to the platform root.</p>
+        <div class="platform-ssh-create-grid">
+          <label class="platform-ssh-field">
+            <span class="platform-ssh-field-label">Username</span>
+            <input class="field" name="username" placeholder="Username (e.g. siteuser)" required>
+          </label>
+          <label class="platform-ssh-field">
+            <span class="platform-ssh-field-label">Password</span>
+            <input class="field" type="text" name="password" id="siteuser-new-pw" autocomplete="new-password" placeholder="Leave blank to auto-generate">
+          </label>
+        </div>
+        <div class="platform-ssh-form-actions">
+          <button type="button" class="btn" onclick="var c='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%',p='';for(var i=0;i<20;i++)p+=c[Math.floor(Math.random()*c.length)];document.getElementById('siteuser-new-pw').value=p;">Generate Password</button>
+          <button class="btn btn-primary" type="submit">Create SSH User</button>
+        </div>
+      </form>
       {{ end }}
     </div>
-    {{ if Item.SiteUser }}
-    <form action="/websites/{{ Item.ID }}/manage/site-user/password" method="post" class="platform-ssh-form">
-      <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
-      <div class="platform-ssh-pass-row">
-        <input class="field" type="text" name="password" id="siteuser-pw" autocomplete="new-password" placeholder="New password (leave blank to auto-generate)">
-        <button type="button" class="btn" onclick="var c='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%',p='';for(var i=0;i<20;i++)p+=c[Math.floor(Math.random()*c.length)];document.getElementById('siteuser-pw').value=p;">Generate</button>
-        <button class="btn btn-primary" type="submit">Update Password</button>
-      </div>
-    </form>
-    {{ else }}
-    <form action="/websites/{{ Item.ID }}/manage/site-user" method="post" class="platform-ssh-form">
-      <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
-      <div class="platform-ssh-create-row">
-        <input class="field" name="username" placeholder="Username (e.g. siteuser)" required>
-        <input class="field" type="text" name="password" id="siteuser-new-pw" autocomplete="new-password" placeholder="Password (leave blank to auto-generate)">
-        <button type="button" class="btn" onclick="var c='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%',p='';for(var i=0;i<20;i++)p+=c[Math.floor(Math.random()*c.length)];document.getElementById('siteuser-new-pw').value=p;">Generate</button>
-        <button class="btn btn-primary" type="submit">Create SSH User</button>
-      </div>
-    </form>
-    {{ end }}
   </div>
 
   {{ if Item.Type == "php" }}
@@ -2262,7 +2314,7 @@ $(function () {
       onErr();
     }
   }
-  function copyServerIP(text, onOk, onErr) {
+  function copyTextValue(text, onOk, onErr) {
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text).then(onOk).catch(function () { copyFallback(text, onOk, onErr); });
       return;
@@ -2276,10 +2328,26 @@ $(function () {
       copyNotify(false, 'Nothing to copy');
       return;
     }
-    copyServerIP(value, function () {
+    copyTextValue(value, function () {
       $btn.addClass('is-copied');
       setTimeout(function () { $btn.removeClass('is-copied'); }, 900);
       copyNotify(true, 'Server IP copied');
+    }, function () {
+      copyNotify(false, 'Could not copy');
+    });
+  });
+  $('.platform-copy-action').on('click', function () {
+    var $btn = $(this);
+    var value = $.trim(String($btn.data('copyValue') || ''));
+    var successMessage = $.trim(String($btn.data('copySuccess') || 'Copied'));
+    if (!value) {
+      copyNotify(false, 'Nothing to copy');
+      return;
+    }
+    copyTextValue(value, function () {
+      $btn.addClass('is-copied');
+      setTimeout(function () { $btn.removeClass('is-copied'); }, 900);
+      copyNotify(true, successMessage);
     }, function () {
       copyNotify(false, 'Could not copy');
     });

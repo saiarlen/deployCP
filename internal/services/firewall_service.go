@@ -260,18 +260,11 @@ func (s *FirewallService) iptablesStatus(ctx context.Context) (string, bool, []m
 }
 
 func (s *FirewallService) applyUFW(ctx context.Context, rule *models.PanelFirewallRule, actor *uint, ip string) error {
-	args := []string{"--force", rule.Action}
-	if source := normalizedRuleSource(rule.Source); source != "" {
-		args = append(args, "from", source)
+	args, err := s.ufwRuleArgs([]string{"--force", rule.Action}, rule)
+	if err != nil {
+		return err
 	}
-	args = append(args, "to", "any")
-	if port := strings.TrimSpace(rule.Port); port != "" && port != "any" {
-		args = append(args, "port", port)
-	}
-	if proto := normalizedRuleProtocol(rule.Protocol); proto != "" && proto != "any" && proto != "icmp" {
-		args = append(args, "proto", proto)
-	}
-	_, err := s.runner.Run(ctx, system.CommandRequest{
+	_, err = s.runner.Run(ctx, system.CommandRequest{
 		Binary:      s.cfg.Paths.UFWBinary,
 		Args:        args,
 		Timeout:     30 * time.Second,
@@ -286,18 +279,11 @@ func (s *FirewallService) applyUFW(ctx context.Context, rule *models.PanelFirewa
 }
 
 func (s *FirewallService) deleteUFW(ctx context.Context, rule *models.PanelFirewallRule, actor *uint, ip string) error {
-	args := []string{"--force", "delete", rule.Action}
-	if source := normalizedRuleSource(rule.Source); source != "" {
-		args = append(args, "from", source)
+	args, err := s.ufwRuleArgs([]string{"--force", "delete", rule.Action}, rule)
+	if err != nil {
+		return err
 	}
-	args = append(args, "to", "any")
-	if port := strings.TrimSpace(rule.Port); port != "" && port != "any" {
-		args = append(args, "port", port)
-	}
-	if proto := normalizedRuleProtocol(rule.Protocol); proto != "" && proto != "any" && proto != "icmp" {
-		args = append(args, "proto", proto)
-	}
-	_, err := s.runner.Run(ctx, system.CommandRequest{
+	_, err = s.runner.Run(ctx, system.CommandRequest{
 		Binary:      s.cfg.Paths.UFWBinary,
 		Args:        args,
 		Timeout:     30 * time.Second,
@@ -309,6 +295,33 @@ func (s *FirewallService) deleteUFW(ctx context.Context, rule *models.PanelFirew
 		s.audit.Record(actor, "firewall.delete", "firewall_rule", fmt.Sprintf("%d", rule.ID), ip, map[string]any{"backend": "ufw", "name": rule.Name})
 	}
 	return nil
+}
+
+func (s *FirewallService) ufwRuleArgs(prefix []string, rule *models.PanelFirewallRule) ([]string, error) {
+	source := normalizedRuleSource(rule.Source)
+	if source == "" || source == "0.0.0.0/0" || source == "::/0" {
+		source = "any"
+	}
+	proto := normalizedRuleProtocol(rule.Protocol)
+	port := strings.TrimSpace(rule.Port)
+	args := append([]string{}, prefix...)
+
+	if proto == "icmp" {
+		if port != "" && port != "any" {
+			return nil, fmt.Errorf("icmp firewall rules cannot include a port")
+		}
+		args = append(args, "from", source, "to", "any", "proto", "icmp")
+		return args, nil
+	}
+
+	args = append(args, "from", source, "to", "any")
+	if port != "" && port != "any" {
+		args = append(args, "port", port)
+	}
+	if proto != "" && proto != "any" {
+		args = append(args, "proto", proto)
+	}
+	return args, nil
 }
 
 func (s *FirewallService) applyFirewalld(ctx context.Context, rule *models.PanelFirewallRule, actor *uint, ip string) error {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -162,11 +163,103 @@ exec /bin/rbash
 	if _, err := u.runner.Run(ctx, system.CommandRequest{Binary: "/bin/chmod", Args: []string{"755", shellPath}, Timeout: 5 * time.Second, AuditAction: "site_user.shell.ensure"}); err != nil {
 		return err
 	}
+	if err := ensureShellListed(shellPath); err != nil {
+		return err
+	}
+	if err := u.ensureSSHPasswordAccess(ctx); err != nil {
+		return err
+	}
 	return nil
 }
 
+func ensureShellListed(shellPath string) error {
+	const shellsFile = "/etc/shells"
+	content, err := os.ReadFile(shellsFile)
+	if err != nil {
+		return err
+	}
+	entry := strings.TrimSpace(shellPath)
+	if entry == "" {
+		return nil
+	}
+	for _, line := range strings.Split(string(content), "\n") {
+		if strings.TrimSpace(line) == entry {
+			return nil
+		}
+	}
+	updated := strings.TrimRight(string(content), "\n") + "\n" + entry + "\n"
+	return utils.WriteFileAtomic(shellsFile, []byte(updated), 0o644)
+}
+
+func (u *userManager) ensureSSHPasswordAccess(ctx context.Context) error {
+	const (
+		sshdConfigDir  = "/etc/ssh/sshd_config.d"
+		managedSnippet = "/etc/ssh/sshd_config.d/99-deploycp.conf"
+	)
+	if err := os.MkdirAll(sshdConfigDir, 0o755); err != nil {
+		return err
+	}
+	snippet := strings.TrimSpace(`
+PasswordAuthentication yes
+KbdInteractiveAuthentication yes
+UsePAM yes
+`) + "\n"
+	if err := utils.WriteFileAtomic(managedSnippet, []byte(snippet), 0o644); err != nil {
+		return err
+	}
+
+	sshdBinary := sshdBinaryPath()
+	if sshdBinary != "" {
+		if _, err := u.runner.Run(ctx, system.CommandRequest{
+			Binary:      sshdBinary,
+			Args:        []string{"-t"},
+			Timeout:     8 * time.Second,
+			AuditAction: "ssh.validate",
+		}); err != nil {
+			return err
+		}
+	}
+
+	for _, serviceName := range []string{"ssh", "sshd"} {
+		if _, err := u.runner.Run(ctx, system.CommandRequest{
+			Binary:      u.cfg.Paths.SystemctlBinary,
+			Args:        []string{"reload", serviceName},
+			Timeout:     10 * time.Second,
+			AuditAction: "ssh.reload",
+		}); err == nil {
+			return nil
+		}
+	}
+	for _, serviceName := range []string{"ssh", "sshd"} {
+		if _, err := u.runner.Run(ctx, system.CommandRequest{
+			Binary:      u.cfg.Paths.SystemctlBinary,
+			Args:        []string{"restart", serviceName},
+			Timeout:     10 * time.Second,
+			AuditAction: "ssh.restart",
+		}); err == nil {
+			return nil
+		}
+	}
+	return nil
+}
+
+func sshdBinaryPath() string {
+	for _, candidate := range []string{"sshd", "/usr/sbin/sshd", "/usr/local/sbin/sshd"} {
+		if strings.HasPrefix(candidate, "/") {
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate
+			}
+			continue
+		}
+		if resolved, err := exec.LookPath(candidate); err == nil {
+			return resolved
+		}
+	}
+	return ""
+}
+
 func (u *userManager) Create(ctx context.Context, spec platform.SiteUserSpec) (int, int, error) {
-	if err := os.MkdirAll(spec.HomeDir, 0o750); err != nil {
+	if err := os.MkdirAll(spec.HomeDir, 0o755); err != nil {
 		return 0, 0, err
 	}
 	_, err := u.runner.Run(ctx, system.CommandRequest{Binary: "/usr/sbin/useradd", Args: []string{"-m", "-d", spec.HomeDir, "-s", spec.ShellPath, spec.Username}, Timeout: 20 * time.Second, AuditAction: "site_user.create"})
@@ -177,6 +270,9 @@ func (u *userManager) Create(ctx context.Context, spec platform.SiteUserSpec) (i
 		return 0, 0, err
 	}
 	if _, err := u.runner.Run(ctx, system.CommandRequest{Binary: "/bin/chown", Args: []string{"-R", spec.Username + ":" + spec.Username, spec.HomeDir}, Timeout: 15 * time.Second, AuditAction: "site_user.chown"}); err != nil {
+		return 0, 0, err
+	}
+	if _, err := u.runner.Run(ctx, system.CommandRequest{Binary: "/bin/chmod", Args: []string{"755", spec.HomeDir}, Timeout: 5 * time.Second, AuditAction: "site_user.home.chmod"}); err != nil {
 		return 0, 0, err
 	}
 	allowed := filepath.Join(spec.HomeDir, ".deploycp_allowed_root")

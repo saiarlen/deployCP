@@ -1252,6 +1252,18 @@ body.light-theme .settings-tab-active { color: var(--primary-dark); }
   gap: var(--space-3);
 }
 
+.platform-ssh-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px 0 0;
+  border: 1px solid var(--border);
+  border-width: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
 .platform-ssh-headline {
   display: flex;
   align-items: center;
@@ -1259,12 +1271,25 @@ body.light-theme .settings-tab-active { color: var(--primary-dark); }
   gap: var(--space-2);
 }
 
+.platform-ssh-heading-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .platform-ssh-title {
   margin: 0;
-  font-size: 0.875rem;
-  font-weight: 600;
+  font-size: 0.96rem;
+  font-weight: 700;
   color: var(--text);
   line-height: 1.3;
+}
+
+.platform-ssh-subtitle {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--text-sec);
 }
 
 .platform-ssh-meta {
@@ -1303,9 +1328,144 @@ body.light-theme .settings-tab-active { color: var(--primary-dark); }
   color: var(--danger);
 }
 
+.platform-ssh-empty-state {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.38rem 0.68rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-sec);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
 .platform-ssh-form {
   display: flex;
   flex-direction: column;
+  gap: var(--space-2);
+}
+
+.platform-ssh-overview {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.platform-ssh-stat,
+.platform-ssh-form-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--bg-card) 88%, var(--bg-elevated));
+}
+
+.platform-ssh-stat-value {
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--text);
+  word-break: break-word;
+}
+
+.platform-ssh-card-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-sec);
+}
+
+.platform-ssh-copyline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.platform-ssh-copyvalue {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.platform-copy-action {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.38rem 0.72rem;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color .18s ease, background-color .18s ease, color .18s ease;
+  white-space: nowrap;
+}
+
+.platform-copy-action:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.platform-copy-action.is-copied {
+  border-color: color-mix(in srgb, var(--success) 55%, var(--border));
+  color: var(--success);
+}
+
+.platform-ssh-note {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--text-sec);
+}
+
+.platform-ssh-form-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.platform-ssh-form-title {
+  margin: 0;
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.platform-ssh-create-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.platform-ssh-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.platform-ssh-field-label {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.platform-ssh-form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
   gap: var(--space-2);
 }
 
@@ -3889,8 +4049,32 @@ body.light-theme .pw-runtime-head h4 {
     gap: 4px;
   }
 
+  .platform-ssh-shell {
+    padding: 12px 0 0;
+  }
+
   .platform-ssh-user {
     max-width: 100%;
+  }
+
+  .platform-ssh-overview,
+  .platform-ssh-create-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .platform-ssh-copyline {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .platform-ssh-copyvalue {
+    white-space: normal;
+    word-break: break-word;
+  }
+
+  .platform-ssh-form-actions {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .platform-ssh-pass-row {

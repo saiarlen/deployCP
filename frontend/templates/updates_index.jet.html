@@ -65,8 +65,30 @@
     var messageBody = document.getElementById('update-message-body');
     var targetEl = document.getElementById('update-target-version');
     var csrfToken = '{{ CSRFToken }}';
+    var pollTimer = null;
+    var restartWaitMode = false;
+    var pollFailures = 0;
+
+    function schedulePoll(delayMs) {
+      if (pollTimer) {
+        window.clearTimeout(pollTimer);
+      }
+      pollTimer = window.setTimeout(poll, delayMs);
+    }
+
+    function setRestartMessage(message) {
+      messageTitle.textContent = 'Panel restarting';
+      messageBody.textContent = message || 'DeployCP is restarting to complete the update. This page will reconnect automatically when the service is back.';
+      stateEl.textContent = 'restarting';
+      if (installBtn) {
+        installBtn.disabled = true;
+        installBtn.textContent = 'Update Running';
+      }
+    }
 
     function renderStatus(data) {
+      restartWaitMode = data.state === 'running' || data.state === 'queued';
+      pollFailures = 0;
       stateEl.textContent = data.state || 'idle';
       currentEl.textContent = data.display_version || data.current_version || 'dev';
       latestEl.textContent = data.latest_version || 'Unknown';
@@ -92,18 +114,35 @@
         installBtn.disabled = !!data.is_dev || data.state === 'running' || !data.update_available;
         installBtn.textContent = data.state === 'running' ? 'Update Running' : 'Pull And Install Update';
       }
+
+      if (data.state === 'running' || data.state === 'queued') {
+        schedulePoll(8000);
+      } else {
+        schedulePoll(4000);
+      }
     }
 
     function poll() {
       fetch('/updates/status', { headers: { 'Accept': 'application/json' } })
         .then(function (resp) { return resp.json(); })
         .then(renderStatus)
-        .catch(function () {});
+        .catch(function () {
+          pollFailures += 1;
+          if (restartWaitMode) {
+            setRestartMessage('DeployCP is temporarily offline while the new release is being installed. Waiting for the service to return...');
+            schedulePoll(Math.min(15000, 4000 + (pollFailures * 2000)));
+            return;
+          }
+          schedulePoll(Math.min(15000, 4000 + (pollFailures * 1000)));
+        });
     }
 
     if (installBtn) {
       installBtn.addEventListener('click', function () {
         installBtn.disabled = true;
+        restartWaitMode = true;
+        pollFailures = 0;
+        setRestartMessage('Starting the update. DeployCP will go offline briefly while the service restarts.');
         fetch('/updates/install', {
           method: 'POST',
           headers: {
@@ -118,17 +157,26 @@
             });
           })
           .then(function () {
-            poll();
+            setRestartMessage('Update started. Waiting for the service restart and reconnecting shortly...');
+            schedulePoll(12000);
           })
           .catch(function (err) {
+            var message = err && err.message ? err.message : '';
+            if (!message || /failed to fetch|networkerror|load failed/i.test(message)) {
+              setRestartMessage('The updater request was interrupted while DeployCP was restarting. Waiting for the service to come back...');
+              schedulePoll(12000);
+              return;
+            }
+            restartWaitMode = false;
             messageTitle.textContent = 'Update error';
-            messageBody.textContent = err.message || 'Unable to start update.';
+            messageBody.textContent = message || 'Unable to start update.';
             installBtn.disabled = false;
+            installBtn.textContent = 'Pull And Install Update';
+            schedulePoll(4000);
           });
       });
     }
 
     poll();
-    window.setInterval(poll, 4000);
   })();
 </script>

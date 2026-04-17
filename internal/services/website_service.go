@@ -134,6 +134,9 @@ func (s *WebsiteService) Create(ctx context.Context, in WebsiteInput, actor *uin
 	if err := os.MkdirAll(in.RootPath, 0o755); err != nil {
 		return nil, fmt.Errorf("create site root: %w", err)
 	}
+	if err := s.ensurePublicWebRoot(in.RootPath); err != nil {
+		return nil, err
+	}
 	site := &models.Website{
 		Name:             in.Name,
 		RootPath:         in.RootPath,
@@ -165,6 +168,9 @@ func (s *WebsiteService) Create(ctx context.Context, in WebsiteInput, actor *uin
 
 func (s *WebsiteService) Update(ctx context.Context, id uint, in WebsiteInput, actor *uint, ip string) error {
 	if err := s.validate(in); err != nil {
+		return err
+	}
+	if err := s.ensurePublicWebRoot(in.RootPath); err != nil {
 		return err
 	}
 	site, err := s.repo.Find(id)
@@ -452,6 +458,23 @@ func (s *WebsiteService) applyPlatformRuntime(site *models.Website, actor *uint,
 		}
 	}
 	return s.runtime.ApplyPlatformRuntime(site.RootPath, "", "", actor, ip)
+}
+
+func (s *WebsiteService) ensurePublicWebRoot(root string) error {
+	root = strings.TrimSpace(root)
+	if root == "" {
+		return nil
+	}
+	if err := os.Chmod(root, 0o755); err != nil {
+		return fmt.Errorf("set site root permissions: %w", err)
+	}
+	hiddenDir := filepath.Join(root, ".deploycp")
+	if stat, err := os.Stat(hiddenDir); err == nil && stat.IsDir() {
+		if chmodErr := os.Chmod(hiddenDir, 0o700); chmodErr != nil {
+			return fmt.Errorf("secure runtime metadata directory: %w", chmodErr)
+		}
+	}
+	return nil
 }
 
 func (s *WebsiteService) ensureBasicAuthFile(site *models.Website, auth *models.BasicAuth) (string, error) {

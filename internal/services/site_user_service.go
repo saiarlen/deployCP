@@ -63,10 +63,10 @@ func (s *SiteUserService) Create(ctx context.Context, in SiteUserInput, actor *u
 	if err := utils.ValidatePathWithin(in.HomeDirectory, in.AllowedRoot); err != nil {
 		return nil, "", fmt.Errorf("allowed root must be within home: %w", err)
 	}
-	if err := os.MkdirAll(in.HomeDirectory, 0o750); err != nil {
+	if err := os.MkdirAll(in.HomeDirectory, 0o755); err != nil {
 		return nil, "", err
 	}
-	if err := os.MkdirAll(in.AllowedRoot, 0o750); err != nil {
+	if err := os.MkdirAll(in.AllowedRoot, 0o755); err != nil {
 		return nil, "", err
 	}
 	password := in.Password
