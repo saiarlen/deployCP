@@ -186,6 +186,19 @@ func (h *SettingsHandler) Index(c *fiber.Ctx) error {
 		h.base.Sessions.SetFlash(c, fwErr.Error())
 		firewallRules = []models.PanelFirewallRule{}
 	}
+	firewallBackend := ""
+	firewallHostActive := false
+	hostFirewallRules := []models.PanelFirewallRule{}
+	if h.firewallService != nil {
+		backend, active, rules, err := h.firewallService.HostStatus(c.Context())
+		if err != nil {
+			h.base.Sessions.SetFlash(c, err.Error())
+		} else {
+			firewallBackend = backend
+			firewallHostActive = active
+			hostFirewallRules = rules
+		}
+	}
 
 	customDomain, _ := h.service.Get("panel_custom_domain")
 	proftpdMasqueradeAddress, _ := h.service.Get("proftpd_masquerade_address")
@@ -231,6 +244,9 @@ func (h *SettingsHandler) Index(c *fiber.Ctx) error {
 		"EventsStart":              eventsStart,
 		"EventsEnd":                eventsEnd,
 		"FirewallRules":            firewallRules,
+		"HostFirewallRules":        hostFirewallRules,
+		"FirewallBackend":          firewallBackend,
+		"FirewallHostActive":       firewallHostActive,
 		"CustomDomain":             customDomain,
 		"ProftpdMasqueradeAddress": proftpdMasqueradeAddress,
 		"PanelTimezone":            panelTimezone,

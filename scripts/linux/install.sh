@@ -145,19 +145,19 @@ install_packages() {
     apt)
       export DEBIAN_FRONTEND=noninteractive
       apt-get update -y
-      apt-get install -y nginx certbot curl tar sqlite3 ca-certificates openssl procps cron redis-server proftpd-basic varnish mariadb-server postgresql
+      apt-get install -y nginx certbot curl tar sqlite3 ca-certificates openssl procps cron redis-server proftpd-basic varnish mariadb-server postgresql ufw
       ;;
     dnf)
-      dnf install -y nginx certbot curl tar sqlite sqlite-libs ca-certificates openssl procps-ng cronie redis proftpd varnish mariadb-server postgresql-server
+      dnf install -y nginx certbot curl tar sqlite sqlite-libs ca-certificates openssl procps-ng cronie redis proftpd varnish mariadb-server postgresql-server firewalld
       ;;
     yum)
-      yum install -y nginx certbot curl tar sqlite ca-certificates openssl procps-ng cronie redis proftpd varnish mariadb-server postgresql-server
+      yum install -y nginx certbot curl tar sqlite ca-certificates openssl procps-ng cronie redis proftpd varnish mariadb-server postgresql-server firewalld
       ;;
     zypper)
-      zypper --non-interactive install nginx certbot curl tar sqlite3 ca-certificates openssl procps cron redis proftpd varnish mariadb postgresql-server
+      zypper --non-interactive install nginx certbot curl tar sqlite3 ca-certificates openssl procps cron redis proftpd varnish mariadb postgresql-server firewalld
       ;;
     pacman)
-      pacman -Sy --noconfirm nginx certbot curl tar sqlite ca-certificates openssl procps-ng cronie redis mariadb postgresql varnish
+      pacman -Sy --noconfirm nginx certbot curl tar sqlite ca-certificates openssl procps-ng cronie redis mariadb postgresql varnish ufw
       ;;
     *)
       echo "unsupported package manager" >&2
@@ -311,6 +311,72 @@ ensure_service_enabled() {
   if [[ -n "$service" ]] && systemd_unit_exists "$service"; then
     systemctl enable "$service" >/dev/null 2>&1 || true
     systemctl start "$service" >/dev/null 2>&1 || true
+  fi
+}
+
+detect_ssh_port() {
+  local port=""
+  if command -v sshd >/dev/null 2>&1; then
+    port="$(sshd -T 2>/dev/null | awk '$1 == "port" { print $2; exit }')"
+  fi
+  if [[ -z "$port" ]]; then
+    port="$(
+      awk '
+        /^[[:space:]]*#/ { next }
+        tolower($1) == "port" && $2 ~ /^[0-9]+$/ { print $2; exit }
+      ' /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf 2>/dev/null
+    )"
+  fi
+  if [[ -z "$port" ]]; then
+    port="22"
+  fi
+  echo "$port"
+}
+
+read_env_value() {
+  local file="$1"
+  local key="$2"
+  if [[ ! -f "$file" ]]; then
+    return
+  fi
+  awk -F= -v key="$key" '$1 == key { print substr($0, index($0, "=") + 1); exit }' "$file"
+}
+
+ensure_firewall_access() {
+  local env_file="${CORE_DIR}/.env"
+  local app_port ssh_port ufw_status
+  app_port="$(read_env_value "$env_file" "APP_PORT")"
+  if [[ -z "$app_port" ]]; then
+    app_port="${APP_PORT:-8080}"
+  fi
+  ssh_port="$(detect_ssh_port)"
+
+  if command -v "$UFW_BINARY" >/dev/null 2>&1; then
+    "$UFW_BINARY" allow "${ssh_port}/tcp" >/dev/null 2>&1 || true
+    "$UFW_BINARY" allow "${app_port}/tcp" >/dev/null 2>&1 || true
+    ufw_status="$("$UFW_BINARY" status 2>/dev/null || true)"
+    if printf '%s' "$ufw_status" | grep -qi "Status: inactive"; then
+      "$UFW_BINARY" --force enable >/dev/null 2>&1 || true
+    fi
+    return
+  fi
+
+  if command -v "$FIREWALLCMD_BINARY" >/dev/null 2>&1; then
+    systemctl enable firewalld >/dev/null 2>&1 || true
+    systemctl start firewalld >/dev/null 2>&1 || true
+    "$FIREWALLCMD_BINARY" --permanent --add-port="${app_port}/tcp" >/dev/null 2>&1 || true
+    if [[ "$ssh_port" == "22" ]]; then
+      "$FIREWALLCMD_BINARY" --permanent --add-service=ssh >/dev/null 2>&1 || true
+    else
+      "$FIREWALLCMD_BINARY" --permanent --add-port="${ssh_port}/tcp" >/dev/null 2>&1 || true
+    fi
+    "$FIREWALLCMD_BINARY" --reload >/dev/null 2>&1 || true
+    return
+  fi
+
+  if command -v "$IPTABLES_BINARY" >/dev/null 2>&1; then
+    "$IPTABLES_BINARY" -C INPUT -p tcp --dport "$ssh_port" -j ACCEPT >/dev/null 2>&1 || "$IPTABLES_BINARY" -I INPUT -p tcp --dport "$ssh_port" -j ACCEPT >/dev/null 2>&1 || true
+    "$IPTABLES_BINARY" -C INPUT -p tcp --dport "$app_port" -j ACCEPT >/dev/null 2>&1 || "$IPTABLES_BINARY" -I INPUT -p tcp --dport "$app_port" -j ACCEPT >/dev/null 2>&1 || true
   fi
 }
 
@@ -508,6 +574,7 @@ fi
 
 set_env_value "${CORE_DIR}/.env" "APP_VERSION" "$(resolved_release_version)"
 set_env_value "${CORE_DIR}/.env" "DEPLOYCP_REPO" "${DEPLOYCP_REPO:-saiarlen/deployCP}"
+ensure_firewall_access
 
 cat >/etc/systemd/system/${SERVICE_NAME}.service <<EOF
 [Unit]

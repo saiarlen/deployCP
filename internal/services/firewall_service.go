@@ -1,10 +1,12 @@
 package services
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"net"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 
@@ -18,6 +20,8 @@ type FirewallService struct {
 	runner *system.Runner
 	audit  *AuditService
 }
+
+var firewallColumnSplitRe = regexp.MustCompile(`\s{2,}`)
 
 func NewFirewallService(cfg *config.Config, runner *system.Runner, audit *AuditService) *FirewallService {
 	return &FirewallService{cfg: cfg, runner: runner, audit: audit}
@@ -62,6 +66,9 @@ func (s *FirewallService) DeleteRule(ctx context.Context, rule *models.PanelFire
 }
 
 func (s *FirewallService) detectBackend() string {
+	if s.cfg != nil && s.cfg.Features.PlatformMode == "dryrun" {
+		return ""
+	}
 	if _, err := exec.LookPath(s.cfg.Paths.UFWBinary); err == nil {
 		return "ufw"
 	}
@@ -72,6 +79,184 @@ func (s *FirewallService) detectBackend() string {
 		return "iptables"
 	}
 	return ""
+}
+
+func (s *FirewallService) HostStatus(ctx context.Context) (string, bool, []models.PanelFirewallRule, error) {
+	if s == nil || s.cfg == nil || s.cfg.Features.PlatformMode == "dryrun" {
+		return "", false, nil, nil
+	}
+	switch backend := s.detectBackend(); backend {
+	case "ufw":
+		return s.ufwStatus(ctx)
+	case "firewalld":
+		return s.firewalldStatus(ctx)
+	case "iptables":
+		return s.iptablesStatus(ctx)
+	default:
+		return "", false, nil, nil
+	}
+}
+
+func (s *FirewallService) ufwStatus(ctx context.Context) (string, bool, []models.PanelFirewallRule, error) {
+	res, err := s.runner.Run(ctx, system.CommandRequest{
+		Binary:  s.cfg.Paths.UFWBinary,
+		Args:    []string{"status"},
+		Timeout: 8 * time.Second,
+	})
+	combined := strings.TrimSpace(res.Stdout + "\n" + res.Stderr)
+	if err != nil && !strings.Contains(strings.ToLower(combined), "inactive") {
+		return "ufw", false, nil, err
+	}
+	active := strings.Contains(strings.ToLower(combined), "status: active")
+	if !active {
+		return "ufw", false, nil, nil
+	}
+	rules := make([]models.PanelFirewallRule, 0)
+	scanner := bufio.NewScanner(strings.NewReader(res.Stdout))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(strings.ToLower(line), "status:") || strings.HasPrefix(line, "To") || strings.HasPrefix(line, "--") {
+			continue
+		}
+		parts := firewallColumnSplitRe.Split(line, 3)
+		if len(parts) < 3 {
+			continue
+		}
+		target := strings.TrimSpace(parts[0])
+		action := strings.ToLower(strings.TrimSpace(parts[1]))
+		source := strings.TrimSpace(parts[2])
+		protocol := "any"
+		port := target
+		if slash := strings.LastIndex(target, "/"); slash > 0 && slash < len(target)-1 {
+			port = strings.TrimSpace(target[:slash])
+			protocol = strings.ToLower(strings.TrimSpace(target[slash+1:]))
+		}
+		rules = append(rules, models.PanelFirewallRule{
+			Name:        target,
+			Protocol:    protocol,
+			Port:        port,
+			Source:      source,
+			Action:      action,
+			Description: "Detected from host UFW",
+			Enabled:     true,
+		})
+	}
+	return "ufw", true, rules, scanner.Err()
+}
+
+func (s *FirewallService) firewalldStatus(ctx context.Context) (string, bool, []models.PanelFirewallRule, error) {
+	stateRes, err := s.runner.Run(ctx, system.CommandRequest{
+		Binary:  s.cfg.Paths.FirewallCMDBinary,
+		Args:    []string{"--state"},
+		Timeout: 8 * time.Second,
+	})
+	active := strings.TrimSpace(stateRes.Stdout) == "running"
+	if err != nil && !active {
+		return "firewalld", false, nil, nil
+	}
+
+	rules := make([]models.PanelFirewallRule, 0)
+	portsRes, portsErr := s.runner.Run(ctx, system.CommandRequest{
+		Binary:  s.cfg.Paths.FirewallCMDBinary,
+		Args:    []string{"--list-ports"},
+		Timeout: 8 * time.Second,
+	})
+	if portsErr == nil {
+		for _, item := range strings.Fields(strings.TrimSpace(portsRes.Stdout)) {
+			port := item
+			protocol := "any"
+			if slash := strings.LastIndex(item, "/"); slash > 0 && slash < len(item)-1 {
+				port = item[:slash]
+				protocol = item[slash+1:]
+			}
+			rules = append(rules, models.PanelFirewallRule{
+				Name:        item,
+				Protocol:    strings.ToLower(strings.TrimSpace(protocol)),
+				Port:        strings.TrimSpace(port),
+				Source:      "any",
+				Action:      "allow",
+				Description: "Detected from host firewalld ports",
+				Enabled:     true,
+			})
+		}
+	}
+
+	servicesRes, svcErr := s.runner.Run(ctx, system.CommandRequest{
+		Binary:  s.cfg.Paths.FirewallCMDBinary,
+		Args:    []string{"--list-services"},
+		Timeout: 8 * time.Second,
+	})
+	if svcErr == nil {
+		for _, item := range strings.Fields(strings.TrimSpace(servicesRes.Stdout)) {
+			rules = append(rules, models.PanelFirewallRule{
+				Name:        item,
+				Protocol:    "service",
+				Port:        item,
+				Source:      "any",
+				Action:      "allow",
+				Description: "Detected from host firewalld services",
+				Enabled:     true,
+			})
+		}
+	}
+	return "firewalld", active, rules, nil
+}
+
+func (s *FirewallService) iptablesStatus(ctx context.Context) (string, bool, []models.PanelFirewallRule, error) {
+	res, err := s.runner.Run(ctx, system.CommandRequest{
+		Binary:  s.cfg.Paths.IPTablesBinary,
+		Args:    []string{"-S", "INPUT"},
+		Timeout: 8 * time.Second,
+	})
+	if err != nil {
+		return "iptables", false, nil, err
+	}
+	rules := make([]models.PanelFirewallRule, 0)
+	scanner := bufio.NewScanner(strings.NewReader(res.Stdout))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if !strings.HasPrefix(line, "-A INPUT") {
+			continue
+		}
+		fields := strings.Fields(line)
+		rule := models.PanelFirewallRule{
+			Name:        line,
+			Protocol:    "any",
+			Port:        "any",
+			Source:      "0.0.0.0/0",
+			Action:      "allow",
+			Description: "Detected from host iptables INPUT chain",
+			Enabled:     true,
+		}
+		for i := 0; i < len(fields); i++ {
+			switch fields[i] {
+			case "-p":
+				if i+1 < len(fields) {
+					rule.Protocol = strings.ToLower(fields[i+1])
+				}
+			case "-s":
+				if i+1 < len(fields) {
+					rule.Source = fields[i+1]
+				}
+			case "--dport":
+				if i+1 < len(fields) {
+					rule.Port = fields[i+1]
+				}
+			case "-j":
+				if i+1 < len(fields) {
+					target := strings.ToUpper(fields[i+1])
+					switch target {
+					case "DROP", "REJECT":
+						rule.Action = "deny"
+					default:
+						rule.Action = "allow"
+					}
+				}
+			}
+		}
+		rules = append(rules, rule)
+	}
+	return "iptables", true, rules, scanner.Err()
 }
 
 func (s *FirewallService) applyUFW(ctx context.Context, rule *models.PanelFirewallRule, actor *uint, ip string) error {

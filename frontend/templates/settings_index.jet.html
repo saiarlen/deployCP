@@ -480,9 +480,9 @@
               </div>
             </div>
             <div class="flex flex-wrap gap-2">
-              {{ if item.Status.Active }}<span class="badge badge-ok">running</span>{{ else }}<span class="badge badge-danger">stopped</span>{{ end }}
+              {{ if !item.Installed }}<span class="badge badge-neutral">not installed</span>{{ else if item.Status.Active }}<span class="badge badge-ok">running</span>{{ else }}<span class="badge badge-danger">stopped</span>{{ end }}
               {{ if item.Record.Enabled }}<span class="badge badge-ok">enabled</span>{{ else }}<span class="badge badge-neutral">disabled</span>{{ end }}
-              {{ if item.Installed }}<span class="badge badge-ok">installed</span>{{ else }}<span class="badge badge-neutral">not installed</span>{{ end }}
+              {{ if item.Installed }}<span class="badge badge-ok">installed</span>{{ end }}
               {{ if item.Record.ID == 0 }}<span class="badge badge-neutral">default</span>{{ end }}
             </div>
           </div>
@@ -502,8 +502,53 @@
 
   <div id="panel-firewall" class="settings-panel {{ if ActiveTab == "firewall" }}settings-panel-active{{ end }}">
     <section class="surface p-5 sm:p-6 mb-5">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 class="text-lg font-semibold">Detected Host Firewall State</h2>
+          <p class="text-sm opacity-70 mt-1">Live Linux firewall state detected from the active backend.</p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          {{ if FirewallBackend }}
+          <span class="badge badge-neutral">{{ FirewallBackend }}</span>
+          {{ else }}
+          <span class="badge badge-neutral">no backend detected</span>
+          {{ end }}
+          <span class="badge {{ if FirewallHostActive }}badge-ok{{ else }}badge-danger{{ end }}">{{ if FirewallHostActive }}active{{ else }}inactive{{ end }}</span>
+        </div>
+      </div>
+      {{ if len(HostFirewallRules) > 0 }}
+      <div class="overflow-x-auto mt-4">
+        <table class="min-w-full text-sm">
+          <thead class="text-left opacity-70">
+            <tr>
+              <th class="py-2 pr-4">Port Or Service</th>
+              <th class="py-2 pr-4">Protocol</th>
+              <th class="py-2 pr-4">Source</th>
+              <th class="py-2 pr-4">Action</th>
+              <th class="py-2">Origin</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{ range _, r := HostFirewallRules }}
+            <tr class="border-t border-[var(--border)]">
+              <td class="py-2 pr-4">{{ r.Port }}</td>
+              <td class="py-2 pr-4">{{ r.Protocol }}</td>
+              <td class="py-2 pr-4">{{ r.Source }}</td>
+              <td class="py-2 pr-4"><span class="badge {{ if r.Action == "allow" }}badge-ok{{ else }}badge-danger{{ end }}">{{ r.Action }}</span></td>
+              <td class="py-2">{{ r.Description }}</td>
+            </tr>
+            {{ end }}
+          </tbody>
+        </table>
+      </div>
+      {{ else }}
+      <p class="text-sm opacity-70 mt-4">No live host firewall rules were detected.</p>
+      {{ end }}
+    </section>
+
+    <section class="surface p-5 sm:p-6 mb-5">
       <h2 class="text-lg font-semibold">Add Firewall Rule</h2>
-      <p class="text-sm opacity-70 mt-1">Create panel-managed firewall rules metadata.</p>
+      <p class="text-sm opacity-70 mt-1">Create DeployCP-managed firewall rules and apply them to the active Linux firewall backend.</p>
       <form action="/settings/firewall" method="post" class="grid gap-4 md:grid-cols-2 mt-4">
         <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
         <label class="block text-sm font-medium">Rule Name *

@@ -80,19 +80,14 @@ func (s *ServiceService) List(ctx context.Context) ([]ServiceEntry, error) {
 	for _, item := range items {
 		resolvedName := s.resolvedServiceName(ctx, item.Name)
 		status, _ := s.adapter.Services().Status(ctx, resolvedName)
-		state := "stopped"
-		if status.Active {
-			state = "running"
-		}
-		if !status.Active && status.SubState != "" {
-			state = strings.ToLower(strings.TrimSpace(status.SubState))
-		}
+		installed := s.installedState(ctx, item.Name)
+		state := serviceEntryState(status, installed)
 		out = append(out, ServiceEntry{
 			Record:        item,
 			Status:        status,
 			State:         state,
 			CategoryLabel: s.categoryTitle(item.Type),
-			Installed:     s.installedState(ctx, item.Name),
+			Installed:     installed,
 		})
 	}
 	return out, nil
@@ -121,19 +116,14 @@ func (s *ServiceService) ListSystem(ctx context.Context) ([]ServiceEntry, error)
 		}
 		resolvedName := s.resolvedServiceName(ctx, record.Name)
 		status, _ := s.adapter.Services().Status(ctx, resolvedName)
-		state := "stopped"
-		if status.Active {
-			state = "running"
-		}
-		if !status.Active && status.SubState != "" {
-			state = strings.ToLower(strings.TrimSpace(status.SubState))
-		}
+		installed := s.installedState(ctx, record.Name)
+		state := serviceEntryState(status, installed)
 		out = append(out, ServiceEntry{
 			Record:        record,
 			Status:        status,
 			State:         state,
 			CategoryLabel: s.categoryTitle(record.Type),
-			Installed:     s.installedState(ctx, record.Name),
+			Installed:     installed,
 		})
 	}
 
@@ -147,19 +137,14 @@ func (s *ServiceService) ListSystem(ctx context.Context) ([]ServiceEntry, error)
 		}
 		resolvedName := s.resolvedServiceName(ctx, item.Name)
 		status, _ := s.adapter.Services().Status(ctx, resolvedName)
-		state := "stopped"
-		if status.Active {
-			state = "running"
-		}
-		if !status.Active && status.SubState != "" {
-			state = strings.ToLower(strings.TrimSpace(status.SubState))
-		}
+		installed := s.installedState(ctx, item.Name)
+		state := serviceEntryState(status, installed)
 		out = append(out, ServiceEntry{
 			Record:        item,
 			Status:        status,
 			State:         state,
 			CategoryLabel: s.categoryTitle(item.Type),
-			Installed:     s.installedState(ctx, item.Name),
+			Installed:     installed,
 		})
 	}
 
@@ -583,6 +568,19 @@ func isSystemManagedService(item models.ManagedService) bool {
 	default:
 		return true
 	}
+}
+
+func serviceEntryState(status platform.ServiceStatus, installed bool) string {
+	if !installed {
+		return "not-installed"
+	}
+	if status.Active {
+		return "running"
+	}
+	if sub := strings.ToLower(strings.TrimSpace(status.SubState)); sub != "" {
+		return sub
+	}
+	return "stopped"
 }
 
 func (s *ServiceService) installedState(ctx context.Context, serviceName string) bool {

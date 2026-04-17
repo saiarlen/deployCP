@@ -61,7 +61,57 @@ func migrate(db *gorm.DB) error {
 	); err != nil {
 		return err
 	}
+	if err := reconcilePlatformColumns(db); err != nil {
+		return err
+	}
 	return mergeLegacyAppsIntoPlatforms(db)
+}
+
+func reconcilePlatformColumns(db *gorm.DB) error {
+	migrator := db.Migrator()
+	if !migrator.HasTable((&models.Website{}).TableName()) {
+		return nil
+	}
+	for _, field := range []string{
+		"Name",
+		"RootPath",
+		"Type",
+		"AppRuntime",
+		"ExecutionMode",
+		"ProcessManager",
+		"BinaryPath",
+		"EntryPoint",
+		"Host",
+		"Port",
+		"StartArgs",
+		"HealthPath",
+		"RestartPolicy",
+		"Workers",
+		"WorkerClass",
+		"MaxMemory",
+		"Timeout",
+		"ExecMode",
+		"StdoutLogPath",
+		"StderrLogPath",
+		"ServiceName",
+		"PHPVersion",
+		"ProxyTarget",
+		"CustomDirectives",
+		"PhpSettings",
+		"Enabled",
+		"SSLReady",
+		"SiteUserID",
+		"AccessLogPath",
+		"ErrorLogPath",
+	} {
+		if migrator.HasColumn(&models.Website{}, field) {
+			continue
+		}
+		if err := migrator.AddColumn(&models.Website{}, field); err != nil {
+			return fmt.Errorf("add platforms column %s: %w", field, err)
+		}
+	}
+	return nil
 }
 
 func migrateLegacyTableNames(db *gorm.DB) error {
