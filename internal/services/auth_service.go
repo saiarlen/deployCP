@@ -69,7 +69,7 @@ func (s *AuthService) CreateInitialAdmin(name, email, username, password string)
 	}
 	name = strings.TrimSpace(name)
 	email = strings.ToLower(strings.TrimSpace(email))
-	username = strings.TrimSpace(username)
+	username = strings.ToLower(strings.TrimSpace(username))
 	if name == "" || email == "" || username == "" || password == "" {
 		return fmt.Errorf("all fields are required")
 	}
@@ -99,7 +99,19 @@ func (s *AuthService) CreateInitialAdmin(name, email, username, password string)
 }
 
 func (s *AuthService) Authenticate(username, password string) (*models.User, error) {
-	u, err := s.users.FindByUsername(username)
+	identifier := strings.TrimSpace(username)
+	if identifier == "" || password == "" {
+		return nil, errors.New("invalid username or password")
+	}
+	var (
+		u   *models.User
+		err error
+	)
+	if strings.Contains(identifier, "@") {
+		u, err = s.users.FindByEmail(strings.ToLower(identifier))
+	} else {
+		u, err = s.users.FindByUsername(strings.ToLower(identifier))
+	}
 	if err != nil {
 		return nil, errors.New("invalid username or password")
 	}

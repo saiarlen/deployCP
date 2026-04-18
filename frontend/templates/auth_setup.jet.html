@@ -62,7 +62,8 @@
         var msg = String($flash.data('flash') || '').trim();
         if (msg && typeof Notyf === 'function') {
           var notyf = new Notyf({ duration: 6000, dismissible: true, position: { x: 'center', y: 'top' }, ripple: false });
-          notyf.open({ type: 'error', message: msg });
+          var isErr = /(error|failed|invalid|required|unable|cannot|can't|denied|blocked|in\s+use|not\s+found|unauthorized)/i.test(msg);
+          notyf.open({ type: isErr ? 'error' : 'success', message: msg });
         }
       }
     });

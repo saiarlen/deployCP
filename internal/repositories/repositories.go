@@ -90,14 +90,14 @@ func (r *UserRepository) FindByID(id uint) (*models.User, error) {
 }
 func (r *UserRepository) FindByUsername(username string) (*models.User, error) {
 	var u models.User
-	if err := r.db.Where("username = ?", username).First(&u).Error; err != nil {
+	if err := r.db.Where("LOWER(username) = LOWER(?)", username).First(&u).Error; err != nil {
 		return nil, err
 	}
 	return &u, nil
 }
 func (r *UserRepository) FindByEmail(email string) (*models.User, error) {
 	var u models.User
-	if err := r.db.Where("email = ?", email).First(&u).Error; err != nil {
+	if err := r.db.Where("LOWER(email) = LOWER(?)", email).First(&u).Error; err != nil {
 		return nil, err
 	}
 	return &u, nil

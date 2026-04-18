@@ -154,7 +154,7 @@ func Build() (*Application, error) {
 		Storage:        storage.New(storage.Config{Database: cfg.Database.SQLitePath, Table: "fiber_sessions"}),
 		KeyLookup:      "cookie:" + cfg.Security.SessionCookieName,
 		CookieHTTPOnly: true,
-		CookieSecure:   cfg.Security.SessionSecureCookies,
+		CookieSecure:   false,
 		CookieSameSite: "Lax",
 		Expiration:     24 * time.Hour,
 	})
@@ -187,6 +187,11 @@ func Build() (*Application, error) {
 
 	app.Use(recover.New())
 	app.Use(requestid.New())
+	app.Use(func(c *fiber.Ctx) error {
+		err := c.Next()
+		enforceSecureCookies(c, cfg)
+		return err
+	})
 	app.Use(func(c *fiber.Ctx) error {
 		c.Set("X-Frame-Options", "DENY")
 		c.Set("X-Content-Type-Options", "nosniff")
@@ -241,7 +246,7 @@ func Build() (*Application, error) {
 		app.Use(csrf.New(csrf.Config{
 			KeyLookup:      "header:X-CSRF-Token",
 			CookieName:     "deploycp_csrf",
-			CookieSecure:   cfg.Security.SessionSecureCookies,
+			CookieSecure:   false,
 			CookieHTTPOnly: true,
 			Expiration:     12 * time.Hour,
 			ContextKey:     "csrf",
@@ -306,6 +311,36 @@ func Build() (*Application, error) {
 
 	instance.registerRoutes()
 	return instance, nil
+}
+
+func secureCookiesForRequest(cfg *config.Config, c *fiber.Ctx) bool {
+	switch strings.ToLower(strings.TrimSpace(cfg.Security.SessionSecureCookies)) {
+	case "true":
+		return true
+	case "false":
+		return false
+	default:
+		return strings.EqualFold(c.Protocol(), "https") || strings.EqualFold(c.Get("X-Forwarded-Proto"), "https")
+	}
+}
+
+func enforceSecureCookies(c *fiber.Ctx, cfg *config.Config) {
+	if !secureCookiesForRequest(cfg, c) {
+		return
+	}
+	values := c.Response().Header.PeekAll(fiber.HeaderSetCookie)
+	if len(values) == 0 {
+		return
+	}
+	c.Response().Header.Del(fiber.HeaderSetCookie)
+	for _, value := range values {
+		cookie := string(value)
+		lower := strings.ToLower(cookie)
+		if !strings.Contains(lower, "; secure") && !strings.HasSuffix(lower, " secure") {
+			cookie += "; Secure"
+		}
+		c.Response().Header.Add(fiber.HeaderSetCookie, cookie)
+	}
 }
 
 func (a *Application) registerRoutes() {

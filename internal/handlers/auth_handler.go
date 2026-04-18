@@ -151,7 +151,6 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 		return c.Redirect("/login")
 	}
 	_ = h.auth.StartUserSession(u, c.Cookies(h.base.Config.Security.SessionCookieName), c.IP(), c.Get("User-Agent"))
-	h.base.Sessions.SetFlash(c, "Welcome back, "+u.Username+".")
 	return c.Redirect("/")
 }
 
@@ -241,7 +240,7 @@ func (h *AuthHandler) setThemeCookie(c *fiber.Ctx, theme string) {
 		Value:    safeTheme,
 		Path:     "/",
 		HTTPOnly: false,
-		Secure:   h.base.Config.Security.SessionSecureCookies,
+		Secure:   false,
 		Expires:  time.Now().Add(365 * 24 * time.Hour),
 	})
 }

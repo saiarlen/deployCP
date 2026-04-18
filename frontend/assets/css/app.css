@@ -4303,3 +4303,8 @@ body.light-theme .pw-runtime-head h4 {
     min-height: 18rem;
   }
 }
+
+
+.auth-card {
+    padding: 35px !important;
+}

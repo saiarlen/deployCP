@@ -182,6 +182,64 @@ command_path() {
   echo "$fallback"
 }
 
+is_public_ipv4() {
+  local ip="$1"
+  [[ "$ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || return 1
+  case "$ip" in
+    10.*|127.*|169.254.*|172.16.*|172.17.*|172.18.*|172.19.*|172.2[0-9].*|172.3[0-1].*|192.168.*|0.*)
+      return 1
+      ;;
+  esac
+  return 0
+}
+
+detect_display_host() {
+  local candidate=""
+  local env_host=""
+
+  env_host="$(read_env_value "${CORE_DIR}/.env" "APP_HOST" 2>/dev/null || true)"
+  env_host="${env_host#http://}"
+  env_host="${env_host#https://}"
+  env_host="${env_host%%/*}"
+  env_host="${env_host%%:*}"
+  if [[ -n "$env_host" ]]; then
+    echo "$env_host"
+    return
+  fi
+
+  if command -v ip >/dev/null 2>&1; then
+    while IFS= read -r candidate; do
+      candidate="${candidate%%/*}"
+      if is_public_ipv4 "$candidate"; then
+        echo "$candidate"
+        return
+      fi
+    done < <(ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}')
+  fi
+
+  for candidate in $(hostname -I 2>/dev/null); do
+    if is_public_ipv4 "$candidate"; then
+      echo "$candidate"
+      return
+    fi
+  done
+
+  candidate="$(hostname -f 2>/dev/null || true)"
+  if [[ -n "$candidate" && "$candidate" != "localhost" ]]; then
+    echo "$candidate"
+    return
+  fi
+
+  for candidate in $(hostname -I 2>/dev/null); do
+    if [[ -n "$candidate" ]]; then
+      echo "$candidate"
+      return
+    fi
+  done
+
+  echo "your-server-ip"
+}
+
 systemd_unit_exists() {
   local name="$1"
   systemctl list-unit-files "${name}.service" --no-legend 2>/dev/null | grep -q "${name}.service"
@@ -529,7 +587,7 @@ DEPLOYCP_REPO=${DEPLOYCP_REPO:-saiarlen/deployCP}
 SQLITE_PATH=${CORE_DIR}/storage/db/deploycp.sqlite
 SESSION_SECRET=$(openssl rand -hex 32)
 SESSION_COOKIE_NAME=deploycp_session
-SESSION_SECURE_COOKIES=true
+SESSION_SECURE_COOKIES=auto
 CSRF_ENABLED=true
 LOGIN_RATE_LIMIT_PER_MIN=20
 STORAGE_ROOT=${CORE_DIR}/storage
@@ -647,8 +705,7 @@ if [[ -x "${CORE_DIR}/bin/${BIN_NAME}" ]]; then
   # Resolve display values for the post-install message.
   DISPLAY_PORT="$(read_env_value "${CORE_DIR}/.env" "APP_PORT")"
   DISPLAY_PORT="${DISPLAY_PORT:-2024}"
-  SERVER_IP="$(hostname -I 2>/dev/null | awk '{print $1}')" || SERVER_IP="your-server-ip"
-  if [[ -z "$SERVER_IP" ]]; then SERVER_IP="your-server-ip"; fi
+  SERVER_IP="$(detect_display_host)"
 
   echo ""
   echo "══════════════════════════════════════════════════════════════"

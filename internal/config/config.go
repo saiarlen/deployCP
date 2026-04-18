@@ -39,7 +39,7 @@ type DatabaseConfig struct {
 type SecurityConfig struct {
 	SessionSecret        string
 	SessionCookieName    string
-	SessionSecureCookies bool
+	SessionSecureCookies string
 	CSRFEnabled          bool
 	LoginRateLimitPerMin int
 	BootstrapAdminUser   string
@@ -121,7 +121,7 @@ func Load() (*Config, error) {
 		Security: SecurityConfig{
 			SessionSecret:        getEnv("SESSION_SECRET", "change-me-in-production-now"),
 			SessionCookieName:    getEnv("SESSION_COOKIE_NAME", "deploycp_session"),
-			SessionSecureCookies: getEnvBool("SESSION_SECURE_COOKIES", strings.EqualFold(getEnv("APP_ENV", "development"), "production")),
+			SessionSecureCookies: normalizeSecureCookieMode(getEnv("SESSION_SECURE_COOKIES", "auto")),
 			CSRFEnabled:          getEnvBool("CSRF_ENABLED", true),
 			LoginRateLimitPerMin: getEnvInt("LOGIN_RATE_LIMIT_PER_MIN", 20),
 			BootstrapAdminUser:   getEnv("BOOTSTRAP_ADMIN_USERNAME", ""),
@@ -223,6 +223,17 @@ func (c *Config) applyDryrunPaths() {
 	c.Managed.VarnishIncludeVCL = filepath.Join(root, "dryrun", "varnish", "deploycp.vcl")
 	c.Managed.VarnishdBinary = "/bin/echo"
 	c.Managed.RedisServerBinary = "/bin/echo"
+}
+
+func normalizeSecureCookieMode(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "true", "1", "yes", "on":
+		return "true"
+	case "false", "0", "no", "off":
+		return "false"
+	default:
+		return "auto"
+	}
 }
 
 func (c *Config) Validate() error {
