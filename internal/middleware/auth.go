@@ -12,7 +12,8 @@ import (
 func AuthRequired(sm *SessionManager) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		uid, err := sm.GetUserID(c)
-		if err != nil || uid == 0 {
+		if err != nil || uid == 0 || c.Locals("auth_user") == nil {
+			_ = sm.Clear(c)
 			return c.Redirect("/login")
 		}
 		c.Locals("auth_user_id", uid)
@@ -24,7 +25,7 @@ func InjectAuthUser(sm *SessionManager, users *repositories.UserRepository, acce
 	return func(c *fiber.Ctx) error {
 		uid, _ := sm.GetUserID(c)
 		if uid != 0 {
-			if u, err := users.FindByID(uid); err == nil {
+			if u, err := users.FindByID(uid); err == nil && u.IsActive {
 				c.Locals("auth_user", u)
 				role := normalizeUserRole(u)
 				c.Locals("auth_user_role", role)
@@ -33,6 +34,8 @@ func InjectAuthUser(sm *SessionManager, users *repositories.UserRepository, acce
 					platformIDs, _ := access.ListPlatformIDsByUser(uid)
 					c.Locals("auth_platform_access_ids", platformIDs)
 				}
+			} else {
+				_ = sm.Clear(c)
 			}
 		}
 		return c.Next()

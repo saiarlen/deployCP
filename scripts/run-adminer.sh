@@ -3,9 +3,6 @@ set -euo pipefail
 
 PORT="${1:-8081}"
 
-docker run --rm -d \
-  --name deploycp-adminer \
-  -p "${PORT}:8080" \
-  adminer:4
-
-echo "Adminer started at http://127.0.0.1:${PORT}"
+echo "Adminer is not bundled with DeployCP." >&2
+echo "Provision Adminer separately behind loopback or a trusted private network, then set ADMINER_URL=http://127.0.0.1:${PORT} in /home/deploycp/core/.env." >&2
+exit 1

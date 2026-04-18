@@ -24,6 +24,20 @@ func AdminOnly(sm *SessionManager) fiber.Handler {
 	}
 }
 
+func ProvisioningAllowed(sm *SessionManager) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		switch roleFromLocals(c) {
+		case "admin", "site_manager":
+			return c.Next()
+		}
+		if expectsJSON(c) {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "forbidden"})
+		}
+		sm.SetFlash(c, "platform creation is restricted to admin and site manager users")
+		return c.Redirect("/platforms")
+	}
+}
+
 func PlatformAccess(sm *SessionManager, access *repositories.UserPlatformAccessRepository) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		if roleFromLocals(c) != "user" {

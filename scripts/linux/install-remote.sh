@@ -26,6 +26,22 @@ need_cmd tar
 need_cmd uname
 need_cmd mktemp
 
+checksum_tool() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    echo "sha256sum"
+    return
+  fi
+  if command -v shasum >/dev/null 2>&1; then
+    echo "shasum -a 256"
+    return
+  fi
+  if command -v openssl >/dev/null 2>&1; then
+    echo "openssl dgst -sha256"
+    return
+  fi
+  echo ""
+}
+
 detect_arch() {
   case "$(uname -m)" in
     x86_64|amd64) echo "linux-amd64" ;;
@@ -59,11 +75,42 @@ export DEPLOYCP_VERSION="$VERSION"
 export DEPLOYCP_REPO="$REPO"
 ASSET="deploycp-${VERSION}-${ARCH_SUFFIX}.tar.gz"
 DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION}/${ASSET}"
+CHECKSUM_URL="${DOWNLOAD_URL}.sha256"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 echo "Downloading ${ASSET} from ${DOWNLOAD_URL}"
 curl -fL "$DOWNLOAD_URL" -o "${TMP_DIR}/${ASSET}"
+echo "Downloading checksum from ${CHECKSUM_URL}"
+curl -fL "$CHECKSUM_URL" -o "${TMP_DIR}/${ASSET}.sha256"
+
+CHECKSUM_CMD="$(checksum_tool)"
+if [[ -z "$CHECKSUM_CMD" ]]; then
+  echo "missing checksum tool: need sha256sum, shasum, or openssl" >&2
+  exit 1
+fi
+
+echo "Verifying ${ASSET}"
+(
+  cd "$TMP_DIR"
+  case "$CHECKSUM_CMD" in
+    "sha256sum")
+      sha256sum -c "${ASSET}.sha256"
+      ;;
+    "shasum -a 256")
+      shasum -a 256 -c "${ASSET}.sha256"
+      ;;
+    "openssl dgst -sha256")
+      expected="$(awk '{print $1}' "${ASSET}.sha256")"
+      actual="$(openssl dgst -sha256 "${ASSET}" | awk '{print $NF}')"
+      if [[ "$expected" != "$actual" ]]; then
+        echo "checksum verification failed for ${ASSET}" >&2
+        exit 1
+      fi
+      ;;
+  esac
+)
+
 tar -xzf "${TMP_DIR}/${ASSET}" -C "$TMP_DIR"
 
 PKG_DIR="${TMP_DIR}/deploycp-${VERSION}-${ARCH_SUFFIX}"

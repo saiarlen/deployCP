@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -231,7 +232,8 @@ func (h *WebsiteHandler) ShowByID(c *fiber.Ctx, id uint) error {
 		"BasicAuth":            basicAuth,
 		"FTPUsers":             ftpUsers,
 		"PHPVersions":          phpVersions,
-		"DefaultHomeDir":       item.RootPath,
+		"DefaultHomeDir":       platformHomeFromRoot(item.RootPath),
+		"FileManagerRoot":      platformHomeFromRoot(item.RootPath),
 		"SSHUsers":             sshUsers,
 		"PrimarySSHUserID":     primarySSHUserID,
 	})
@@ -370,10 +372,11 @@ func (h *WebsiteHandler) ManageCreateSiteUser(c *fiber.Ctx) error {
 	if root == "" {
 		root = strings.TrimSuffix(h.base.Config.Paths.DefaultSiteRoot, "/") + "/" + site.Name
 	}
+	platformHome := platformHomeFromRoot(root)
 	item, generatedPassword, err := h.siteUserService.Create(c.Context(), services.SiteUserInput{
 		Username:      strings.TrimSpace(c.FormValue("username")),
-		HomeDirectory: root,
-		AllowedRoot:   root,
+		HomeDirectory: platformHome,
+		AllowedRoot:   platformHome,
 		Password:      c.FormValue("password"),
 		SSHEnabled:    true,
 		WebsiteID:     &id,
@@ -886,12 +889,26 @@ func (h *WebsiteHandler) ManageUpdateBasicAuth(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(400).SendString(err.Error())
 	}
+	existing, _ := h.basicAuths.FindByWebsite(id)
 	item := &models.BasicAuth{
 		WebsiteID:      id,
 		Enabled:        boolFromForm(c, "enabled"),
 		Username:       strings.TrimSpace(c.FormValue("username")),
-		Password:       c.FormValue("password"),
 		WhitelistedIPs: strings.TrimSpace(c.FormValue("whitelisted_ips")),
+	}
+	password := c.FormValue("password")
+	if strings.TrimSpace(password) == "" && existing != nil {
+		item.PasswordEnc = existing.PasswordEnc
+	} else if strings.TrimSpace(password) != "" {
+		enc, encErr := utils.EncryptString(h.base.Config.Security.SessionSecret, password)
+		if encErr != nil {
+			h.base.Sessions.SetFlash(c, encErr.Error())
+			return c.Redirect(platformURLWithTab("website", id, "security"))
+		}
+		item.PasswordEnc = enc
+	} else if item.Enabled {
+		h.base.Sessions.SetFlash(c, "basic auth password is required")
+		return c.Redirect(platformURLWithTab("website", id, "security"))
 	}
 	if err := h.basicAuths.Upsert(item); err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
@@ -919,12 +936,13 @@ func (h *WebsiteHandler) ManageCreateFTPUser(c *fiber.Ctx) error {
 		return c.Redirect(platformURLWithTab("website", id, "ssh"))
 	}
 	password := strings.TrimSpace(c.FormValue("password"))
+	generated := password == ""
 	if password == "" {
 		password = utils.GeneratePassword()
 	}
 	homeDir := strings.TrimSpace(c.FormValue("home_dir"))
 	if homeDir == "" {
-		homeDir = site.RootPath
+		homeDir = platformHomeFromRoot(site.RootPath)
 		if homeDir == "" {
 			homeDir = strings.TrimSuffix(h.base.Config.Paths.DefaultSiteRoot, "/") + "/" + site.Name
 		}
@@ -941,7 +959,11 @@ func (h *WebsiteHandler) ManageCreateFTPUser(c *fiber.Ctx) error {
 		h.base.Sessions.SetFlash(c, "FTP user created")
 		return c.Redirect(platformURLWithTab("website", id, "ssh"))
 	}
-	h.base.Sessions.SetFlash(c, "FTP user created")
+	if generated {
+		h.base.Sessions.SetFlash(c, "FTP user created. Generated password: "+password)
+	} else {
+		h.base.Sessions.SetFlash(c, "FTP user created")
+	}
 	return c.Redirect(platformURLWithTab("website", id, "ssh"))
 }
 
@@ -1188,7 +1210,7 @@ func (h *WebsiteHandler) payload(c *fiber.Ctx) (websiteFormInput, error) {
 			folder = strings.ReplaceAll(folder, "*.", "wildcard-")
 			folder = strings.ReplaceAll(folder, "/", "-")
 		}
-		root = strings.TrimSuffix(h.base.Config.Paths.DefaultSiteRoot, "/") + "/" + folder
+		root = strings.TrimSuffix(h.base.Config.Paths.DefaultSiteRoot, "/") + "/" + folder + "/htdocs"
 	}
 	if err := validators.ValidatePath(root); err != nil {
 		return websiteFormInput{}, err
@@ -1251,8 +1273,8 @@ func (h *WebsiteHandler) ensureSiteUser(
 
 	item, generatedPassword, err := h.siteUserService.Create(ctx, services.SiteUserInput{
 		Username:      form.SiteUsername,
-		HomeDirectory: in.RootPath,
-		AllowedRoot:   in.RootPath,
+		HomeDirectory: platformHomeFromRoot(in.RootPath),
+		AllowedRoot:   platformHomeFromRoot(in.RootPath),
 		Password:      form.SitePassword,
 		SSHEnabled:    true,
 	}, actor, ip)
@@ -1264,6 +1286,17 @@ func (h *WebsiteHandler) ensureSiteUser(
 		return item.ID, generatedPassword, nil
 	}
 	return item.ID, "", nil
+}
+
+// platformHomeFromRoot returns the platform home directory from a web root path.
+// If the root ends with /htdocs, the platform home is the parent directory.
+// Otherwise the root itself is the platform home.
+func platformHomeFromRoot(webRoot string) string {
+	clean := filepath.Clean(strings.TrimSpace(webRoot))
+	if filepath.Base(clean) == "htdocs" {
+		return filepath.Dir(clean)
+	}
+	return clean
 }
 
 func websiteNameFromDomain(domain string) string {

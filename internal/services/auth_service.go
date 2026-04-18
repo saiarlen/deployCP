@@ -35,13 +35,61 @@ func (s *AuthService) EnsureBootstrapAdmin() error {
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err
 	}
+	// If no credentials in .env, skip — the setup page will handle it.
+	if strings.TrimSpace(s.cfg.Security.BootstrapAdminUser) == "" || strings.TrimSpace(s.cfg.Security.BootstrapAdminPass) == "" {
+		return nil
+	}
 	hash, err := utils.HashPassword(s.cfg.Security.BootstrapAdminPass)
 	if err != nil {
 		return err
 	}
+	email := strings.TrimSpace(s.cfg.Security.BootstrapAdminEmail)
+	if email == "" {
+		email = "admin@localhost"
+	}
 	admin := &models.User{
 		Username:     s.cfg.Security.BootstrapAdminUser,
-		Email:        s.cfg.Security.BootstrapAdminEmail,
+		Email:        email,
+		PasswordHash: hash,
+		Role:         "admin",
+		IsAdmin:      true,
+		IsActive:     true,
+	}
+	return s.users.Create(admin)
+}
+
+func (s *AuthService) NeedsSetup() bool {
+	_, err := s.users.FirstAdmin()
+	return errors.Is(err, gorm.ErrRecordNotFound)
+}
+
+func (s *AuthService) CreateInitialAdmin(name, email, username, password string) error {
+	if !s.NeedsSetup() {
+		return fmt.Errorf("admin already exists")
+	}
+	name = strings.TrimSpace(name)
+	email = strings.ToLower(strings.TrimSpace(email))
+	username = strings.TrimSpace(username)
+	if name == "" || email == "" || username == "" || password == "" {
+		return fmt.Errorf("all fields are required")
+	}
+	if len(username) < 3 {
+		return fmt.Errorf("username must be at least 3 characters")
+	}
+	if len(password) < 10 {
+		return fmt.Errorf("password must be at least 10 characters")
+	}
+	if _, err := mail.ParseAddress(email); err != nil {
+		return fmt.Errorf("valid email is required")
+	}
+	hash, err := utils.HashPassword(password)
+	if err != nil {
+		return err
+	}
+	admin := &models.User{
+		Username:     username,
+		Name:         name,
+		Email:        email,
 		PasswordHash: hash,
 		Role:         "admin",
 		IsAdmin:      true,

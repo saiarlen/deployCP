@@ -375,10 +375,10 @@ func (s *DatabaseService) dropManagedDatabase(item *models.DatabaseConnection) e
 }
 
 func (s *DatabaseService) provisionMariaDB(in DBConnectionInput) error {
-	if strings.TrimSpace(s.cfg.Managed.MariaDBAdminUser) == "" || strings.TrimSpace(s.cfg.Managed.MariaDBAdminPass) == "" {
-		return fmt.Errorf("managed mariadb provisioning requires MARIADB_ADMIN_USER and MARIADB_ADMIN_PASSWORD")
+	if strings.TrimSpace(s.cfg.Managed.MariaDBAdminUser) == "" {
+		return fmt.Errorf("managed mariadb provisioning requires MARIADB_ADMIN_USER")
 	}
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/mysql?parseTime=true&multiStatements=true", s.cfg.Managed.MariaDBAdminUser, s.cfg.Managed.MariaDBAdminPass, s.cfg.Managed.MariaDBAdminHost, s.cfg.Managed.MariaDBAdminPort)
+	dsn := s.mariaDBDSN()
 	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
 	if err != nil {
 		return err
@@ -409,11 +409,32 @@ func (s *DatabaseService) provisionMariaDB(in DBConnectionInput) error {
 	return nil
 }
 
-func (s *DatabaseService) provisionPostgres(in DBConnectionInput) error {
-	if strings.TrimSpace(s.cfg.Managed.PostgresAdminUser) == "" || strings.TrimSpace(s.cfg.Managed.PostgresAdminPass) == "" {
-		return fmt.Errorf("managed postgres provisioning requires POSTGRES_ADMIN_USER and POSTGRES_ADMIN_PASSWORD")
+// mariaDBDSN builds a Go MySQL DSN. When the admin password is empty and the
+// host is local, it connects via unix socket (works with MariaDB socket auth).
+func (s *DatabaseService) mariaDBDSN() string {
+	user := s.cfg.Managed.MariaDBAdminUser
+	pass := s.cfg.Managed.MariaDBAdminPass
+	host := s.cfg.Managed.MariaDBAdminHost
+	port := s.cfg.Managed.MariaDBAdminPort
+	if strings.TrimSpace(pass) == "" && isManagedLocalHost(host) {
+		for _, sock := range []string{
+			"/var/run/mysqld/mysqld.sock",
+			"/var/lib/mysql/mysql.sock",
+			"/tmp/mysql.sock",
+		} {
+			if _, err := os.Stat(sock); err == nil {
+				return fmt.Sprintf("%s@unix(%s)/mysql?parseTime=true&multiStatements=true", user, sock)
+			}
+		}
 	}
-	dsn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", s.cfg.Managed.PostgresAdminHost, s.cfg.Managed.PostgresAdminPort, s.cfg.Managed.PostgresAdminUser, s.cfg.Managed.PostgresAdminPass, s.cfg.Managed.PostgresAdminDB)
+	return fmt.Sprintf("%s:%s@tcp(%s:%d)/mysql?parseTime=true&multiStatements=true", user, pass, host, port)
+}
+
+func (s *DatabaseService) provisionPostgres(in DBConnectionInput) error {
+	if strings.TrimSpace(s.cfg.Managed.PostgresAdminUser) == "" {
+		return fmt.Errorf("managed postgres provisioning requires POSTGRES_ADMIN_USER")
+	}
+	dsn := s.postgresDSN()
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		return err
@@ -444,10 +465,10 @@ func (s *DatabaseService) provisionPostgres(in DBConnectionInput) error {
 }
 
 func (s *DatabaseService) dropMariaDB(item *models.DatabaseConnection) error {
-	if strings.TrimSpace(s.cfg.Managed.MariaDBAdminUser) == "" || strings.TrimSpace(s.cfg.Managed.MariaDBAdminPass) == "" {
+	if strings.TrimSpace(s.cfg.Managed.MariaDBAdminUser) == "" {
 		return nil
 	}
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/mysql?parseTime=true&multiStatements=true", s.cfg.Managed.MariaDBAdminUser, s.cfg.Managed.MariaDBAdminPass, s.cfg.Managed.MariaDBAdminHost, s.cfg.Managed.MariaDBAdminPort)
+	dsn := s.mariaDBDSN()
 	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
 	if err != nil {
 		return err
@@ -465,10 +486,10 @@ func (s *DatabaseService) dropMariaDB(item *models.DatabaseConnection) error {
 }
 
 func (s *DatabaseService) dropPostgres(item *models.DatabaseConnection) error {
-	if strings.TrimSpace(s.cfg.Managed.PostgresAdminUser) == "" || strings.TrimSpace(s.cfg.Managed.PostgresAdminPass) == "" {
+	if strings.TrimSpace(s.cfg.Managed.PostgresAdminUser) == "" {
 		return nil
 	}
-	dsn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", s.cfg.Managed.PostgresAdminHost, s.cfg.Managed.PostgresAdminPort, s.cfg.Managed.PostgresAdminUser, s.cfg.Managed.PostgresAdminPass, s.cfg.Managed.PostgresAdminDB)
+	dsn := s.postgresDSN()
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		return err
@@ -481,6 +502,20 @@ func (s *DatabaseService) dropPostgres(item *models.DatabaseConnection) error {
 		_ = db.Exec(fmt.Sprintf("DROP ROLE IF EXISTS \"%s\"", item.Username)).Error
 	}
 	return nil
+}
+
+// postgresDSN builds a Go PostgreSQL DSN. When the password is empty, it omits
+// the password field so the driver can fall back to trust/peer auth.
+func (s *DatabaseService) postgresDSN() string {
+	user := s.cfg.Managed.PostgresAdminUser
+	pass := s.cfg.Managed.PostgresAdminPass
+	host := s.cfg.Managed.PostgresAdminHost
+	port := s.cfg.Managed.PostgresAdminPort
+	dbname := s.cfg.Managed.PostgresAdminDB
+	if strings.TrimSpace(pass) == "" {
+		return fmt.Sprintf("host=%s port=%d user=%s dbname=%s sslmode=disable", host, port, user, dbname)
+	}
+	return fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", host, port, user, pass, dbname)
 }
 
 func (s *DatabaseService) canDropDatabaseUser(item *models.DatabaseConnection) bool {

@@ -379,7 +379,7 @@
             <td class="py-2.5 pr-4 ">{{ db.Username }}</td>
             <td class="py-2.5">
               <div class="db-actions">
-                <a class="btn btn-ghost" href="/apps/{{ Status.App.ID }}/manage/database/{{ db.ID }}/postgres-gui" target="_blank">Open pgweb</a>
+                <a class="btn btn-ghost" href="/apps/{{ Status.App.ID }}/manage/database/{{ db.ID }}/postgres-gui" target="_blank">Open Postgres UI</a>
                 <form action="/apps/{{ Status.App.ID }}/manage/database/{{ db.ID }}/delete" method="post" data-confirm-message="Delete this connection?">
                   <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
                   <button class="btn btn-danger" type="submit">Delete</button>
@@ -718,6 +718,8 @@
 
 <script>
 $(function () {
+  var pageKey = 'deploycp_manage_tab_' + location.pathname;
+
   function activateTab(name) {
     $('#manage-tabs .manage-tab').each(function () {
       $(this).toggleClass('manage-tab-active', $(this).data('tab') === name);
@@ -725,6 +727,7 @@ $(function () {
     $('.manage-panel').each(function () {
       $(this).toggleClass('manage-panel-active', $(this).data('panel') === name);
     });
+    try { localStorage.setItem(pageKey, name); } catch(e) {}
   }
 
   $('#manage-tabs').on('click', '.manage-tab', function () {
@@ -734,8 +737,11 @@ $(function () {
   });
 
   var hash = location.hash.replace('#', '');
-  if (hash && $('[data-panel="' + hash + '"]').length) {
-    activateTab(hash);
+  var saved = '';
+  try { saved = localStorage.getItem(pageKey) || ''; } catch(e) {}
+  var initial = hash || saved;
+  if (initial && $('[data-panel="' + initial + '"]').length) {
+    activateTab(initial);
   }
 
   var copyNotyf = null;
@@ -1461,7 +1467,7 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
             <td class="py-2.5 pr-4 ">{{ db.Username }}</td>
             <td class="py-2.5">
               <div class="db-actions">
-                <a class="btn btn-ghost" href="/websites/{{ Item.ID }}/manage/database/{{ db.ID }}/postgres-gui" target="_blank">Open pgweb</a>
+                <a class="btn btn-ghost" href="/websites/{{ Item.ID }}/manage/database/{{ db.ID }}/postgres-gui" target="_blank">Open Postgres UI</a>
                 <form action="/websites/{{ Item.ID }}/manage/database/{{ db.ID }}/delete" method="post" data-confirm-message="Delete this connection?">
                   <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
                   <button class="btn btn-danger" type="submit">Delete</button>
@@ -1838,7 +1844,7 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
           <input class="field mt-2" name="username" value="{{ if BasicAuth }}{{ BasicAuth.Username }}{{ end }}" placeholder="john.doe">
         </label>
         <label class="block text-sm font-medium">Password
-          <input class="field mt-2" type="password" name="password" value="{{ if BasicAuth }}{{ BasicAuth.Password }}{{ end }}" placeholder="••••••••">
+          <input class="field mt-2" type="password" name="password" placeholder="{{ if BasicAuth }}Leave blank to keep current password{{ else }}••••••••{{ end }}">
         </label>
       </div>
       <label class="block text-sm font-medium mt-3">Whitelisted IPs
@@ -2010,7 +2016,99 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
 
 <!-- ═══════════ File Manager ═══════════ -->
 <div class="manage-panel" data-panel="file-manager">
-  <div id="elfinder" data-url="/websites/{{ Item.ID }}/elfinder" data-csrf="{{ CSRFToken }}"></div>
+  <div id="fm" class="fm" data-url="/websites/{{ Item.ID }}/elfinder" data-csrf="{{ CSRFToken }}" data-root-path="{{ FileManagerRoot }}">
+    <div class="fm-toolbar">
+      <div class="fm-toolbar-main">
+        <div class="fm-toolbar-top">
+          <div class="fm-toolbar-titleline">
+            <!-- <span class="fm-toolbar-title">File Manager</span> -->
+            <div class="fm-root-row">
+              <span class="fm-root-label">Root</span>
+              <span class="fm-root-value" id="fm-root-path">{{ FileManagerRoot }}</span>
+            </div>
+            <div class="fm-breadcrumb-row">
+              <button class="btn btn-ghost fm-nav-btn" id="fm-btn-back" type="button" title="Back">
+                <i data-lucide="arrow-left"></i>
+              </button>
+              <div class="fm-breadcrumb" id="fm-breadcrumb"></div>
+            </div>
+          </div>
+          <div class="fm-actions">
+            <button class="btn fm-btn" id="fm-btn-upload" type="button" title="Upload"><i data-lucide="upload"></i></button>
+            <button class="btn fm-btn" id="fm-btn-newfolder" type="button" title="New Folder"><i data-lucide="folder-plus"></i></button>
+            <button class="btn fm-btn" id="fm-btn-newfile" type="button" title="New File"><i data-lucide="file-plus"></i></button>
+            <button class="btn fm-btn" id="fm-btn-refresh" type="button" title="Refresh"><i data-lucide="refresh-cw"></i></button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="fm-body">
+      <div class="fm-sidebar" id="fm-sidebar"></div>
+      <div class="fm-main">
+        <div class="fm-filelist" id="fm-filelist"></div>
+      </div>
+    </div>
+    <div class="fm-statusbar" id="fm-statusbar"></div>
+    <input type="file" id="fm-upload-input" multiple style="display:none">
+  </div>
+  <div id="fm-modal" class="fm-modal-overlay" style="display:none">
+    <div class="fm-modal-shell">
+      <form id="fm-modal-form" class="fm-modal-form">
+        <div class="fm-modal-head">
+          <div>
+            <h3 class="fm-modal-title" id="fm-modal-title"></h3>
+            <p class="fm-modal-subtitle" id="fm-modal-subtitle"></p>
+          </div>
+          <button class="btn btn-ghost fm-modal-close" id="fm-modal-close" type="button" aria-label="Close"><i data-lucide="x"></i></button>
+        </div>
+        <div class="fm-modal-body" id="fm-modal-body"></div>
+        <div class="fm-modal-actions">
+          <button class="btn" id="fm-modal-cancel" type="button">Cancel</button>
+          <button class="btn btn-primary" id="fm-modal-confirm" type="submit">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  <div id="fm-upload-modal" class="fm-modal-overlay" style="display:none">
+    <div class="fm-modal-shell fm-upload-shell">
+      <div class="fm-modal-head">
+        <div>
+          <h3 class="fm-modal-title">Upload Files</h3>
+          <p class="fm-modal-subtitle">Upload multiple files into the current folder and track progress live.</p>
+        </div>
+        <button class="btn btn-ghost fm-modal-close" id="fm-upload-close" type="button" aria-label="Close"><i data-lucide="x"></i></button>
+      </div>
+      <div class="fm-modal-body">
+        <button class="fm-upload-dropzone" id="fm-upload-dropzone" type="button">
+          <i data-lucide="cloud-upload"></i>
+          <span>Select files or drag them here</span>
+          <small>Multiple files supported</small>
+        </button>
+        <div class="fm-upload-list" id="fm-upload-list"></div>
+      </div>
+      <div class="fm-modal-actions">
+        <button class="btn" id="fm-upload-cancel" type="button">Close</button>
+        <button class="btn btn-primary" id="fm-upload-start" type="button">Upload Files</button>
+      </div>
+    </div>
+  </div>
+  <div id="fm-editor-overlay" class="fm-editor-overlay" style="display:none">
+    <div class="fm-editor-shell">
+      <div class="fm-editor-head">
+        <div class="fm-editor-meta">
+          <span class="fm-editor-title" id="fm-editor-title"></span>
+          <span class="fm-editor-subtitle" id="fm-editor-subtitle"></span>
+        </div>
+        <div class="fm-editor-actions">
+          <button class="btn btn-primary fm-btn" id="fm-editor-save"><i data-lucide="save"></i> Save</button>
+          <button class="btn fm-btn" id="fm-editor-close"><i data-lucide="x"></i> Close</button>
+        </div>
+      </div>
+      <div class="fm-editor-body-wrap">
+        <div class="fm-editor-body" id="fm-editor-body"></div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- ═══════════ Cron Jobs ═══════════ -->
@@ -2101,175 +2199,162 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
   </div>
 </div>
 
-<!-- elFinder + CodeMirror assets -->
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/jqueryui/1.13.3/themes/smoothness/jquery-ui.min.css">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/elfinder/2.1.65/css/elfinder.min.css">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/elfinder/2.1.65/css/theme.css">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/codemirror.min.css">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/theme/monokai.min.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jqueryui/1.13.3/jquery-ui.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/elfinder/2.1.65/js/elfinder.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/codemirror.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/htmlmixed/htmlmixed.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/xml/xml.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/javascript/javascript.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/css/css.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/php/php.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/clike/clike.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/python/python.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/shell/shell.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/sql/sql.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/yaml/yaml.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/markdown/markdown.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/go/go.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/ruby/ruby.min.js"></script>
+<!-- Monaco Editor -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs/loader.min.js"></script>
 
 <style>
-  /* ═══════════════════════════════════════════
-     elFinder Premium Dark Minimal Overrides
-     ═══════════════════════════════════════════ */
-  .elfinder {
-    font-family: var(--font) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: var(--radius-xl) !important;
-    background: var(--bg-card) !important;
-    backdrop-filter: blur(12px) !important;
-    -webkit-backdrop-filter: blur(12px) !important;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important;
-    overflow: hidden !important;
+  /* Custom File Manager */
+  .fm { border: 1px solid var(--border); border-radius: var(--radius-xl); background: linear-gradient(180deg, color-mix(in srgb, var(--bg-card) 92%, var(--bg-elevated)) 0%, var(--bg-card) 100%); overflow: hidden; display: flex; flex-direction: column; min-height: 660px; }
+  .fm-toolbar { padding: 12px 16px 10px; background: color-mix(in srgb, var(--bg-elevated) 96%, var(--bg-card)); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .fm-toolbar-main { min-width: 0; }
+  .fm-toolbar-top { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+  .fm-toolbar-titleline { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
+  .fm-toolbar-title { font-size: 0.82rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text); flex-shrink: 0; }
+  .fm-root-row { display: inline-flex; align-items: center; gap: 8px; min-width: 0; max-width: min(28vw, 360px); padding: 4px 9px; border: 1px solid var(--border); border-radius: 999px; background: color-mix(in srgb, var(--bg-card) 90%, var(--bg-elevated)); flex-shrink: 0; }
+  .fm-root-label { font-size: 0.66rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); flex-shrink: 0; }
+  .fm-root-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 0.76rem; color: var(--text); }
+  .fm-breadcrumb-row { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; margin-left: 2px; }
+  .fm-breadcrumb { display: flex; align-items: center; gap: 4px; font-size: 0.83rem; color: var(--text-sec); min-width: 0; overflow: hidden; flex: 1; }
+  .fm-breadcrumb-item { cursor: pointer; padding: 3px 7px; border-radius: 999px; white-space: nowrap; color: var(--text-sec); }
+  .fm-breadcrumb-item:hover { background: var(--bg-hover); color: var(--text); }
+  .fm-breadcrumb-item.is-active { color: var(--text); font-weight: 700; cursor: default; background: color-mix(in srgb, var(--bg-hover) 70%, transparent); }
+  .fm-breadcrumb-item.is-active:hover { background: color-mix(in srgb, var(--bg-hover) 70%, transparent); }
+  .fm-breadcrumb-sep { color: var(--text-muted); font-size: 0.75rem; flex-shrink: 0; }
+  .fm-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; flex-shrink: 0; }
+  .fm-btn { height: 1.95rem; min-width: 1.95rem; padding: 0 0.55rem; display: inline-flex; align-items: center; justify-content: center; }
+  .fm-btn [data-lucide] { width: 14px; height: 14px; stroke-width: 2; }
+  .fm-btn.is-disabled { opacity: 0.45; pointer-events: none; }
+  .fm-nav-btn { padding: 0; width: 1.9rem; min-width: 1.9rem; height: 1.9rem; }
+  .fm-nav-btn.is-disabled { opacity: 0.45; pointer-events: none; }
+  .fm-body { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+  .fm-sidebar { width: 220px; flex-shrink: 0; border-right: 1px solid var(--border); background: color-mix(in srgb, var(--bg-subtle) 94%, var(--bg-card)); overflow-y: auto; padding: 10px 8px; }
+  .fm-main { flex: 1; overflow: auto; min-width: 0; background: color-mix(in srgb, var(--bg-card) 92%, transparent); }
+  .fm-statusbar { padding: 7px 14px; font-size: 0.74rem; color: var(--text-muted); border-top: 1px solid var(--border); background: var(--bg-elevated); flex-shrink: 0; }
+  .fm-tree-item { display: flex; align-items: center; gap: 8px; padding: 7px 9px; border-radius: 10px; font-size: 0.82rem; color: var(--text-sec); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .fm-tree-item:hover { background: var(--bg-hover); color: var(--text); }
+  .fm-tree-item.is-active { background: rgba(37,99,235,0.14); color: #93c5fd; }
+  body.light-theme .fm-tree-item.is-active { background: rgba(37,99,235,0.1); color: var(--primary-dark); }
+  .fm-tree-item [data-lucide] { width: 14px; height: 14px; stroke-width: 2; flex-shrink: 0; }
+  .fm-tree-icon { width: 1.7rem; height: 1.7rem; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--bg-card) 92%, var(--bg-elevated)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 78%, transparent); flex-shrink: 0; }
+  .fm-tree-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fm-tree-children { padding-left: 14px; }
+  .fm-filelist { display: flex; flex-direction: column; min-width: 880px; }
+  .fm-filelist-head { display: grid; grid-template-columns: minmax(280px,1.8fr) 100px 130px 95px 150px 110px; gap: 12px; padding: 10px 16px; font-size: 0.69rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--bg-subtle) 94%, var(--bg-card)); position: sticky; top: 0; z-index: 1; }
+  .fm-file-row { display: grid; grid-template-columns: minmax(280px,1.8fr) 100px 130px 95px 150px 110px; gap: 12px; padding: 10px 16px; font-size: 0.84rem; color: var(--text-sec); border-bottom: 1px solid var(--border); cursor: pointer; align-items: center; }
+  .fm-file-row:last-child { border-bottom: none; }
+  .fm-file-row:hover { background: var(--bg-hover); }
+  .fm-file-row.is-selected { background: rgba(37,99,235,0.1); }
+  .fm-file-row.is-selected .fm-file-name { color: #93c5fd; }
+  body.light-theme .fm-file-row.is-selected { background: rgba(37,99,235,0.07); }
+  body.light-theme .fm-file-row.is-selected .fm-file-name { color: var(--primary-dark); }
+  .fm-file-name { display: flex; align-items: center; gap: 9px; min-width: 0; color: var(--text); font-weight: 600; }
+  .fm-file-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fm-file-name [data-lucide] { width: 16px; height: 16px; stroke-width: 1.8; flex-shrink: 0; color: var(--text-muted); }
+  .fm-file-name .fm-icon-folder { color: var(--warning); }
+  .fm-file-size, .fm-file-owner, .fm-file-perms, .fm-file-date { font-size: 0.78rem; }
+  .fm-file-size { text-align: right; font-variant-numeric: tabular-nums; }
+  .fm-file-owner, .fm-file-perms, .fm-file-date { color: var(--text-muted); }
+  .fm-file-perms, .fm-file-owner { font-family: var(--mono); }
+  .fm-file-owner { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .fm-file-actions { display: flex; justify-content: flex-end; gap: 4px; }
+  .fm-file-action { width: 28px; height: 28px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border: none; background: transparent; color: var(--text-muted); border-radius: 7px; cursor: pointer; }
+  .fm-file-action:hover { background: var(--bg-hover); color: var(--text); }
+  .fm-file-action.fm-action-delete:hover { background: var(--danger-soft); color: var(--danger); }
+  .fm-file-action [data-lucide] { width: 14px; height: 14px; stroke-width: 2; }
+  .fm-btn.is-loading, .fm-file-action.is-loading, .fm-context-item.is-loading { pointer-events: none; opacity: 0.72; }
+  .fm-btn.is-loading [data-lucide], .fm-file-action.is-loading [data-lucide], .fm-context-item.is-loading [data-lucide] { animation: fmSpin 0.9s linear infinite; }
+  .fm-empty { padding: 52px 24px; text-align: center; color: var(--text-muted); font-size: 0.92rem; }
+  .fm-context { position: fixed; z-index: 1000; background: var(--bg-elevated); border: 1px solid var(--border-strong); border-radius: 14px; box-shadow: var(--shadow-lg); padding: 6px; min-width: 220px; font-family: var(--font); }
+  .fm-context-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px; font-size: 0.86rem; font-weight: 500; color: var(--text-sec); cursor: pointer; white-space: nowrap; }
+  .fm-context-item:hover { background: var(--bg-hover); color: var(--text); }
+  .fm-context-item.fm-context-danger:hover { background: var(--danger-soft); color: var(--danger); }
+  .fm-context-item.is-disabled { opacity: 0.45; pointer-events: none; }
+  .fm-context-item [data-lucide] { width: 15px; height: 15px; stroke-width: 2; flex-shrink: 0; }
+  .fm-context-sep { border-top: 1px solid var(--border); margin: 4px 6px; }
+  .fm-rename-input { background: var(--bg-input); border: 1px solid var(--primary); border-radius: 6px; color: var(--text); font-family: var(--font); font-size: 0.82rem; padding: 4px 8px; outline: none; width: 100%; }
+  .fm-modal-overlay { position: fixed; inset: 0; z-index: 230; background: rgba(8, 12, 20, 0.56); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .fm-modal-shell { width: min(92vw, 520px); max-height: min(84vh, 760px); overflow: hidden; border-radius: 18px; border: 1px solid var(--border); background: var(--bg-card); box-shadow: var(--shadow-lg); display: flex; flex-direction: column; }
+  .fm-upload-shell { width: min(92vw, 640px); }
+  .fm-modal-form { display: flex; flex-direction: column; min-height: 0; }
+  .fm-modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 18px 20px 14px; border-bottom: 1px solid var(--border); }
+  .fm-modal-title { margin: 0; font-size: 1rem; font-weight: 700; color: var(--text); }
+  .fm-modal-subtitle { margin: 6px 0 0; font-size: 0.82rem; line-height: 1.5; color: var(--text-sec); }
+  .fm-modal-close { width: 2rem; min-width: 2rem; height: 2rem; padding: 0; }
+  .fm-modal-body { padding: 18px 20px; overflow: auto; display: flex; flex-direction: column; gap: 14px; }
+  .fm-modal-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 20px 18px; border-top: 1px solid var(--border); }
+  .fm-modal-field { display: flex; flex-direction: column; gap: 7px; }
+  .fm-modal-field label, .fm-modal-label { font-size: 0.8rem; font-weight: 700; color: var(--text); }
+  .fm-modal-help { margin: 0; font-size: 0.78rem; line-height: 1.45; color: var(--text-sec); }
+  .fm-upload-dropzone { width: 100%; border: 1px dashed var(--border-strong); border-radius: 16px; padding: 28px 18px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; background: color-mix(in srgb, var(--bg-elevated) 75%, transparent); color: var(--text-sec); cursor: pointer; transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease; }
+  .fm-upload-dropzone:hover, .fm-upload-dropzone.is-dragover { border-color: var(--primary); color: var(--text); background: color-mix(in srgb, var(--primary-soft) 45%, var(--bg-elevated)); }
+  .fm-upload-dropzone [data-lucide] { width: 24px; height: 24px; }
+  .fm-upload-list { display: flex; flex-direction: column; gap: 10px; }
+  .fm-upload-item { padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: color-mix(in srgb, var(--bg-card) 88%, var(--bg-elevated)); display: flex; flex-direction: column; gap: 8px; }
+  .fm-upload-item-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .fm-upload-name { font-size: 0.84rem; font-weight: 600; color: var(--text); word-break: break-word; }
+  .fm-upload-meta { font-size: 0.76rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+  .fm-upload-bar { height: 8px; border-radius: 999px; background: var(--bg-subtle); overflow: hidden; }
+  .fm-upload-bar > span { display: block; width: 0%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--primary), color-mix(in srgb, var(--primary) 60%, white)); transition: width 0.18s ease; }
+  .fm-editor-overlay { position: fixed; inset: 0; z-index: 240; background: rgba(8, 12, 20, 0.62); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; padding: 22px; }
+  .fm-editor-shell { display: flex; flex-direction: column; width: min(96vw, 1240px); height: min(88vh, 860px); min-height: 420px; border-radius: 18px; overflow: hidden; background: var(--bg-card); border: 1px solid var(--border); box-shadow: var(--shadow-lg); }
+  .fm-editor-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 14px 18px; background: var(--bg-elevated); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .fm-editor-meta { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .fm-editor-title { font-size: 0.92rem; font-weight: 700; color: var(--text); font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fm-editor-subtitle { font-size: 0.76rem; color: var(--text-muted); font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fm-editor-actions { display: flex; flex-wrap: wrap; gap: 8px; flex-shrink: 0; }
+  .fm-editor-body-wrap { flex: 1; min-height: 0; background: var(--bg); }
+  .fm-editor-body { height: 100%; min-height: 0; overflow: hidden; }
+  .manage-panel[data-panel="file-manager"] > .fm,
+  .manage-panel[data-panel="file-manager"] > .fm-modal-overlay,
+  .manage-panel[data-panel="file-manager"] > .fm-editor-overlay {
+    margin: 0;
+    border-radius: inherit;
+    box-shadow: inherit;
+    backdrop-filter: inherit;
+    -webkit-backdrop-filter: inherit;
   }
-  
-  .elfinder-workzone, .elfinder-navbar, .elfinder-cwd {
-    background: transparent !important;
-    border-color: var(--border) !important;
-  }
-  .elfinder-navbar { border-right: 1px solid var(--border) !important; }
-  
-  /* Toolbar */
-  .elfinder-toolbar {
-    background: var(--bg-elevated) !important;
-    border-bottom: 1px solid var(--border) !important;
-    padding: var(--space-2) !important;
-  }
-  .elfinder-buttonset { margin: 0 var(--space-2) 0 0 !important; }
-  .elfinder-button {
-    background: transparent !important;
-    border: 1px solid transparent !important;
-    border-radius: var(--radius) !important;
-    transition: all 0.2s ease !important;
-  }
-  .elfinder-button:hover, .ui-state-hover {
-    background: var(--bg-hover) !important;
-    border-color: var(--border-strong) !important;
-  }
-  .ui-state-active, .ui-state-focus {
-    background: var(--primary-soft) !important;
-    border-color: var(--primary) !important;
-  }
-  
-  /* Statusbar */
-  .elfinder-statusbar {
-    background: var(--bg-elevated) !important;
-    border-top: 1px solid var(--border) !important;
-    color: var(--text-sec) !important;
-    font-size: 0.75rem !important;
-  }
-  
-  /* Typography & Links */
-  .elfinder-navbar-dir, .elfinder-cwd-file, .elfinder-cwd-view-list td {
-    color: var(--text) !important;
-  }
-  .ui-selected.elfinder-navbar-dir, .ui-selected.elfinder-cwd-file, .elfinder-cwd-view-list tr.ui-selected td {
-    background-color: var(--primary-soft) !important;
-    color: var(--text) !important;
-  }
-  
-  /* List View Fixes */
-  .elfinder-cwd-view-list th {
-    background: var(--bg-subtle) !important;
-    color: var(--text-muted) !important;
-    border-color: var(--border) !important;
-    font-size: 0.75rem !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.04em !important;
-  }
-  .elfinder-cwd-view-list td { 
-    border-bottom: 1px dashed var(--border-strong) !important; 
-  }
-  .elfinder-cwd table { border-collapse: separate !important; border-spacing: 0 !important; }
-  
-  /* Dialogs & Context Menu */
-  .ui-dialog, .elfinder-dialog {
-    background: var(--bg-card) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: var(--radius-lg) !important;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.2) !important;
-  }
-  .ui-dialog-titlebar {
-    background: var(--bg-elevated) !important;
-    border-bottom: 1px solid var(--border) !important;
-    color: var(--text) !important;
-    font-family: var(--font) !important;
-  }
-  .ui-widget-content {
-    background: var(--bg-card) !important;
-    color: var(--text) !important;
-  }
-  .ui-widget-header {
-    background: var(--bg-elevated) !important;
-    color: var(--text) !important;
+  .manage-panel[data-panel="file-manager"] > .fm-modal-overlay,
+  .manage-panel[data-panel="file-manager"] > .fm-editor-overlay {
     border: none !important;
-    border-bottom: 1px solid var(--border) !important;
+    background: rgba(8, 12, 20, 0.56) !important;
+    padding: 20px !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
   }
-  .elfinder-contextmenu {
-    background: var(--bg-card) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: var(--radius) !important;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
-    padding: var(--space-1) 0 !important;
-    font-family: var(--font) !important;
+  .manage-panel[data-panel="file-manager"] > .fm-editor-overlay {
+    background: rgba(8, 12, 20, 0.62) !important;
+    padding: 22px !important;
   }
-  .elfinder-contextmenu-item {
-    color: var(--text) !important;
-    padding: var(--space-2) var(--space-4) !important;
+  @keyframes fmSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  @media (max-width: 980px) {
+    .fm-toolbar-top, .fm-toolbar-titleline { flex-direction: column; align-items: stretch; }
+    .fm-actions { justify-content: flex-start; }
+    .fm-root-row { max-width: 100%; }
+    .fm-sidebar { width: 190px; }
+    .fm-filelist-head, .fm-file-row { grid-template-columns: minmax(240px,1.8fr) 90px 110px 80px 130px 96px; }
   }
-  .elfinder-contextmenu-item:hover {
-    background: var(--bg-hover) !important;
-  }
-  .elfinder-contextsubmenu {
-    background: var(--bg-card) !important;
-    border: 1px solid var(--border) !important;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
-  }
-  
-  /* Buttons inside dialogs */
-  .ui-dialog-buttonpane button {
-    background: var(--bg-elevated) !important;
-    border: 1px solid var(--border-strong) !important;
-    color: var(--text) !important;
-    border-radius: var(--radius) !important;
-    padding: var(--space-1) var(--space-3) !important;
-    cursor: pointer !important;
-  }
-  .ui-dialog-buttonpane button:hover {
-    background: var(--bg-hover) !important;
-  }
-  
-  /* Filter dark icons safely using a softer invert if app is in dark mode. 
-     (Assumes standard lucide/linear dark aesthetic defaults to dark mode primarily) */
-  :root { --ef-filter: invert(0.85) hue-rotate(180deg) brightness(1.2); }
-  body.light-theme { --ef-filter: none; }
-  .elfinder-button-icon, .ui-icon {
-    filter: var(--ef-filter);
-  }
-  /* Do not invert file type icons in the grid ! */
-  .elfinder-cwd-icon {
-    filter: none !important;
+  @media (max-width: 720px) {
+    .fm { min-height: 560px; }
+    .fm-sidebar { display: none; }
+    .fm-root-row, .fm-breadcrumb-row { align-items: flex-start; flex-direction: row; }
+    .fm-root-row { max-width: 100%; width: 100%; }
+    .fm-actions { width: 100%; }
+    .fm-filelist { min-width: 0; }
+    .fm-filelist-head, .fm-file-row { grid-template-columns: minmax(0,1fr) 74px 92px; }
+    .fm-file-owner, .fm-file-perms, .fm-file-date { display: none; }
+    .fm-modal-overlay, .fm-editor-overlay { padding: 12px; }
+    .manage-panel[data-panel="file-manager"] > .fm-modal-overlay,
+    .manage-panel[data-panel="file-manager"] > .fm-editor-overlay { padding: 12px !important; }
+    .fm-editor-head { flex-direction: column; }
+    .fm-editor-actions, .fm-modal-actions { width: 100%; }
+    .fm-editor-actions .btn, .fm-modal-actions .btn { flex: 1 1 auto; justify-content: center; }
   }
 </style>
 
 <script>
 $(function () {
+  var pageKey = 'deploycp_manage_tab_' + location.pathname;
+
   function activateTab(name) {
     $('#manage-tabs .manage-tab').each(function () {
       $(this).toggleClass('manage-tab-active', $(this).data('tab') === name);
@@ -2277,6 +2362,7 @@ $(function () {
     $('.manage-panel').each(function () {
       $(this).toggleClass('manage-panel-active', $(this).data('panel') === name);
     });
+    try { localStorage.setItem(pageKey, name); } catch(e) {}
   }
 
   $('#manage-tabs').on('click', '.manage-tab', function () {
@@ -2286,8 +2372,11 @@ $(function () {
   });
 
   var hash = location.hash.replace('#', '');
-  if (hash && $('[data-panel="' + hash + '"]').length) {
-    activateTab(hash);
+  var saved = '';
+  try { saved = localStorage.getItem(pageKey) || ''; } catch(e) {}
+  var initial = hash || saved;
+  if (initial && $('[data-panel="' + initial + '"]').length) {
+    activateTab(initial);
   }
 
   var copyNotyf = null;
@@ -2353,110 +2442,726 @@ $(function () {
     });
   });
 
-  // elFinder + CodeMirror
-  var $ef = $('#elfinder');
-  if ($ef.length) {
-    var connectorUrl = $ef.data('url');
-    var csrfToken = $ef.data('csrf');
+  // ── Custom File Manager + Monaco Editor ──
+  var $fm = $('#fm');
+  if ($fm.length) {
+    var fmUrl = $fm.data('url');
+    var fmCsrf = $fm.data('csrf');
+    var fmRootPath = $fm.data('rootPath') || '/';
+    var fmCwd = '';
+    var fmCwdParent = '';
+    var fmCwdPath = '/';
+    var fmSelected = null;
+    var fmClipboard = null;
+    var fmUploadQueue = [];
+    var fmUploadBusy = false;
+    var fmMonaco = null;
+    var fmMonacoReady = false;
+    var fmMonacoQueue = [];
+    var isDark = !document.body.classList.contains('light-theme');
 
-    var extModes = {
-      'js': 'javascript', 'jsx': 'javascript', 'ts': 'javascript', 'tsx': 'javascript', 'json': 'javascript',
-      'html': 'htmlmixed', 'htm': 'htmlmixed', 'php': 'php',
-      'css': 'css', 'scss': 'css', 'less': 'css',
-      'py': 'python', 'sh': 'shell', 'bash': 'shell', 'zsh': 'shell',
-      'sql': 'sql', 'yml': 'yaml', 'yaml': 'yaml', 'md': 'markdown',
-      'go': 'go', 'rb': 'ruby', 'xml': 'xml', 'svg': 'xml',
-      'c': 'clike', 'cpp': 'clike', 'h': 'clike', 'java': 'clike', 'rs': 'clike',
-      'txt': null, 'log': null, 'env': null, 'conf': null, 'ini': null,
-      'toml': null, 'cfg': null, 'htaccess': null, 'dockerfile': null, 'makefile': null
+    require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs' } });
+    require(['vs/editor/editor.main'], function () {
+      fmMonacoReady = true;
+      fmMonacoQueue.forEach(function(fn){ fn(); });
+      fmMonacoQueue = [];
+    });
+    function whenMonaco(fn) { if (fmMonacoReady) fn(); else fmMonacoQueue.push(fn); }
+
+    var extLangs = {
+      js:'javascript',jsx:'javascript',mjs:'javascript',ts:'typescript',tsx:'typescript',json:'json',
+      html:'html',htm:'html',css:'css',scss:'scss',less:'less',php:'php',py:'python',go:'go',
+      rb:'ruby',rs:'rust',java:'java',c:'c',h:'c',cpp:'cpp',cs:'csharp',
+      sh:'shell',bash:'shell',zsh:'shell',sql:'sql',yml:'yaml',yaml:'yaml',
+      md:'markdown',xml:'xml',svg:'xml',toml:'ini',ini:'ini',cfg:'ini',conf:'ini',env:'ini',
+      txt:'plaintext',log:'plaintext'
     };
 
-    var mimeMap = {
-      'text/html': 'htmlmixed',
-      'application/x-httpd-php': 'php',
-      'application/javascript': 'javascript',
-      'application/json': 'javascript',
-      'text/javascript': 'javascript',
-      'text/css': 'css',
-      'text/x-python': 'python',
-      'text/x-sh': 'shell',
-      'text/x-shellscript': 'shell',
-      'application/x-sh': 'shell',
-      'text/x-sql': 'sql',
-      'text/x-yaml': 'yaml',
-      'text/x-markdown': 'markdown',
-      'text/x-go': 'go',
-      'text/x-ruby': 'ruby',
-      'text/xml': 'xml',
-      'application/xml': 'xml',
-      'text/x-c': 'clike',
-      'text/x-csrc': 'clike',
-      'text/x-c++src': 'clike',
-      'text/x-java': 'clike'
-    };
-
-    function getMode(file) {
-      if (file && file.mime && mimeMap[file.mime]) return mimeMap[file.mime];
-      if (file && file.name) {
-        var ext = file.name.split('.').pop().toLowerCase();
-        if (ext in extModes) return extModes[ext];
-      }
-      return null;
+    function getLang(name) {
+      if (!name) return 'plaintext';
+      var n = name.toLowerCase();
+      if (n === 'dockerfile') return 'dockerfile';
+      if (n === 'makefile') return 'makefile';
+      return extLangs[n.split('.').pop()] || 'plaintext';
     }
 
-    $ef.elfinder({
-      url: connectorUrl,
-      customHeaders: { 'X-CSRF-Token': csrfToken },
-      cssAutoLoad: false,
-      lang: 'en',
-      height: 550,
-      resizable: true,
-      defaultView: 'list',
-      commandsOptions: {
-        edit: {
-          editors: [{
-            info: { name: 'CodeMirror', iconImg: '' },
-            mimes: ['text/plain', 'text/html', 'text/css', 'text/javascript', 'application/javascript',
-                    'application/json', 'application/xml', 'text/xml', 'text/x-php', 'application/x-httpd-php',
-                    'text/x-python', 'text/x-sh', 'text/x-sql', 'text/x-yaml', 'text/x-markdown',
-                    'text/x-c', 'text/x-c++src', 'text/x-java', 'text/x-go', 'text/x-ruby',
-                    'text/x-shellscript', 'application/x-sh', 'text/x-csrc', 'application/octet-stream'],
-            setup: function (opts, fm) {
-              this.editorOpts = {
-                theme: 'monokai',
-                lineNumbers: true,
-                tabSize: 2,
-                indentWithTabs: false,
-                lineWrapping: true,
-                matchBrackets: true,
-                styleActiveLine: true
-              };
-            },
-            load: function (textarea) {
-              var file = this.file;
-              var mode = getMode(file);
-              var opts = $.extend({}, this.editorOpts, { mode: mode });
-              var cm = CodeMirror.fromTextArea(textarea, opts);
-              cm.setSize('100%', '100%');
-              $(textarea).data('cm', cm);
-              setTimeout(function () { cm.refresh(); }, 100);
-            },
-            close: function (textarea) {
-              var cm = $(textarea).data('cm');
-              if (cm) {
-                cm.save();
-                cm.toTextArea();
-                $(textarea).removeData('cm');
-              }
-            },
-            save: function (textarea) {
-              var cm = $(textarea).data('cm');
-              if (cm) cm.save();
-            }
-          }]
+    function fmToast(ok, msg) {
+      copyNotify(ok, msg);
+    }
+
+    function fmEscape(text) {
+      return $('<span>').text(text == null ? '' : String(text)).html();
+    }
+
+    function fmSetButtonLoading($btn, loading, busyText) {
+      if (!$btn || !$btn.length) return;
+      if (loading) {
+        if (!$btn.data('fm-html')) $btn.data('fm-html', $btn.html());
+        $btn.addClass('is-loading');
+        $btn.prop('disabled', true);
+        if (busyText) $btn.html('<i data-lucide="loader-circle"></i> ' + fmEscape(busyText));
+      } else {
+        $btn.removeClass('is-loading');
+        $btn.prop('disabled', false);
+        if ($btn.data('fm-html')) {
+          $btn.html($btn.data('fm-html'));
+          $btn.removeData('fm-html');
         }
       }
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+    }
+
+    function fmSetBusy(message) {
+      $('#fm-statusbar').text(message || 'Working...');
+    }
+
+    function fmApi(params, cb, onErr, options) {
+      params._csrf = fmCsrf;
+      if (options && options.button) fmSetButtonLoading(options.button, true, options.buttonText);
+      if (options && options.busyText) fmSetBusy(options.busyText);
+      $.ajax({
+        url: fmUrl,
+        type: 'POST',
+        data: params,
+        dataType: 'json'
+      }).done(function(data) {
+        if (data && data.error) {
+          fmToast(false, data.error);
+          if (onErr) onErr(data.error, data);
+          return;
+        }
+        if (cb) cb(data || {});
+      }).fail(function(xhr) {
+        var msg = 'File manager request failed';
+        if (xhr && xhr.responseJSON && xhr.responseJSON.error) msg = xhr.responseJSON.error;
+        fmToast(false, msg);
+        if (onErr) onErr(msg, xhr);
+      }).always(function() {
+        if (options && options.button) fmSetButtonLoading(options.button, false);
+        fmUpdateStatusbar();
+      });
+    }
+
+    function fmFormatSize(bytes) {
+      if (!bytes || bytes <= 0) return '—';
+      var u = ['B','KB','MB','GB'];
+      var i = 0;
+      while (bytes >= 1024 && i < u.length - 1) { bytes /= 1024; i++; }
+      return (i === 0 ? bytes : bytes.toFixed(1)) + ' ' + u[i];
+    }
+
+    function fmFormatDate(ts) {
+      if (!ts) return '';
+      var d = new Date(ts * 1000);
+      return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    }
+
+    function fmIsText(name, mime) {
+      var lowerName = (name || '').toLowerCase();
+      if (lowerName === '.env' || lowerName === '.gitignore' || lowerName === '.htaccess' || lowerName === '.npmrc' || lowerName === '.editorconfig') return true;
+      if (lowerName === 'dockerfile' || lowerName === 'makefile') return true;
+      if (mime && (mime.indexOf('text/') === 0 || mime === 'application/json' || mime === 'application/javascript' || mime === 'application/xml' || mime === 'application/x-httpd-php' || mime === 'application/x-sh')) return true;
+      var ext = lowerName.indexOf('.') >= 0 ? lowerName.split('.').pop() : '';
+      return !!extLangs[ext];
+    }
+
+    function fmIsArchive(file) {
+      if (!file || file.mime === 'directory') return false;
+      var lowerName = (file.name || '').toLowerCase();
+      return lowerName.endsWith('.zip') || lowerName.endsWith('.tar.gz') || lowerName.endsWith('.tgz') || lowerName.endsWith('.tar');
+    }
+
+    function fmUpdateStatusbar(fileCount) {
+      var parts = [];
+      if (typeof fileCount === 'number') parts.push(fileCount + ' items');
+      if (fmSelected && fmSelected.name) parts.push('Selected: ' + fmSelected.name);
+      if (fmClipboard && fmClipboard.targets && fmClipboard.targets.length) {
+        parts.push((fmClipboard.cut ? 'Cut' : 'Copied') + ': ' + fmClipboard.name);
+      }
+      $('#fm-statusbar').text(parts.join(' • ') || 'Ready');
+      $('#fm-btn-back').toggleClass('is-disabled', !fmCwdParent);
+    }
+
+    function fmDestinationHash(file) {
+      if (file && file.mime === 'directory') return file.hash;
+      return fmCwd;
+    }
+
+    function fmShowOverlay(selector) {
+      $(selector).css('display', 'flex');
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+    }
+
+    function fmHideOverlay(selector) {
+      $(selector).hide();
+    }
+
+    function fmShowModal(options) {
+      var $modal = $('#fm-modal');
+      $('#fm-modal-title').text(options.title || '');
+      $('#fm-modal-subtitle').text(options.subtitle || '').toggle(!!options.subtitle);
+      $('#fm-modal-body').html(options.body || '');
+      $('#fm-modal-confirm').text(options.confirmText || 'Save');
+      $('#fm-modal-cancel').text(options.cancelText || 'Cancel');
+      $modal.data('onSubmit', options.onSubmit || null);
+      fmShowOverlay('#fm-modal');
+      setTimeout(function() {
+        $('#fm-modal').find('input:not([type="hidden"]), textarea, select').first().trigger('focus').trigger('select');
+      }, 20);
+    }
+
+    function fmHideModal() {
+      fmHideOverlay('#fm-modal');
+      $('#fm-modal').removeData('onSubmit');
+      $('#fm-modal-body').empty();
+    }
+
+    $('#fm-modal-close, #fm-modal-cancel').on('click', fmHideModal);
+    $('#fm-modal-form').on('submit', function(e) {
+      e.preventDefault();
+      var submit = $('#fm-modal').data('onSubmit');
+      if (submit) submit(this);
     });
+
+    function fmShowCreateModal(kind) {
+      var isFolder = kind === 'folder';
+      fmShowModal({
+        title: isFolder ? 'Create New Folder' : 'Create New File',
+        subtitle: isFolder ? 'Add a folder inside the current directory.' : 'Add a file inside the current directory.',
+        confirmText: isFolder ? 'Create Folder' : 'Create File',
+        body:
+          '<div class="fm-modal-field">' +
+            '<label for="fm-create-name">' + (isFolder ? 'Folder name' : 'File name') + '</label>' +
+            '<input class="field" id="fm-create-name" name="name" placeholder="' + (isFolder ? 'e.g. assets' : 'e.g. index.html') + '" required>' +
+          '</div>',
+        onSubmit: function(form) {
+          var name = $.trim($(form).find('[name="name"]').val());
+          if (!name) return;
+          fmApi({ cmd: isFolder ? 'mkdir' : 'mkfile', target: fmCwd, name: name }, function() {
+            fmHideModal();
+            fmOpen(fmCwd);
+            fmToast(true, isFolder ? 'Folder created' : 'File created');
+          }, null, { button: $('#fm-modal-confirm'), buttonText: isFolder ? 'Creating...' : 'Saving...', busyText: isFolder ? 'Creating folder...' : 'Creating file...' });
+        }
+      });
+    }
+
+    function fmShowPermissionsModal(file) {
+      fmShowModal({
+        title: 'Change Permissions',
+        subtitle: 'Apply a Unix mode such as 0644 or 0755.',
+        confirmText: 'Apply Permissions',
+        body:
+          '<div class="fm-modal-field">' +
+            '<label for="fm-perm-mode">Permission mode</label>' +
+            '<input class="field" id="fm-perm-mode" name="mode" value="' + fmEscape(file.perms || '0755') + '" placeholder="0755" required>' +
+            '<p class="fm-modal-help">Current item: <span class="font-mono">' + fmEscape(file.name) + '</span></p>' +
+          '</div>',
+        onSubmit: function(form) {
+          var mode = $.trim($(form).find('[name="mode"]').val());
+          if (!mode) return;
+          fmApi({ cmd: 'chmod', target: file.hash, mode: mode }, function() {
+            fmHideModal();
+            fmOpen(fmCwd);
+            fmToast(true, 'Permissions updated');
+          }, null, { button: $('#fm-modal-confirm'), buttonText: 'Applying...', busyText: 'Updating permissions...' });
+        }
+      });
+    }
+
+    function fmShowCompressModal(file) {
+      var baseName = (file.name || 'archive').replace(/\.(tar\.gz|tgz|zip|tar)$/i, '');
+      var defaultName = baseName + '.zip';
+      fmShowModal({
+        title: 'Compress Item',
+        subtitle: 'Create a .zip archive in the current directory.',
+        confirmText: 'Compress',
+        body:
+          '<div class="fm-modal-field">' +
+            '<label for="fm-archive-name">Archive name</label>' +
+            '<input class="field" id="fm-archive-name" name="name" value="' + fmEscape(defaultName) + '" required>' +
+          '</div>',
+        onSubmit: function(form) {
+          var name = $.trim($(form).find('[name="name"]').val());
+          if (!name) return;
+          fmApi({ cmd: 'archive', target: file.hash, 'targets[]': file.hash, name: name }, function() {
+            fmHideModal();
+            fmOpen(fmCwd);
+            fmToast(true, 'Archive created');
+          }, null, { button: $('#fm-modal-confirm'), buttonText: 'Compressing...', busyText: 'Compressing selection...' });
+        }
+      });
+    }
+
+    function fmExtractArchive(file) {
+      fmApi({ cmd: 'extract', target: file.hash, 'targets[]': file.hash }, function() {
+        fmOpen(fmCwd);
+        fmToast(true, 'Archive extracted');
+      }, null, { busyText: 'Extracting archive...' });
+    }
+
+    function fmConfirmDelete(file) {
+      fmShowModal({
+        title: 'Delete Item',
+        subtitle: 'This permanently removes the selected file or folder.',
+        confirmText: 'Delete',
+        body: '<p class="fm-modal-help">Delete <span class="font-mono">' + fmEscape(file.name) + '</span>?</p>',
+        onSubmit: function() {
+          fmApi({ cmd: 'rm', 'targets[]': file.hash }, function() {
+            fmHideModal();
+            fmOpen(fmCwd);
+            fmToast(true, 'Item deleted');
+          }, null, { button: $('#fm-modal-confirm'), buttonText: 'Deleting...', busyText: 'Deleting item...' });
+        }
+      });
+    }
+
+    function fmSetClipboard(file, cut) {
+      fmClipboard = {
+        targets: [file.hash],
+        cut: !!cut,
+        name: file.name || 'item'
+      };
+      fmUpdateStatusbar();
+      fmToast(true, (cut ? 'Cut' : 'Copied') + ' ' + file.name);
+    }
+
+    function fmPaste(dstHash) {
+      if (!fmClipboard || !fmClipboard.targets || !fmClipboard.targets.length) return;
+      var payload = { cmd: 'paste', dst: dstHash || fmCwd, cut: fmClipboard.cut ? '1' : '0' };
+      payload['targets[]'] = fmClipboard.targets[0];
+      fmApi(payload, function() {
+        var wasCut = fmClipboard && fmClipboard.cut;
+        if (wasCut) fmClipboard = null;
+        fmOpen(dstHash || fmCwd);
+        fmToast(true, wasCut ? 'Moved item' : 'Pasted item');
+        fmUpdateStatusbar();
+      }, null, { busyText: 'Pasting selection...' });
+    }
+
+    function fmOpenUploadModal() {
+      fmShowOverlay('#fm-upload-modal');
+      fmRenderUploadQueue();
+    }
+
+    function fmHideUploadModal() {
+      if (fmUploadBusy) return;
+      fmHideOverlay('#fm-upload-modal');
+      if (!fmUploadQueue.length) $('#fm-upload-list').empty();
+    }
+
+    function fmQueueFiles(files) {
+      Array.prototype.forEach.call(files || [], function(file) {
+        if (!file) return;
+        fmUploadQueue.push({ file: file, progress: 0, status: 'Queued' });
+      });
+      fmRenderUploadQueue();
+      fmOpenUploadModal();
+    }
+
+    function fmRenderUploadQueue() {
+      var $list = $('#fm-upload-list').empty();
+      if (!fmUploadQueue.length) {
+        $list.append('<div class="fm-empty">No files selected yet.</div>');
+        return;
+      }
+      fmUploadQueue.forEach(function(item, idx) {
+        var $row = $('<div class="fm-upload-item"></div>');
+        var removeBtn = !fmUploadBusy ? '<button type="button" class="fm-file-action fm-upload-remove" data-index="' + idx + '"><i data-lucide="x"></i></button>' : '';
+        $row.html(
+          '<div class="fm-upload-item-head">' +
+            '<div>' +
+              '<div class="fm-upload-name">' + fmEscape(item.file.name) + '</div>' +
+              '<div class="fm-upload-meta">' + fmFormatSize(item.file.size) + ' • ' + fmEscape(item.status) + '</div>' +
+            '</div>' +
+            removeBtn +
+          '</div>' +
+          '<div class="fm-upload-bar"><span style="width:' + item.progress + '%"></span></div>'
+        );
+        $list.append($row);
+      });
+      $('#fm-upload-list .fm-upload-remove').off('click').on('click', function() {
+        var idx = Number($(this).data('index'));
+        fmUploadQueue.splice(idx, 1);
+        fmRenderUploadQueue();
+      });
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+    }
+
+    function fmUploadNext(index) {
+      if (index >= fmUploadQueue.length) {
+        fmUploadBusy = false;
+        fmSetButtonLoading($('#fm-upload-start'), false);
+        fmToast(true, 'Upload completed');
+        fmUploadQueue = [];
+        fmHideUploadModal();
+        fmOpen(fmCwd);
+        return;
+      }
+      var item = fmUploadQueue[index];
+      item.status = 'Uploading';
+      item.progress = 0;
+      fmRenderUploadQueue();
+      var fd = new FormData();
+      fd.append('cmd', 'upload');
+      fd.append('target', fmCwd);
+      fd.append('_csrf', fmCsrf);
+      fd.append('upload[]', item.file);
+      $.ajax({
+        url: fmUrl,
+        type: 'POST',
+        data: fd,
+        processData: false,
+        contentType: false,
+        dataType: 'json',
+        xhr: function() {
+          var xhr = $.ajaxSettings.xhr();
+          if (xhr.upload) {
+            xhr.upload.addEventListener('progress', function(e) {
+              if (!e.lengthComputable) return;
+              item.progress = Math.max(1, Math.round((e.loaded / e.total) * 100));
+              fmRenderUploadQueue();
+            });
+          }
+          return xhr;
+        }
+      }).done(function(data) {
+        if (data && data.error) {
+          item.status = data.error;
+          fmUploadBusy = false;
+          fmSetButtonLoading($('#fm-upload-start'), false);
+          fmRenderUploadQueue();
+          fmToast(false, data.error);
+          return;
+        }
+        item.progress = 100;
+        item.status = 'Done';
+        fmRenderUploadQueue();
+        fmUploadNext(index + 1);
+      }).fail(function() {
+        item.status = 'Failed';
+        fmUploadBusy = false;
+        fmSetButtonLoading($('#fm-upload-start'), false);
+        fmRenderUploadQueue();
+        fmToast(false, 'Upload failed');
+      });
+    }
+
+    function fmRenderBreadcrumb(path) {
+      var $bc = $('#fm-breadcrumb').empty();
+      var parts = path.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean);
+      parts.unshift('Root');
+      parts.forEach(function(p, i) {
+        if (i > 0) $bc.append('<span class="fm-breadcrumb-sep">/</span>');
+        var hash = (i === 0) ? '' : '/' + parts.slice(1, i + 1).join('/');
+        var $item = $('<span class="fm-breadcrumb-item"></span>').text(p);
+        if (i === parts.length - 1) {
+          $item.addClass('is-active');
+        } else {
+          $item.data('hash', hash).on('click', function() { fmOpen($(this).data('hash')); });
+        }
+        $bc.append($item);
+      });
+    }
+
+    function fmRenderTree(files, $container) {
+      if (!$container) $container = $('#fm-sidebar').empty();
+      files.forEach(function(f) {
+        if (f.mime !== 'directory') return;
+        var icon = fmSidebarIcon(f.name);
+        var $item = $('<div class="fm-tree-item"></div>');
+        $item.html('<span class="fm-tree-icon"><i data-lucide="' + icon + '"></i></span><span class="fm-tree-label">' + fmEscape(f.name) + '</span>');
+        if (f.hash === fmCwd) $item.addClass('is-active');
+        $item.data('hash', f.hash).on('click', function() { fmOpen($(this).data('hash')); });
+        $container.append($item);
+        if (f.dirs) {
+          var $children = $('<div class="fm-tree-children"></div>');
+          $container.append($children);
+          fmApi({ cmd: 'tree', target: f.hash }, function(data) {
+            if (data.tree) fmRenderTree(data.tree, $children);
+          });
+        }
+      });
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+    }
+
+    function fmSidebarIcon(name) {
+      var lower = (name || '').toLowerCase();
+      if (lower === 'htdocs' || lower === 'public' || lower === 'public_html' || lower === 'www') return 'globe';
+      if (lower === 'src' || lower === 'app' || lower === 'api' || lower === 'routes') return 'file-code-2';
+      if (lower === 'config' || lower === '.deploycp') return 'settings-2';
+      if (lower === 'storage' || lower === 'cache' || lower === 'tmp' || lower === 'temp') return 'database';
+      if (lower === 'logs' || lower === 'log') return 'scroll-text';
+      if (lower === 'uploads' || lower === 'media' || lower === 'assets' || lower === 'images') return 'image';
+      if (lower === 'node_modules' || lower === 'vendor' || lower === 'bin') return 'package';
+      if (lower === 'ssl' || lower === 'certs' || lower === 'certificates') return 'shield-check';
+      return 'folder';
+    }
+
+    function fmRenderFiles(files) {
+      var $list = $('#fm-filelist').empty();
+      $list.append('<div class="fm-filelist-head"><span>Name</span><span style="text-align:right">Size</span><span class="fm-file-owner">Owner / Group</span><span class="fm-file-perms">Perms</span><span class="fm-file-date">Modified</span><span></span></div>');
+      if (!files || !files.length) {
+        $list.append('<div class="fm-empty">Empty folder</div>');
+        fmUpdateStatusbar(0);
+        return;
+      }
+      files.sort(function(a,b) {
+        var ad = a.mime === 'directory' ? 0 : 1;
+        var bd = b.mime === 'directory' ? 0 : 1;
+        if (ad !== bd) return ad - bd;
+        return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+      });
+      files.forEach(function(f) {
+        if (f.volumeid) return;
+        var isDir = f.mime === 'directory';
+        var icon = isDir ? '<i data-lucide="folder" class="fm-icon-folder"></i>' : '<i data-lucide="file"></i>';
+        var $row = $('<div class="fm-file-row"></div>');
+        $row.data('file', f);
+        $row.html(
+          '<div class="fm-file-name">' + icon + '<span>' + fmEscape(f.name) + '</span></div>' +
+          '<div class="fm-file-size">' + (isDir ? '—' : fmFormatSize(f.size)) + '</div>' +
+          '<div class="fm-file-owner">' + fmEscape((f.owner || '—') + ':' + (f.group || '—')) + '</div>' +
+          '<div class="fm-file-perms">' + fmEscape(f.perms || '—') + '</div>' +
+          '<div class="fm-file-date">' + fmFormatDate(f.ts) + '</div>' +
+          '<div class="fm-file-actions">' +
+            ((!isDir && fmIsText(f.name, f.mime)) ? '<button class="fm-file-action fm-action-edit" title="Edit"><i data-lucide="pencil"></i></button>' : '') +
+            (!isDir ? '<button class="fm-file-action fm-action-download" title="Download"><i data-lucide="download"></i></button>' : '') +
+            '<button class="fm-file-action fm-action-rename" title="Rename"><i data-lucide="type"></i></button>' +
+            '<button class="fm-file-action fm-action-delete" title="Delete"><i data-lucide="trash-2"></i></button>' +
+          '</div>'
+        );
+        $row.on('dblclick', function() {
+          var file = $(this).data('file');
+          if (file.mime === 'directory') fmOpen(file.hash);
+          else if (fmIsText(file.name, file.mime)) fmEdit(file);
+          else window.open(fmUrl + '?cmd=file&target=' + encodeURIComponent(file.hash) + '&download=1', '_blank');
+        });
+        $row.on('click', function(e) {
+          if ($(e.target).closest('.fm-file-action').length) return;
+          $('.fm-file-row').removeClass('is-selected');
+          $(this).addClass('is-selected');
+          fmSelected = $(this).data('file');
+          fmUpdateStatusbar(files.filter(function(item){ return !item.volumeid; }).length);
+        });
+        $row.on('contextmenu', function(e) {
+          e.preventDefault();
+          fmSelected = $(this).data('file');
+          $('.fm-file-row').removeClass('is-selected');
+          $(this).addClass('is-selected');
+          fmShowContext(e.clientX, e.clientY, $(this).data('file'));
+        });
+        $row.find('.fm-action-edit').on('click', function() { fmEdit($row.data('file')); });
+        $row.find('.fm-action-download').on('click', function() { window.open(fmUrl + '?cmd=file&target=' + encodeURIComponent($row.data('file').hash) + '&download=1', '_blank'); });
+        $row.find('.fm-action-rename').on('click', function() { fmStartRename($row); });
+        $row.find('.fm-action-delete').on('click', function() { fmConfirmDelete($row.data('file')); });
+        $list.append($row);
+      });
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+      fmUpdateStatusbar(files.filter(function(item){ return !item.volumeid; }).length);
+    }
+
+    function fmOpen(hash) {
+      var params = { cmd: 'open' };
+      if (!hash && !fmCwd) {
+        params.init = '1';
+        params.target = '';
+      } else {
+        params.target = hash || fmCwd;
+      }
+      fmApi(params, function(data) {
+        fmCwd = data.cwd ? data.cwd.hash : hash;
+        fmCwdParent = data.cwd ? (data.cwd.phash || '') : '';
+        fmCwdPath = data.options && data.options.path ? data.options.path : '/';
+        fmSelected = null;
+        fmRenderBreadcrumb(fmCwdPath);
+        fmRenderFiles(data.files || []);
+        if (params.init === '1' && data.files) {
+          fmRenderTree(data.files.filter(function(item){ return item.mime === 'directory'; }));
+        }
+        fmUpdateStatusbar((data.files || []).filter(function(item){ return !item.volumeid; }).length);
+      });
+    }
+
+    function fmShowContext(x, y, file) {
+      fmHideContext();
+      var isDir = file && file.mime === 'directory';
+      var $menu = $('<div class="fm-context" id="fm-context"></div>');
+      if (!file) {
+        $menu.append($('<div class="fm-context-item"></div>').html('<i data-lucide="folder-plus"></i> New Folder').on('click', function(){ fmHideContext(); fmShowCreateModal('folder'); }));
+        $menu.append($('<div class="fm-context-item"></div>').html('<i data-lucide="file-plus"></i> New File').on('click', function(){ fmHideContext(); fmShowCreateModal('file'); }));
+        $menu.append($('<div class="fm-context-item"></div>').html('<i data-lucide="upload"></i> Upload').on('click', function(){ fmHideContext(); fmOpenUploadModal(); }));
+        $menu.append($('<div class="fm-context-item"></div>').html('<i data-lucide="clipboard-paste"></i> Paste').toggleClass('is-disabled', !fmClipboard).on('click', function(){ if (!fmClipboard) return; fmHideContext(); fmPaste(fmCwd); }));
+      }
+      if (isDir) {
+        $menu.append($('<div class="fm-context-item"></div>').html('<i data-lucide="folder-open"></i> Open').on('click', function(){ fmHideContext(); fmOpen(file.hash); }));
+      }
+      if (file && !isDir && fmIsText(file.name, file.mime)) {
+        $menu.append($('<div class="fm-context-item"></div>').html('<i data-lucide="pencil"></i> Edit').on('click', function(){ fmHideContext(); fmEdit(file); }));
+      }
+      if (file && !isDir) {
+        $menu.append($('<div class="fm-context-item"></div>').html('<i data-lucide="download"></i> Download').on('click', function(){ fmHideContext(); window.open(fmUrl + '?cmd=file&target=' + encodeURIComponent(file.hash) + '&download=1', '_blank'); }));
+      }
+      if (file) {
+        $menu.append($('<div class="fm-context-item"></div>').html('<i data-lucide="copy"></i> Copy').on('click', function(){ fmSetClipboard(file, false); fmHideContext(); }));
+        $menu.append($('<div class="fm-context-item"></div>').html('<i data-lucide="scissors"></i> Cut').on('click', function(){ fmSetClipboard(file, true); fmHideContext(); }));
+        $menu.append($('<div class="fm-context-item"></div>').html('<i data-lucide="clipboard-paste"></i> Paste Here').toggleClass('is-disabled', !fmClipboard).on('click', function(){ if (!fmClipboard) return; fmHideContext(); fmPaste(fmDestinationHash(file)); }));
+        $menu.append($('<div class="fm-context-item"></div>').html('<i data-lucide="type"></i> Rename').on('click', function(){ fmHideContext(); var $row = $('.fm-file-row').filter(function(){ return $(this).data('file').hash === file.hash; }); fmStartRename($row); }));
+        $menu.append($('<div class="fm-context-item"></div>').html('<i data-lucide="shield"></i> Change Permissions').on('click', function(){ fmHideContext(); fmShowPermissionsModal(file); }));
+        $menu.append($('<div class="fm-context-item"></div>').html('<i data-lucide="archive"></i> Compress').on('click', function(){ fmHideContext(); fmShowCompressModal(file); }));
+        if (fmIsArchive(file)) {
+          $menu.append($('<div class="fm-context-item"></div>').html('<i data-lucide="package-open"></i> Extract').on('click', function(){ fmHideContext(); fmExtractArchive(file); }));
+        }
+        $menu.append('<div class="fm-context-sep"></div>');
+        $menu.append($('<div class="fm-context-item fm-context-danger"></div>').html('<i data-lucide="trash-2"></i> Delete').on('click', function(){ fmHideContext(); fmConfirmDelete(file); }));
+      }
+      $menu.css({ left: Math.min(x, window.innerWidth - 230) + 'px', top: Math.min(y, window.innerHeight - 260) + 'px' });
+      $('body').append($menu);
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+    }
+
+    function fmHideContext() { $('#fm-context').remove(); }
+    $(document).on('click', fmHideContext);
+    $('.fm-main, #fm-filelist, #fm-sidebar').on('contextmenu', function(e) {
+      if ($(e.target).closest('.fm-file-row').length) return;
+      e.preventDefault();
+      $('.fm-file-row').removeClass('is-selected');
+      fmSelected = null;
+      fmShowContext(e.clientX, e.clientY, null);
+      fmUpdateStatusbar();
+    });
+
+    function fmStartRename($row) {
+      var file = $row.data('file');
+      var $name = $row.find('.fm-file-name span');
+      var old = file.name;
+      var $input = $('<input class="fm-rename-input" type="text">').val(old);
+      $name.replaceWith($input);
+      $input.trigger('focus').trigger('select');
+      function doRename() {
+        var newName = $.trim($input.val());
+        if (!newName || newName === old) {
+          $input.replaceWith($('<span></span>').text(old));
+          return;
+        }
+        fmApi({ cmd: 'rename', target: file.hash, name: newName }, function() {
+          fmOpen(fmCwd);
+          fmToast(true, 'Renamed');
+        });
+      }
+      $input.on('blur', doRename).on('keydown', function(e) {
+        if (e.key === 'Enter') doRename();
+        if (e.key === 'Escape') $input.replaceWith($('<span></span>').text(old));
+      });
+    }
+
+    $('#fm-btn-newfolder').on('click', function() { fmShowCreateModal('folder'); });
+    $('#fm-btn-newfile').on('click', function() { fmShowCreateModal('file'); });
+    $('#fm-btn-refresh').on('click', function() {
+      var $btn = $(this);
+      fmSetButtonLoading($btn, true, 'Refreshing...');
+      fmSetBusy('Refreshing folder...');
+      fmOpen(fmCwd);
+      setTimeout(function() {
+        fmSetButtonLoading($btn, false);
+        fmUpdateStatusbar();
+      }, 250);
+    });
+    $('#fm-btn-back').on('click', function() { if (fmCwdParent) fmOpen(fmCwdParent); });
+
+    $('#fm-btn-upload').on('click', function() {
+      fmOpenUploadModal();
+    });
+    $('#fm-upload-input').on('change', function() {
+      if (this.files && this.files.length) fmQueueFiles(this.files);
+      this.value = '';
+    });
+    $('#fm-upload-close, #fm-upload-cancel').on('click', fmHideUploadModal);
+    $('#fm-upload-start').on('click', function() {
+      if (!fmUploadQueue.length || fmUploadBusy) {
+        if (!fmUploadQueue.length) fmToast(false, 'Select files first');
+        return;
+      }
+      fmUploadBusy = true;
+      fmSetButtonLoading($(this), true, 'Uploading...');
+      fmSetBusy('Uploading files...');
+      fmUploadNext(0);
+    });
+    $('#fm-upload-dropzone').on('click', function() { $('#fm-upload-input').trigger('click'); });
+    $('#fm-upload-dropzone').on('dragenter dragover', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      $(this).addClass('is-dragover');
+    });
+    $('#fm-upload-dropzone').on('dragleave dragend drop', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      $(this).removeClass('is-dragover');
+      if (e.type === 'drop' && e.originalEvent && e.originalEvent.dataTransfer && e.originalEvent.dataTransfer.files) {
+        fmQueueFiles(e.originalEvent.dataTransfer.files);
+      }
+    });
+
+    function fmEdit(file) {
+      fmApi({ cmd: 'get', target: file.hash }, function(data) {
+        $('#fm-editor-title').text(file.name);
+        $('#fm-editor-subtitle').text(fmRootPath.replace(/\/$/, '') + (fmCwdPath === '/' ? '' : fmCwdPath) + '/' + file.name);
+        fmShowOverlay('#fm-editor-overlay');
+        var $body = $('#fm-editor-body').empty();
+        whenMonaco(function() {
+          fmMonaco = monaco.editor.create($body[0], {
+            value: data.content || '',
+            language: getLang(file.name),
+            theme: isDark ? 'vs-dark' : 'vs',
+            fontSize: 13,
+            fontFamily: "'JetBrains Mono','Fira Code',Consolas,monospace",
+            minimap: { enabled: window.innerWidth > 900 },
+            scrollBeyondLastLine: false,
+            wordWrap: 'on',
+            automaticLayout: true,
+            tabSize: 2,
+            renderWhitespace: 'selection',
+            bracketPairColorization: { enabled: true },
+            padding: { top: 10, bottom: 10 }
+          });
+        });
+        $('#fm-editor-save').off('click').on('click', function() {
+          var $btn = $(this);
+          if (!fmMonaco) return;
+          fmApi({ cmd: 'put', target: file.hash, content: fmMonaco.getValue() }, function() {
+            fmToast(true, 'Saved');
+            fmOpen(fmCwd);
+          }, null, { button: $btn, buttonText: 'Saving...', busyText: 'Saving file...' });
+        });
+        $('#fm-editor-close').off('click').on('click', function() { fmCloseEditor(); });
+      });
+    }
+
+    function fmCloseEditor() {
+      if (fmMonaco) { fmMonaco.dispose(); fmMonaco = null; }
+      fmHideOverlay('#fm-editor-overlay');
+      $('#fm-editor-body').empty();
+    }
+
+    $('#fm-modal').on('click', function(e) {
+      if (e.target === this) fmHideModal();
+    });
+    $('#fm-upload-modal').on('click', function(e) {
+      if (e.target === this) fmHideUploadModal();
+    });
+    $('#fm-editor-overlay').on('click', function(e) {
+      if (e.target === this) fmCloseEditor();
+    });
+    $(document).on('keydown', function(e) {
+      if (e.key === 'Escape') {
+        if ($('#fm-editor-overlay').is(':visible')) fmCloseEditor();
+        else if ($('#fm-modal').is(':visible')) fmHideModal();
+        else if ($('#fm-upload-modal').is(':visible')) fmHideUploadModal();
+      }
+    });
+
+    $('#fm-root-path').text(fmRootPath);
+    fmOpen('');
   }
 
   // ── Log Viewer ──

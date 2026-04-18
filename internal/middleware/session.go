@@ -27,6 +27,9 @@ func (m *SessionManager) SetUserID(c *fiber.Ctx, userID uint) error {
 	if err != nil {
 		return err
 	}
+	if err := sess.Regenerate(); err != nil {
+		return err
+	}
 	sess.Set(SessionKeyUserID, fmt.Sprintf("%d", userID))
 	return sess.Save()
 }

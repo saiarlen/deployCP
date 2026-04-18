@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ Title }} - {{ AppName }}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/notyf@3/notyf.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css?v={{ AssetVersion }}">
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/notyf@3/notyf.min.js"></script>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+</head>
+<body class="font-sans antialiased {{ if Theme == "light" }}light-theme{{ end }}">
+  <div class="auth-shell">
+    <div class="auth-topbar">
+      <div class="auth-brand">
+        <span class="auth-brand-mark"><i data-lucide="zap" style="width:14px;height:14px;stroke-width:2.5"></i></span>
+        <h1 class="auth-brand-title">{{ AppName }}</h1>
+      </div>
+    </div>
+    <div class="auth-center">
+      <div class="auth-card" style="max-width:28rem">
+        <h2 class="auth-title">Create Admin Account</h2>
+        <p class="auth-subtitle">Set up your initial administrator account to get started.</p>
+
+        {{ if Flash != "" }}
+        <div id="app-flash" class="flash-banner auth-flash" data-flash="{{ Flash }}">{{ Flash }}</div>
+        {{ end }}
+
+        <form action="/setup" method="post" class="auth-form" novalidate>
+          <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+          <label class="auth-label">
+            Full Name
+            <input class="field auth-input" type="text" name="name" required autocomplete="name" placeholder="John Doe">
+          </label>
+          <label class="auth-label">
+            Email
+            <input class="field auth-input" type="email" name="email" required autocomplete="email" placeholder="admin@example.com">
+          </label>
+          <label class="auth-label">
+            Username
+            <input class="field auth-input" type="text" name="username" required autocomplete="username" placeholder="admin">
+          </label>
+          <label class="auth-label">
+            Password
+            <input class="field auth-input" type="password" name="password" required autocomplete="new-password" placeholder="Minimum 10 characters">
+          </label>
+          <button type="submit" class="btn btn-primary auth-submit">Create Account</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  <script>
+    $(function () {
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+      var $flash = $('#app-flash');
+      if ($flash.length) {
+        var msg = String($flash.data('flash') || '').trim();
+        if (msg && typeof Notyf === 'function') {
+          var notyf = new Notyf({ duration: 6000, dismissible: true, position: { x: 'center', y: 'top' }, ripple: false });
+          notyf.open({ type: 'error', message: msg });
+        }
+      }
+    });
+  </script>
+</body>
+</html>

@@ -25,6 +25,8 @@ Built with Go, Fiber, Jet templates, GORM, and SQLite. No external dependencies 
 curl -fsSL https://raw.githubusercontent.com/saiarlen/deployCP/main/scripts/linux/install-remote.sh | sudo bash
 ```
 
+The remote installer downloads the matching release tarball for the host architecture and verifies the published SHA-256 checksum before extraction.
+
 **Pin a specific version:**
 
 ```bash
@@ -43,7 +45,7 @@ curl -fsSL https://raw.githubusercontent.com/saiarlen/deployCP/main/scripts/linu
 sudo /home/deploycp/core/scripts/linux/uninstall.sh
 ```
 
-After install, open `http://your-server-ip:8080` and log in with the credentials printed during installation (also stored in `/home/deploycp/core/.env`).
+After install, open `http://your-server-ip:2024` to create your admin account and start using the panel.
 
 ## What It Does
 
@@ -62,6 +64,7 @@ After install, open `http://your-server-ip:8080` and log in with the credentials
 | **Redis** | Dedicated managed instances with per-platform config |
 | **Varnish** | Per-site VCL fragments, aggregate include, validate, reload |
 | **Logs** | Real filesystem log paths surfaced in the panel |
+| **Host Hardening** | Automatic firewall bootstrap, fail2ban, logrotate, backup cron, SSH-safe install flow |
 
 ## Supported Platforms
 
@@ -180,6 +183,9 @@ sudo /home/deploycp/core/bin/deploycp verify-host
 
 # Re-sync all managed state
 sudo /home/deploycp/core/bin/deploycp reconcile-managed
+
+# Re-apply host hardening on an existing server
+sudo /home/deploycp/core/scripts/linux/harden-host.sh
 ```
 
 **Recovery order:**
@@ -189,6 +195,40 @@ sudo /home/deploycp/core/bin/deploycp reconcile-managed
 3. Fix any reported issues (install missing packages, set env values)
 4. `deploycp reconcile-managed` — re-sync managed resources
 5. Test the affected platform workflow
+
+## Host Hardening
+
+Fresh installs and updates also converge a few host-level safeguards:
+
+- `fail2ban` is installed and enabled for `sshd`
+- `logrotate` keeps DeployCP and platform logs from growing unbounded
+- a daily backup job is written to `/etc/cron.d/deploycp-backup`
+- backup archives are stored in `/home/deploycp/platforms/backups`
+
+Backup behavior is controlled from `/home/deploycp/core/.env`:
+
+```env
+BACKUP_TARGET_DIR=/home/deploycp/platforms/backups
+BACKUP_RETENTION_DAYS=14
+BACKUP_INCLUDE_SITE_CONTENT=true
+BACKUP_INCLUDE_PLATFORM_LOGS=false
+BACKUP_PRE_HOOK=
+BACKUP_POST_HOOK=
+```
+
+Manual backup:
+
+```bash
+sudo /home/deploycp/core/scripts/linux/backup.sh
+```
+
+## Database UI Helpers
+
+DeployCP does not bundle a database UI server itself.
+
+- PostgreSQL UI links are designed for a loopback-only `pgweb` instance or another private Postgres UI endpoint configured in `POSTGRES_GUI_URL`
+- Adminer is optional and should be deployed separately behind loopback or a trusted private network, then exposed to DeployCP through `ADMINER_URL`
+- the helper scripts do not start Docker containers for these tools
 
 ## Local Development
 

@@ -328,19 +328,21 @@ type BasicAuth struct {
 	WebsiteID      uint   `gorm:"uniqueIndex;not null"`
 	Enabled        bool   `gorm:"not null;default:false"`
 	Username       string `gorm:"size:120"`
-	Password       string `gorm:"size:255"`
+	PasswordEnc    string `gorm:"column:password_enc;type:text"`
+	Password       string `gorm:"-"`
 	WhitelistedIPs string `gorm:"type:text"`
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 }
 
 type FTPUser struct {
-	ID        uint   `gorm:"primaryKey"`
-	WebsiteID uint   `gorm:"index;not null"`
-	Username  string `gorm:"size:80;not null"`
-	Password  string `gorm:"size:255"`
-	HomeDir   string `gorm:"size:255"`
-	IsActive  bool   `gorm:"not null;default:true"`
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID          uint   `gorm:"primaryKey"`
+	WebsiteID   uint   `gorm:"index;not null"`
+	Username    string `gorm:"size:80;not null"`
+	PasswordEnc string `gorm:"column:password_enc;type:text"`
+	Password    string `gorm:"-"`
+	HomeDir     string `gorm:"size:255"`
+	IsActive    bool   `gorm:"not null;default:true"`
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }

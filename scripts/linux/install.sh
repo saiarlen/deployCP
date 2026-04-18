@@ -148,19 +148,19 @@ install_packages() {
     apt)
       export DEBIAN_FRONTEND=noninteractive
       apt-get update -y
-      apt-get install -y nginx certbot curl tar sqlite3 ca-certificates openssl procps cron redis-server proftpd-basic varnish mariadb-server postgresql ufw
+      apt-get install -y nginx certbot curl tar sqlite3 ca-certificates openssl procps cron redis-server proftpd-basic varnish mariadb-server postgresql ufw fail2ban logrotate
       ;;
     dnf)
-      dnf install -y nginx certbot curl tar sqlite sqlite-libs ca-certificates openssl procps-ng cronie redis proftpd varnish mariadb-server postgresql-server firewalld
+      dnf install -y nginx certbot curl tar sqlite sqlite-libs ca-certificates openssl procps-ng cronie redis proftpd varnish mariadb-server postgresql-server firewalld fail2ban logrotate
       ;;
     yum)
-      yum install -y nginx certbot curl tar sqlite ca-certificates openssl procps-ng cronie redis proftpd varnish mariadb-server postgresql-server firewalld
+      yum install -y nginx certbot curl tar sqlite ca-certificates openssl procps-ng cronie redis proftpd varnish mariadb-server postgresql-server firewalld fail2ban logrotate
       ;;
     zypper)
-      zypper --non-interactive install nginx certbot curl tar sqlite3 ca-certificates openssl procps cron redis proftpd varnish mariadb postgresql-server firewalld
+      zypper --non-interactive install nginx certbot curl tar sqlite3 ca-certificates openssl procps cron redis proftpd varnish mariadb postgresql-server firewalld fail2ban logrotate
       ;;
     pacman)
-      pacman -Sy --noconfirm nginx certbot curl tar sqlite ca-certificates openssl procps-ng cronie redis mariadb postgresql varnish ufw
+      pacman -Sy --noconfirm nginx certbot curl tar sqlite ca-certificates openssl procps-ng cronie redis mariadb postgresql varnish ufw fail2ban logrotate
       ;;
     *)
       echo "unsupported package manager" >&2
@@ -350,7 +350,7 @@ ensure_firewall_access() {
   local app_port ssh_port ufw_status
   app_port="$(read_env_value "$env_file" "APP_PORT")"
   if [[ -z "$app_port" ]]; then
-    app_port="${APP_PORT:-8080}"
+    app_port="${APP_PORT:-2024}"
   fi
   ssh_port="$(detect_ssh_port)"
 
@@ -369,14 +369,10 @@ ensure_firewall_access() {
   if command -v "$FIREWALLCMD_BINARY" >/dev/null 2>&1; then
     systemctl enable firewalld >/dev/null 2>&1 || true
     systemctl start firewalld >/dev/null 2>&1 || true
+    "$FIREWALLCMD_BINARY" --permanent --add-port="${ssh_port}/tcp" >/dev/null 2>&1 || true
     "$FIREWALLCMD_BINARY" --permanent --add-port="80/tcp" >/dev/null 2>&1 || true
     "$FIREWALLCMD_BINARY" --permanent --add-port="443/tcp" >/dev/null 2>&1 || true
     "$FIREWALLCMD_BINARY" --permanent --add-port="${app_port}/tcp" >/dev/null 2>&1 || true
-    if [[ "$ssh_port" == "22" ]]; then
-      "$FIREWALLCMD_BINARY" --permanent --add-service=ssh >/dev/null 2>&1 || true
-    else
-      "$FIREWALLCMD_BINARY" --permanent --add-port="${ssh_port}/tcp" >/dev/null 2>&1 || true
-    fi
     "$FIREWALLCMD_BINARY" --reload >/dev/null 2>&1 || true
     return
   fi
@@ -526,19 +522,16 @@ else
 APP_NAME=DeployCP
 APP_ENV=production
 APP_HOST=0.0.0.0
-APP_PORT=8080
-APP_BASE_URL=http://localhost:8080
+APP_PORT=2024
+APP_BASE_URL=http://localhost:2024
 APP_VERSION=$(resolved_release_version)
 DEPLOYCP_REPO=${DEPLOYCP_REPO:-saiarlen/deployCP}
 SQLITE_PATH=${CORE_DIR}/storage/db/deploycp.sqlite
 SESSION_SECRET=$(openssl rand -hex 32)
 SESSION_COOKIE_NAME=deploycp_session
-SESSION_SECURE_COOKIES=false
+SESSION_SECURE_COOKIES=true
 CSRF_ENABLED=true
 LOGIN_RATE_LIMIT_PER_MIN=20
-BOOTSTRAP_ADMIN_USERNAME=admin
-BOOTSTRAP_ADMIN_EMAIL=admin@localhost
-BOOTSTRAP_ADMIN_PASSWORD=$(openssl rand -base64 18)
 STORAGE_ROOT=${CORE_DIR}/storage
 DEFAULT_SITE_ROOT=${DATA_DIR}/sites
 LOG_ROOT=${DATA_DIR}/logs
@@ -577,6 +570,12 @@ VARNISH_SERVICE_NAME=${VARNISH_SERVICE_NAME}
 VARNISH_MAIN_VCL=${VARNISH_MAIN_VCL}
 VARNISH_INCLUDE_VCL=${VARNISH_INCLUDE_VCL}
 VARNISHD_BINARY=${VARNISHD_BINARY}
+BACKUP_TARGET_DIR=${DATA_DIR}/backups
+BACKUP_RETENTION_DAYS=14
+BACKUP_INCLUDE_SITE_CONTENT=true
+BACKUP_INCLUDE_PLATFORM_LOGS=false
+BACKUP_PRE_HOOK=
+BACKUP_POST_HOOK=
 EOF
   chown "$APP_USER:$APP_USER" "${CORE_DIR}/.env"
   chmod 0600 "${CORE_DIR}/.env"
@@ -584,6 +583,31 @@ fi
 
 set_env_value "${CORE_DIR}/.env" "APP_VERSION" "$(resolved_release_version)"
 set_env_value "${CORE_DIR}/.env" "DEPLOYCP_REPO" "${DEPLOYCP_REPO:-saiarlen/deployCP}"
+if [[ -x "${CORE_DIR}/scripts/linux/harden-host.sh" ]]; then
+  bash "${CORE_DIR}/scripts/linux/harden-host.sh"
+fi
+
+# Detect MariaDB socket auth — on fresh installs root can connect without a password.
+if command -v mariadb >/dev/null 2>&1; then
+  if mariadb -u root -e "SELECT 1" >/dev/null 2>&1; then
+    set_env_value "${CORE_DIR}/.env" "MARIADB_ADMIN_USER" "root"
+    set_env_value "${CORE_DIR}/.env" "MARIADB_ADMIN_PASSWORD" ""
+  fi
+elif command -v mysql >/dev/null 2>&1; then
+  if mysql -u root -e "SELECT 1" >/dev/null 2>&1; then
+    set_env_value "${CORE_DIR}/.env" "MARIADB_ADMIN_USER" "root"
+    set_env_value "${CORE_DIR}/.env" "MARIADB_ADMIN_PASSWORD" ""
+  fi
+fi
+
+# Detect PostgreSQL peer auth — on fresh installs postgres user can connect via peer.
+if command -v psql >/dev/null 2>&1; then
+  if su - postgres -c "psql -c 'SELECT 1'" >/dev/null 2>&1; then
+    set_env_value "${CORE_DIR}/.env" "POSTGRES_ADMIN_USER" "postgres"
+    set_env_value "${CORE_DIR}/.env" "POSTGRES_ADMIN_PASSWORD" ""
+  fi
+fi
+
 ensure_firewall_access
 
 cat >/etc/systemd/system/${SERVICE_NAME}.service <<EOF
@@ -619,11 +643,35 @@ if [[ -x "${CORE_DIR}/bin/${BIN_NAME}" ]]; then
   "${CORE_DIR}/bin/${BIN_NAME}" reconcile-managed
   systemctl start "${SERVICE_NAME}"
   "${CORE_DIR}/bin/${BIN_NAME}" verify-host || true
-  systemctl status "${SERVICE_NAME}" --no-pager || true
+
+  # Resolve display values for the post-install message.
+  DISPLAY_PORT="$(read_env_value "${CORE_DIR}/.env" "APP_PORT")"
+  DISPLAY_PORT="${DISPLAY_PORT:-2024}"
+  SERVER_IP="$(hostname -I 2>/dev/null | awk '{print $1}')" || SERVER_IP="your-server-ip"
+  if [[ -z "$SERVER_IP" ]]; then SERVER_IP="your-server-ip"; fi
+
+  echo ""
+  echo "══════════════════════════════════════════════════════════════"
+  echo "  DeployCP installed successfully!"
+  echo "══════════════════════════════════════════════════════════════"
+  echo ""
+  echo "  Open the panel to create your admin account:"
+  echo ""
+  echo "  ➜  http://${SERVER_IP}:${DISPLAY_PORT}"
+  echo ""
+  echo "  Config:   ${CORE_DIR}/.env"
+  echo "  Service:  systemctl status ${SERVICE_NAME}"
+  echo "  Logs:     journalctl -u ${SERVICE_NAME} -f"
+  echo ""
+  echo "══════════════════════════════════════════════════════════════"
+  echo ""
 else
+  echo ""
   echo "DeployCP install layout prepared under ${CORE_DIR}"
-  echo "Copy the release binary to ${CORE_DIR}/bin/${BIN_NAME}, then rerun this installer or run:"
+  echo "Binary not found. Copy the release binary to ${CORE_DIR}/bin/${BIN_NAME}, then run:"
+  echo ""
   echo "  ${CORE_DIR}/bin/${BIN_NAME} bootstrap-host"
   echo "  ${CORE_DIR}/bin/${BIN_NAME} reconcile-managed"
   echo "  systemctl start ${SERVICE_NAME}"
+  echo ""
 fi

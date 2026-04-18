@@ -30,6 +30,9 @@ if [[ -f "${VARNISH_MAIN_VCL}.deploycp.bak" ]]; then
 fi
 rm -f "$VARNISH_INCLUDE_VCL"
 rm -rf "$VARNISH_CONFIG_DIR"
+rm -f /etc/fail2ban/jail.d/deploycp.local
+rm -f /etc/logrotate.d/deploycp
+rm -f /etc/cron.d/deploycp-backup
 
 if id -u "$APP_USER" >/dev/null 2>&1; then
   userdel -r "$APP_USER" || true

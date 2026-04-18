@@ -110,8 +110,8 @@ func Load() (*Config, error) {
 			Name:        getEnv("APP_NAME", "DeployCP"),
 			Env:         getEnv("APP_ENV", "development"),
 			Host:        getEnv("APP_HOST", "0.0.0.0"),
-			Port:        getEnvInt("APP_PORT", 8080),
-			BaseURL:     getEnv("APP_BASE_URL", "http://localhost:8080"),
+			Port:        getEnvInt("APP_PORT", 2024),
+			BaseURL:     getEnv("APP_BASE_URL", "http://localhost:2024"),
 			Version:     getEnv("APP_VERSION", ""),
 			ReleaseRepo: getEnv("DEPLOYCP_REPO", "saiarlen/deployCP"),
 		},
@@ -121,12 +121,12 @@ func Load() (*Config, error) {
 		Security: SecurityConfig{
 			SessionSecret:        getEnv("SESSION_SECRET", "change-me-in-production-now"),
 			SessionCookieName:    getEnv("SESSION_COOKIE_NAME", "deploycp_session"),
-			SessionSecureCookies: getEnvBool("SESSION_SECURE_COOKIES", false),
+			SessionSecureCookies: getEnvBool("SESSION_SECURE_COOKIES", strings.EqualFold(getEnv("APP_ENV", "development"), "production")),
 			CSRFEnabled:          getEnvBool("CSRF_ENABLED", true),
 			LoginRateLimitPerMin: getEnvInt("LOGIN_RATE_LIMIT_PER_MIN", 20),
-			BootstrapAdminUser:   getEnv("BOOTSTRAP_ADMIN_USERNAME", "admin"),
-			BootstrapAdminEmail:  getEnv("BOOTSTRAP_ADMIN_EMAIL", "admin@localhost"),
-			BootstrapAdminPass:   getEnv("BOOTSTRAP_ADMIN_PASSWORD", "admin123!ChangeNow"),
+			BootstrapAdminUser:   getEnv("BOOTSTRAP_ADMIN_USERNAME", ""),
+			BootstrapAdminEmail:  getEnv("BOOTSTRAP_ADMIN_EMAIL", ""),
+			BootstrapAdminPass:   getEnv("BOOTSTRAP_ADMIN_PASSWORD", ""),
 		},
 		Paths: defaultPaths(),
 		Integrations: IntegrationConfig{
@@ -235,9 +235,6 @@ func (c *Config) Validate() error {
 	}
 	if !strings.Contains(c.Database.SQLitePath, ".sqlite") && !strings.Contains(c.Database.SQLitePath, ".db") {
 		errs = append(errs, "SQLITE_PATH should be a sqlite file path")
-	}
-	if c.Security.BootstrapAdminUser == "" || c.Security.BootstrapAdminPass == "" {
-		errs = append(errs, "bootstrap admin credentials cannot be empty")
 	}
 	if len(errs) > 0 {
 		return errors.New(strings.Join(errs, "; "))

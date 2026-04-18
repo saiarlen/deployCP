@@ -131,10 +131,13 @@ func (s *WebsiteService) Create(ctx context.Context, in WebsiteInput, actor *uin
 	if err := s.validate(in); err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(in.RootPath, 0o755); err != nil {
-		return nil, fmt.Errorf("create site root: %w", err)
+	platformHome := platformHomeFromWebRoot(in.RootPath)
+	// Create the full platform directory structure.
+	for _, sub := range []string{"", "htdocs", "logs", "backups", "tmp"} {
+		if err := os.MkdirAll(filepath.Join(platformHome, sub), 0o755); err != nil {
+			return nil, fmt.Errorf("create platform directory: %w", err)
+		}
 	}
-	// Ensure parent directories are world-traversable so nginx (www-data) can reach the site root.
 	ensurePathTraversable(in.RootPath)
 	if err := s.ensurePublicWebRoot(in.RootPath); err != nil {
 		return nil, err
@@ -149,8 +152,8 @@ func (s *WebsiteService) Create(ctx context.Context, in WebsiteInput, actor *uin
 		CustomDirectives: in.CustomDirectives,
 		SiteUserID:       in.SiteUserID,
 		Enabled:          in.Enabled,
-		AccessLogPath:    filepath.Join(s.cfg.Paths.LogRoot, "sites", in.Name, "access.log"),
-		ErrorLogPath:     filepath.Join(s.cfg.Paths.LogRoot, "sites", in.Name, "error.log"),
+		AccessLogPath:    filepath.Join(platformHome, "logs", "access.log"),
+		ErrorLogPath:     filepath.Join(platformHome, "logs", "error.log"),
 	}
 	if err := os.MkdirAll(filepath.Dir(site.AccessLogPath), 0o755); err != nil {
 		return nil, err
@@ -168,6 +171,12 @@ func (s *WebsiteService) Create(ctx context.Context, in WebsiteInput, actor *uin
 	}
 	if err := s.writeNginxConfig(ctx, site); err != nil {
 		return nil, err
+	}
+	// Chown the entire platform home to the site user so files created by root
+	// (index.html, runtime.env, logs dir) are owned by the correct user.
+	if site.SiteUser != nil && strings.TrimSpace(site.SiteUser.Username) != "" {
+		platHome := platformHomeFromWebRoot(site.RootPath)
+		_ = s.adapter.Users().ChownRecursive(ctx, site.SiteUser.Username, platHome)
 	}
 	s.audit.Record(actor, "website.create", "website", fmt.Sprintf("%d", site.ID), ip, in)
 	return site, nil
@@ -233,17 +242,17 @@ func (s *WebsiteService) Delete(ctx context.Context, id uint, actor *uint, ip st
 		return err
 	}
 	if strings.TrimSpace(site.RootPath) != "" {
-		if err := removeTreeSafe(site.RootPath, s.cfg.Paths.DefaultSiteRoot, s.cfg.Paths.StorageRoot); err != nil {
+		platformHome := platformHomeFromWebRoot(site.RootPath)
+		if err := removeTreeSafe(platformHome, s.cfg.Paths.DefaultSiteRoot, s.cfg.Paths.StorageRoot); err != nil {
 			return err
 		}
 	}
+	// Also remove the legacy separate log directory if it exists outside the platform home.
 	logDir := filepath.Dir(site.AccessLogPath)
 	if strings.TrimSpace(logDir) == "" || logDir == "." {
 		logDir = filepath.Join(s.cfg.Paths.LogRoot, "sites", site.Name)
 	}
-	if err := removeTreeSafe(logDir, s.cfg.Paths.LogRoot, s.cfg.Paths.StorageRoot); err != nil {
-		return err
-	}
+	_ = removeTreeSafe(logDir, s.cfg.Paths.LogRoot, s.cfg.Paths.StorageRoot)
 	if err := s.repo.Delete(id); err != nil {
 		return err
 	}
@@ -455,16 +464,16 @@ func (s *WebsiteService) applyPlatformRuntime(site *models.Website, actor *uint,
 	}
 	switch site.Type {
 	case "php":
-		return s.runtime.ApplyPlatformRuntime(site.RootPath, "php", site.PHPVersion, actor, ip)
+		return s.runtime.ApplyPlatformRuntime(platformHomeFromWebRoot(site.RootPath), "php", site.PHPVersion, actor, ip)
 	case "proxy":
 		if strings.TrimSpace(site.AppRuntime) != "" {
 			version := runtimeVersionFromWebsite(site)
 			if version != "" {
-				return s.runtime.ApplyPlatformRuntime(site.RootPath, site.AppRuntime, version, actor, ip)
+				return s.runtime.ApplyPlatformRuntime(platformHomeFromWebRoot(site.RootPath), site.AppRuntime, version, actor, ip)
 			}
 		}
 	}
-	return s.runtime.ApplyPlatformRuntime(site.RootPath, "", "", actor, ip)
+	return s.runtime.ApplyPlatformRuntime(platformHomeFromWebRoot(site.RootPath), "", "", actor, ip)
 }
 
 func (s *WebsiteService) ensurePublicWebRoot(root string) error {
@@ -472,14 +481,15 @@ func (s *WebsiteService) ensurePublicWebRoot(root string) error {
 	if root == "" {
 		return nil
 	}
-	// Site root must be world-readable and traversable for nginx (www-data).
+	// Site root (htdocs) must be world-readable and traversable for nginx (www-data).
 	if err := os.Chmod(root, 0o755); err != nil {
 		return fmt.Errorf("set site root permissions: %w", err)
 	}
-	hiddenDir := filepath.Join(root, ".deploycp")
-	if stat, err := os.Stat(hiddenDir); err == nil && stat.IsDir() {
-		if chmodErr := os.Chmod(hiddenDir, 0o700); chmodErr != nil {
-			return fmt.Errorf("secure runtime metadata directory: %w", chmodErr)
+	// Secure .deploycp in both htdocs and platform home.
+	for _, base := range []string{root, platformHomeFromWebRoot(root)} {
+		hiddenDir := filepath.Join(base, ".deploycp")
+		if stat, err := os.Stat(hiddenDir); err == nil && stat.IsDir() {
+			_ = os.Chmod(hiddenDir, 0o700)
 		}
 	}
 	indexPath := filepath.Join(root, "index.html")
@@ -510,7 +520,11 @@ func (s *WebsiteService) ensurePublicWebRoot(root string) error {
 
 func (s *WebsiteService) ensureBasicAuthFile(site *models.Website, auth *models.BasicAuth) (string, error) {
 	path := filepath.Join(s.cfg.Paths.HTPasswdRoot, site.Name+".htpasswd")
-	hash, err := utils.HashPassword(auth.Password)
+	password, err := utils.DecryptString(s.cfg.Security.SessionSecret, auth.PasswordEnc)
+	if err != nil {
+		return "", err
+	}
+	hash, err := utils.HashPassword(password)
 	if err != nil {
 		return "", err
 	}
@@ -862,6 +876,13 @@ func (s *WebsiteService) LogDir(id uint) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// Prefer the platform-local logs directory (inside the platform home).
+	platformHome := platformHomeFromWebRoot(site.RootPath)
+	platformLogDir := filepath.Join(platformHome, "logs")
+	if st, err := os.Stat(platformLogDir); err == nil && st.IsDir() {
+		return platformLogDir, nil
+	}
+	// Fallback to the directory containing the configured access log path.
 	dir := filepath.Dir(site.AccessLogPath)
 	if dir == "." || dir == "" {
 		dir = filepath.Join(s.cfg.Paths.LogRoot, "sites", site.Name)
@@ -992,6 +1013,16 @@ func errorsIsGormNotFound(err error) bool {
 // ensurePathTraversable sets the world-execute bit (o+x) on every parent
 // directory of target so that nginx (www-data) and site users can traverse
 // the path. Only adds execute — does not grant read or write.
+// platformHomeFromWebRoot returns the platform home directory from a web root path.
+// If the root ends with /htdocs, the platform home is the parent directory.
+func platformHomeFromWebRoot(webRoot string) string {
+	clean := filepath.Clean(strings.TrimSpace(webRoot))
+	if filepath.Base(clean) == "htdocs" {
+		return filepath.Dir(clean)
+	}
+	return clean
+}
+
 func ensurePathTraversable(target string) {
 	target = filepath.Clean(target)
 	var dirs []string

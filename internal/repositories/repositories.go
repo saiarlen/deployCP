@@ -922,7 +922,9 @@ func (r *BasicAuthRepository) Upsert(item *models.BasicAuth) error {
 	}
 	existing.Enabled = item.Enabled
 	existing.Username = item.Username
-	existing.Password = item.Password
+	if strings.TrimSpace(item.PasswordEnc) != "" {
+		existing.PasswordEnc = item.PasswordEnc
+	}
 	existing.WhitelistedIPs = item.WhitelistedIPs
 	return r.db.Save(&existing).Error
 }

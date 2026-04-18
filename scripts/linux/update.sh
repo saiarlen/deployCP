@@ -108,6 +108,9 @@ fi
 chown -R "${APP_USER}:${APP_USER}" "${CORE_DIR}"
 set_env_value "${CORE_DIR}/.env" "APP_VERSION" "$(resolved_release_version)"
 set_env_value "${CORE_DIR}/.env" "DEPLOYCP_REPO" "${DEPLOYCP_REPO:-saiarlen/deployCP}"
+if [[ -x "${CORE_DIR}/scripts/linux/harden-host.sh" ]]; then
+  bash "${CORE_DIR}/scripts/linux/harden-host.sh"
+fi
 systemctl daemon-reload
 "${CORE_DIR}/bin/${BIN_NAME}" bootstrap-host
 systemctl start "${SERVICE_NAME}"

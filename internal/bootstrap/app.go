@@ -155,6 +155,7 @@ func Build() (*Application, error) {
 		KeyLookup:      "cookie:" + cfg.Security.SessionCookieName,
 		CookieHTTPOnly: true,
 		CookieSecure:   cfg.Security.SessionSecureCookies,
+		CookieSameSite: "Lax",
 		Expiration:     24 * time.Hour,
 	})
 	sessionManager := middleware.NewSessionManager(store)
@@ -187,6 +188,16 @@ func Build() (*Application, error) {
 	app.Use(recover.New())
 	app.Use(requestid.New())
 	app.Use(func(c *fiber.Ctx) error {
+		c.Set("X-Frame-Options", "DENY")
+		c.Set("X-Content-Type-Options", "nosniff")
+		c.Set("Referrer-Policy", "same-origin")
+		c.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		if strings.EqualFold(c.Protocol(), "https") || strings.EqualFold(c.Get("X-Forwarded-Proto"), "https") {
+			c.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
+		return c.Next()
+	})
+	app.Use(func(c *fiber.Ctx) error {
 		path := c.Path()
 		if strings.HasPrefix(path, "/assets/") {
 			c.Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
@@ -211,6 +222,17 @@ func Build() (*Application, error) {
 		view := updateService.FooterView()
 		c.Locals("app_version_display", view.DisplayVersion)
 		c.Locals("app_version_is_dev", view.IsDev)
+		return c.Next()
+	})
+	// Redirect all requests to /setup if no admin exists yet.
+	app.Use(func(c *fiber.Ctx) error {
+		path := c.Path()
+		if strings.HasPrefix(path, "/setup") || strings.HasPrefix(path, "/assets/") {
+			return c.Next()
+		}
+		if authService.NeedsSetup() {
+			return c.Redirect("/setup")
+		}
 		return c.Next()
 	})
 	app.Use(middleware.PanelBasicAuth(repos.Settings))
@@ -279,7 +301,7 @@ func Build() (*Application, error) {
 		ServiceHandler:   handlers.NewServiceHandler(cfg, sessionManager, serviceService),
 		SettingsHandler:  handlers.NewSettingsHandler(cfg, sessionManager, settingsService, serviceService, panelUserService, repos.Audit, repos.Firewalls, repos.UserPlatformAccess, websiteService, appService, auditService, firewallService, runtimeService, ftpService, updateService),
 		UpdateHandler:    handlers.NewUpdateHandler(cfg, sessionManager, updateService),
-		ElfinderHandler:  handlers.NewElfinderHandler(cfg, sessionManager, websiteService),
+		ElfinderHandler:  handlers.NewElfinderHandler(cfg, sessionManager, websiteService, platformAdapter, runner),
 	}
 
 	instance.registerRoutes()
@@ -289,6 +311,8 @@ func Build() (*Application, error) {
 func (a *Application) registerRoutes() {
 	app := a.Fiber
 
+	app.Get("/setup", a.AuthHandler.SetupPage)
+	app.Post("/setup", a.AuthHandler.SetupCreate)
 	app.Get("/login", a.AuthHandler.LoginPage)
 	app.Get("/login/captcha", a.AuthHandler.LoginCaptcha)
 	app.Post("/login", middleware.LoginRateLimit(a.Config.Security.LoginRateLimitPerMin), a.AuthHandler.Login)
@@ -297,6 +321,7 @@ func (a *Application) registerRoutes() {
 
 	secured := app.Group("", middleware.AuthRequired(a.Sessions), middleware.PlatformAccess(a.Sessions, a.Repos.UserPlatformAccess))
 	adminOnly := middleware.AdminOnly(a.Sessions)
+	provisioningAllowed := middleware.ProvisioningAllowed(a.Sessions)
 	secured.Get("/", a.DashboardHandler.Index)
 	secured.Get("/dashboard/live", a.DashboardHandler.Live)
 	secured.Get("/dashboard/history", a.DashboardHandler.History)
@@ -306,7 +331,7 @@ func (a *Application) registerRoutes() {
 	secured.Post("/profile/password", a.AuthHandler.PasswordUpdate)
 	secured.Post("/profile/theme", a.AuthHandler.ThemeUpdate)
 
-	secured.Post("/websites", a.WebsiteHandler.Create)
+	secured.Post("/websites", provisioningAllowed, a.WebsiteHandler.Create)
 	secured.Post("/websites/:id", a.WebsiteHandler.Update)
 	secured.Post("/websites/:id/delete", a.WebsiteHandler.Delete)
 	secured.Post("/websites/:id/toggle", a.WebsiteHandler.Toggle)
@@ -347,7 +372,7 @@ func (a *Application) registerRoutes() {
 	secured.Post("/websites/:id/elfinder", a.ElfinderHandler.Connector)
 
 	secured.Get("/platforms", a.AppHandler.SitesApps)
-	secured.Get("/platforms/new", a.AppHandler.SitesAppsNew)
+	secured.Get("/platforms/new", provisioningAllowed, a.AppHandler.SitesAppsNew)
 	secured.Get("/platforms/:ref", func(c *fiber.Ctx) error {
 		kind, id, err := utils.DecodePlatformRef(c.Params("ref"))
 		if err != nil {
@@ -362,8 +387,8 @@ func (a *Application) registerRoutes() {
 			return c.Status(404).SendString("platform not found")
 		}
 	})
-	secured.Post("/platforms", a.AppHandler.SitesAppsCreate)
-	secured.Post("/apps", a.AppHandler.Create)
+	secured.Post("/platforms", provisioningAllowed, a.AppHandler.SitesAppsCreate)
+	secured.Post("/apps", provisioningAllowed, a.AppHandler.Create)
 	secured.Post("/apps/:id", a.AppHandler.Update)
 	secured.Post("/apps/:id/delete", a.AppHandler.Delete)
 	secured.Post("/apps/:id/actions/:action", a.AppHandler.Action)

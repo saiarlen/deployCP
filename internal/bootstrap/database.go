@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 
 	"deploycp/internal/config"
 	"deploycp/internal/models"
+	"deploycp/internal/utils"
 )
 
 func NewDB(cfg *config.Config) (*gorm.DB, error) {
@@ -22,13 +24,13 @@ func NewDB(cfg *config.Config) (*gorm.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := migrate(db); err != nil {
+	if err := migrate(cfg, db); err != nil {
 		return nil, err
 	}
 	return db, nil
 }
 
-func migrate(db *gorm.DB) error {
+func migrate(cfg *config.Config, db *gorm.DB) error {
 	if err := migrateLegacyTableNames(db); err != nil {
 		return err
 	}
@@ -64,7 +66,62 @@ func migrate(db *gorm.DB) error {
 	if err := reconcilePlatformColumns(db); err != nil {
 		return err
 	}
+	if err := reconcileSecretColumns(cfg, db); err != nil {
+		return err
+	}
 	return mergeLegacyAppsIntoPlatforms(db)
+}
+
+func reconcileSecretColumns(cfg *config.Config, db *gorm.DB) error {
+	if err := migrateLegacySecrets(cfg, db, "basic_auths"); err != nil {
+		return err
+	}
+	return migrateLegacySecrets(cfg, db, "ftp_users")
+}
+
+type legacySecretRow struct {
+	ID          uint
+	Password    sql.NullString
+	PasswordEnc sql.NullString `gorm:"column:password_enc"`
+}
+
+func migrateLegacySecrets(cfg *config.Config, db *gorm.DB, table string) error {
+	migrator := db.Migrator()
+	if !migrator.HasTable(table) || !migrator.HasColumn(table, "password") || !migrator.HasColumn(table, "password_enc") {
+		return nil
+	}
+
+	var rows []legacySecretRow
+	if err := db.Table(table).
+		Select("id, password, password_enc").
+		Where("COALESCE(password, '') <> '' AND COALESCE(password_enc, '') = ''").
+		Find(&rows).Error; err != nil {
+		return fmt.Errorf("load legacy secrets from %s: %w", table, err)
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+
+	return db.Transaction(func(tx *gorm.DB) error {
+		for _, row := range rows {
+			if !row.Password.Valid || strings.TrimSpace(row.Password.String) == "" {
+				continue
+			}
+			encrypted, err := utils.EncryptString(cfg.Security.SessionSecret, row.Password.String)
+			if err != nil {
+				return fmt.Errorf("encrypt legacy secret for %s row %d: %w", table, row.ID, err)
+			}
+			if err := tx.Table(table).
+				Where("id = ?", row.ID).
+				Updates(map[string]any{
+					"password_enc": encrypted,
+					"password":     "",
+				}).Error; err != nil {
+				return fmt.Errorf("update legacy secret for %s row %d: %w", table, row.ID, err)
+			}
+		}
+		return nil
+	})
 }
 
 func reconcilePlatformColumns(db *gorm.DB) error {

@@ -138,6 +138,9 @@ func (s *PreflightService) Run(_ context.Context) PreflightReport {
 	}{
 		{"varnish_main_vcl", s.cfg.Managed.VarnishMainVCL},
 		{"varnish_include_vcl", s.cfg.Managed.VarnishIncludeVCL},
+		{"logrotate_config", "/etc/logrotate.d/deploycp"},
+		{"backup_cron", "/etc/cron.d/deploycp-backup"},
+		{"fail2ban_jail", "/etc/fail2ban/jail.d/deploycp.local"},
 	} {
 		if strings.TrimSpace(file.path) == "" {
 			add("file:"+file.name, "warn", "not configured")
@@ -148,6 +151,21 @@ func (s *PreflightService) Run(_ context.Context) PreflightReport {
 			continue
 		}
 		add("file:"+file.name, "ok", file.path)
+	}
+	if status := selinuxStatus(); status == "" {
+		add("selinux", "warn", "SELinux not detected or disabled")
+	} else {
+		add("selinux", "ok", status)
+	}
+	if status := appArmorStatus(); status == "" {
+		add("apparmor", "warn", "AppArmor not detected or disabled")
+	} else {
+		add("apparmor", "ok", status)
+	}
+	if fail2banStatus := serviceUnitState("fail2ban"); fail2banStatus == "" {
+		add("service:fail2ban", "warn", "fail2ban service not active")
+	} else {
+		add("service:fail2ban", "ok", fail2banStatus)
 	}
 	if mainVCL := strings.TrimSpace(s.cfg.Managed.VarnishMainVCL); mainVCL != "" {
 		if content, err := os.ReadFile(mainVCL); err == nil {
@@ -183,16 +201,61 @@ func (s *PreflightService) Run(_ context.Context) PreflightReport {
 		}
 	}
 
-	if strings.TrimSpace(s.cfg.Managed.MariaDBAdminUser) == "" || strings.TrimSpace(s.cfg.Managed.MariaDBAdminPass) == "" {
-		add("managed:mariadb_admin", "warn", "managed MariaDB provisioning disabled until admin credentials are configured")
+	if strings.TrimSpace(s.cfg.Managed.MariaDBAdminUser) == "" {
+		add("managed:mariadb_admin", "warn", "managed MariaDB provisioning disabled — MARIADB_ADMIN_USER not set")
+	} else if strings.TrimSpace(s.cfg.Managed.MariaDBAdminPass) == "" {
+		add("managed:mariadb_admin", "ok", "configured (socket auth)")
 	} else {
 		add("managed:mariadb_admin", "ok", "configured")
 	}
-	if strings.TrimSpace(s.cfg.Managed.PostgresAdminUser) == "" || strings.TrimSpace(s.cfg.Managed.PostgresAdminPass) == "" {
-		add("managed:postgres_admin", "warn", "managed PostgreSQL provisioning disabled until admin credentials are configured")
+	if strings.TrimSpace(s.cfg.Managed.PostgresAdminUser) == "" {
+		add("managed:postgres_admin", "warn", "managed PostgreSQL provisioning disabled — POSTGRES_ADMIN_USER not set")
+	} else if strings.TrimSpace(s.cfg.Managed.PostgresAdminPass) == "" {
+		add("managed:postgres_admin", "ok", "configured (peer/socket auth)")
 	} else {
 		add("managed:postgres_admin", "ok", "configured")
 	}
 
 	return report
+}
+
+func serviceUnitState(name string) string {
+	if _, err := exec.LookPath("systemctl"); err != nil {
+		return ""
+	}
+	out, err := exec.Command("systemctl", "is-active", name).CombinedOutput()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func selinuxStatus() string {
+	if _, err := exec.LookPath("getenforce"); err == nil {
+		out, cmdErr := exec.Command("getenforce").CombinedOutput()
+		if cmdErr == nil {
+			status := strings.TrimSpace(string(out))
+			if status != "" && !strings.EqualFold(status, "disabled") {
+				return "SELinux " + status
+			}
+		}
+	}
+	if data, err := os.ReadFile("/sys/fs/selinux/enforce"); err == nil {
+		switch strings.TrimSpace(string(data)) {
+		case "1":
+			return "SELinux Enforcing"
+		case "0":
+			return "SELinux Permissive"
+		}
+	}
+	return ""
+}
+
+func appArmorStatus() string {
+	if data, err := os.ReadFile("/sys/module/apparmor/parameters/enabled"); err == nil {
+		if strings.EqualFold(strings.TrimSpace(string(data)), "Y") {
+			return "AppArmor enabled"
+		}
+	}
+	return ""
 }

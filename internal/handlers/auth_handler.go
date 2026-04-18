@@ -36,6 +36,40 @@ func NewAuthHandler(
 	}
 }
 
+func (h *AuthHandler) SetupPage(c *fiber.Ctx) error {
+	if !h.auth.NeedsSetup() {
+		return c.Redirect("/login")
+	}
+	theme := normalizeTheme(c.Locals("ui_theme"))
+	if theme == "" {
+		theme = "light"
+	}
+	return c.Render("auth_setup", fiber.Map{
+		"Title":        "Create Admin Account",
+		"AppName":      h.base.Config.App.Name,
+		"Flash":        h.base.Sessions.PullFlash(c),
+		"CSRFToken":    csrfTokenFromContext(c),
+		"Theme":        theme,
+		"AssetVersion": assetVersion(),
+	})
+}
+
+func (h *AuthHandler) SetupCreate(c *fiber.Ctx) error {
+	if !h.auth.NeedsSetup() {
+		return c.Redirect("/login")
+	}
+	name := strings.TrimSpace(c.FormValue("name"))
+	email := strings.TrimSpace(c.FormValue("email"))
+	username := strings.TrimSpace(c.FormValue("username"))
+	password := c.FormValue("password")
+	if err := h.auth.CreateInitialAdmin(name, email, username, password); err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect("/setup")
+	}
+	h.base.Sessions.SetFlash(c, "Admin account created. Sign in to continue.")
+	return c.Redirect("/login")
+}
+
 func (h *AuthHandler) LoginPage(c *fiber.Ctx) error {
 	theme := normalizeTheme(c.Locals("ui_theme"))
 	if theme == "" {

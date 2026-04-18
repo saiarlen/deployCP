@@ -688,6 +688,7 @@ func (h *AppHandler) ManageCreateFTPUser(c *fiber.Ctx) error {
 		return c.Redirect(platformURLWithTab("app", id, "ssh"))
 	}
 	password := strings.TrimSpace(c.FormValue("password"))
+	generated := password == ""
 	if password == "" {
 		password = utils.GeneratePassword()
 	}
@@ -710,7 +711,11 @@ func (h *AppHandler) ManageCreateFTPUser(c *fiber.Ctx) error {
 		h.base.Sessions.SetFlash(c, "FTP user created")
 		return c.Redirect(platformURLWithTab("app", id, "ssh"))
 	}
-	h.base.Sessions.SetFlash(c, "FTP user created")
+	if generated {
+		h.base.Sessions.SetFlash(c, "FTP user created. Generated password: "+password)
+	} else {
+		h.base.Sessions.SetFlash(c, "FTP user created")
+	}
 	return c.Redirect(platformURLWithTab("app", id, "ssh"))
 }
 

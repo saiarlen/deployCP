@@ -56,6 +56,11 @@ func (s *FTPService) Create(ctx context.Context, item *models.FTPUser, actor *ui
 	if strings.TrimSpace(item.Password) == "" {
 		item.Password = utils.GeneratePassword()
 	}
+	encrypted, err := utils.EncryptString(s.cfg.Security.SessionSecret, item.Password)
+	if err != nil {
+		return err
+	}
+	item.PasswordEnc = encrypted
 	if err := os.MkdirAll(item.HomeDir, 0o750); err != nil {
 		return err
 	}
@@ -132,7 +137,11 @@ func (s *FTPService) ReconcileUsers(ctx context.Context, actor *uint, ip string)
 		if err := os.MkdirAll(items[i].HomeDir, 0o750); err != nil {
 			return err
 		}
-		if err := s.ensureSystemUser(ctx, items[i].Username, items[i].Password, items[i].HomeDir, actor, ip); err != nil {
+		password, decErr := utils.DecryptString(s.cfg.Security.SessionSecret, items[i].PasswordEnc)
+		if decErr != nil {
+			return decErr
+		}
+		if err := s.ensureSystemUser(ctx, items[i].Username, password, items[i].HomeDir, actor, ip); err != nil {
 			return err
 		}
 	}
