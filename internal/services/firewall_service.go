@@ -279,7 +279,7 @@ func (s *FirewallService) applyUFW(ctx context.Context, rule *models.PanelFirewa
 }
 
 func (s *FirewallService) deleteUFW(ctx context.Context, rule *models.PanelFirewallRule, actor *uint, ip string) error {
-	args, err := s.ufwRuleArgs([]string{"delete", rule.Action}, rule)
+	args, err := s.ufwRuleArgs([]string{"--force", "delete", rule.Action}, rule)
 	if err != nil {
 		return err
 	}
@@ -294,7 +294,7 @@ func (s *FirewallService) deleteUFW(ctx context.Context, rule *models.PanelFirew
 	if err == nil {
 		s.audit.Record(actor, "firewall.delete", "firewall_rule", fmt.Sprintf("%d", rule.ID), ip, map[string]any{"backend": "ufw", "name": rule.Name})
 	}
-	return nil
+	return err
 }
 
 func (s *FirewallService) ufwRuleArgs(prefix []string, rule *models.PanelFirewallRule) ([]string, error) {
@@ -359,7 +359,7 @@ func (s *FirewallService) deleteFirewalld(ctx context.Context, rule *models.Pane
 			ActorUserID: actor,
 			IP:          ip,
 		}); err != nil {
-			return nil
+			return err
 		}
 	}
 	s.audit.Record(actor, "firewall.delete", "firewall_rule", fmt.Sprintf("%d", rule.ID), ip, map[string]any{"backend": "firewalld", "name": rule.Name})
@@ -404,7 +404,7 @@ func (s *FirewallService) applyIPTables(ctx context.Context, rule *models.PanelF
 }
 
 func (s *FirewallService) deleteIPTables(ctx context.Context, rule *models.PanelFirewallRule, actor *uint, ip string) error {
-	_, _ = s.runner.Run(ctx, system.CommandRequest{
+	_, err := s.runner.Run(ctx, system.CommandRequest{
 		Binary:      s.cfg.Paths.IPTablesBinary,
 		Args:        s.iptablesArgs("-D", rule),
 		Timeout:     20 * time.Second,
@@ -412,6 +412,9 @@ func (s *FirewallService) deleteIPTables(ctx context.Context, rule *models.Panel
 		ActorUserID: actor,
 		IP:          ip,
 	})
+	if err != nil {
+		return err
+	}
 	s.audit.Record(actor, "firewall.delete", "firewall_rule", fmt.Sprintf("%d", rule.ID), ip, map[string]any{"backend": "iptables", "name": rule.Name})
 	return nil
 }
@@ -472,7 +475,8 @@ func normalizedRuleProtocol(value string) string {
 
 func normalizedRuleSource(value string) string {
 	v := strings.TrimSpace(value)
-	if v == "" {
+	switch strings.ToLower(v) {
+	case "", "0.0.0.0/0", "::/0", "anywhere", "anywhere (v6)", "any":
 		return "0.0.0.0/0"
 	}
 	return v

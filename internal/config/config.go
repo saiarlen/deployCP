@@ -103,7 +103,7 @@ type ManagedConfig struct {
 }
 
 func Load() (*Config, error) {
-	_ = godotenv.Load()
+	loadEnvFiles()
 
 	cfg := &Config{
 		App: AppConfig{
@@ -192,6 +192,35 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+func loadEnvFiles() {
+	candidates := make([]string, 0, 4)
+	if explicit := strings.TrimSpace(os.Getenv("DEPLOYCP_ENV_FILE")); explicit != "" {
+		candidates = append(candidates, explicit)
+	}
+	candidates = append(candidates, ".env")
+	if exePath, err := os.Executable(); err == nil && strings.TrimSpace(exePath) != "" {
+		exeDir := filepath.Dir(exePath)
+		candidates = append(candidates,
+			filepath.Join(exeDir, ".env"),
+			filepath.Join(filepath.Dir(exeDir), ".env"),
+		)
+	}
+	seen := map[string]struct{}{}
+	for _, candidate := range candidates {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			continue
+		}
+		if _, ok := seen[candidate]; ok {
+			continue
+		}
+		seen[candidate] = struct{}{}
+		if _, err := os.Stat(candidate); err == nil {
+			_ = godotenv.Overload(candidate)
+		}
+	}
 }
 
 // applyDryrunPaths redirects system paths to local storage so dryrun mode

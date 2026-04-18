@@ -132,8 +132,8 @@ func (s *WebsiteService) Create(ctx context.Context, in WebsiteInput, actor *uin
 		return nil, err
 	}
 	platformHome := platformHomeFromWebRoot(in.RootPath)
-	// Create the full platform directory structure.
-	for _, sub := range []string{"", "htdocs", "logs", "backups", "tmp"} {
+	// Create the platform home plus the folders that are actually used.
+	for _, sub := range []string{"", "htdocs", "logs"} {
 		if err := os.MkdirAll(filepath.Join(platformHome, sub), 0o755); err != nil {
 			return nil, fmt.Errorf("create platform directory: %w", err)
 		}

@@ -112,8 +112,17 @@ if [[ -x "${CORE_DIR}/scripts/linux/harden-host.sh" ]]; then
   bash "${CORE_DIR}/scripts/linux/harden-host.sh"
 fi
 systemctl daemon-reload
-"${CORE_DIR}/bin/${BIN_NAME}" bootstrap-host
+(
+  cd "${CORE_DIR}"
+  DEPLOYCP_ENV_FILE="${CORE_DIR}/.env" "${CORE_DIR}/bin/${BIN_NAME}" bootstrap-host
+)
 systemctl start "${SERVICE_NAME}"
-"${CORE_DIR}/bin/${BIN_NAME}" reconcile-managed
-"${CORE_DIR}/bin/${BIN_NAME}" verify-host || true
+(
+  cd "${CORE_DIR}"
+  DEPLOYCP_ENV_FILE="${CORE_DIR}/.env" "${CORE_DIR}/bin/${BIN_NAME}" reconcile-managed
+)
+(
+  cd "${CORE_DIR}"
+  DEPLOYCP_ENV_FILE="${CORE_DIR}/.env" "${CORE_DIR}/bin/${BIN_NAME}" verify-host
+) || true
 systemctl status "${SERVICE_NAME}" --no-pager || true

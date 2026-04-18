@@ -379,7 +379,7 @@ function hideAllPanels(){
   $('#sa-domain').on('input change', function(){
     var domain = $.trim($(this).val()).replace(/^\*\./, 'wildcard-');
     if (!domain) return;
-    var path = siteRoot + '/' + domain;
+    var path = siteRoot + '/' + domain + '/htdocs';
     $('.sa-workdir').each(function(){
       if (!$(this).data('user-edited')) $(this).val(path);
     });

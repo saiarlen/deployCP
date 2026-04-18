@@ -697,10 +697,19 @@ ensure_service_enabled "$VARNISH_SERVICE_NAME"
 ensure_service_enabled "$CRON_SERVICE_NAME"
 
 if [[ -x "${CORE_DIR}/bin/${BIN_NAME}" ]]; then
-  "${CORE_DIR}/bin/${BIN_NAME}" bootstrap-host
-  "${CORE_DIR}/bin/${BIN_NAME}" reconcile-managed
+  (
+    cd "${CORE_DIR}"
+    DEPLOYCP_ENV_FILE="${CORE_DIR}/.env" "${CORE_DIR}/bin/${BIN_NAME}" bootstrap-host
+  )
+  (
+    cd "${CORE_DIR}"
+    DEPLOYCP_ENV_FILE="${CORE_DIR}/.env" "${CORE_DIR}/bin/${BIN_NAME}" reconcile-managed
+  )
   systemctl start "${SERVICE_NAME}"
-  "${CORE_DIR}/bin/${BIN_NAME}" verify-host || true
+  (
+    cd "${CORE_DIR}"
+    DEPLOYCP_ENV_FILE="${CORE_DIR}/.env" "${CORE_DIR}/bin/${BIN_NAME}" verify-host
+  ) || true
 
   # Resolve display values for the post-install message.
   DISPLAY_PORT="$(read_env_value "${CORE_DIR}/.env" "APP_PORT")"

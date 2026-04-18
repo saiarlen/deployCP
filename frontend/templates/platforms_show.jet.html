@@ -2021,16 +2021,11 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
       <div class="fm-toolbar-main">
         <div class="fm-toolbar-top">
           <div class="fm-toolbar-titleline">
-            <!-- <span class="fm-toolbar-title">File Manager</span> -->
-            <div class="fm-root-row">
-              <span class="fm-root-label">Root</span>
-              <span class="fm-root-value" id="fm-root-path">{{ FileManagerRoot }}</span>
-            </div>
-            <div class="fm-breadcrumb-row">
+            <div class="fm-location-bar">
               <button class="btn btn-ghost fm-nav-btn" id="fm-btn-back" type="button" title="Back">
                 <i data-lucide="arrow-left"></i>
               </button>
-              <div class="fm-breadcrumb" id="fm-breadcrumb"></div>
+              <div class="fm-location-value" id="fm-location-path">{{ FileManagerRoot }}</div>
             </div>
           </div>
           <div class="fm-actions">
@@ -2205,21 +2200,12 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
 <style>
   /* Custom File Manager */
   .fm { border: 1px solid var(--border); border-radius: var(--radius-xl); background: linear-gradient(180deg, color-mix(in srgb, var(--bg-card) 92%, var(--bg-elevated)) 0%, var(--bg-card) 100%); overflow: hidden; display: flex; flex-direction: column; min-height: 660px; }
-  .fm-toolbar { padding: 12px 16px 10px; background: color-mix(in srgb, var(--bg-elevated) 96%, var(--bg-card)); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .fm-toolbar { padding: 12px 16px; background: color-mix(in srgb, var(--bg-elevated) 96%, var(--bg-card)); border-bottom: 1px solid var(--border); flex-shrink: 0; }
   .fm-toolbar-main { min-width: 0; }
   .fm-toolbar-top { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
-  .fm-toolbar-titleline { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
-  .fm-toolbar-title { font-size: 0.82rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text); flex-shrink: 0; }
-  .fm-root-row { display: inline-flex; align-items: center; gap: 8px; min-width: 0; max-width: min(28vw, 360px); padding: 4px 9px; border: 1px solid var(--border); border-radius: 999px; background: color-mix(in srgb, var(--bg-card) 90%, var(--bg-elevated)); flex-shrink: 0; }
-  .fm-root-label { font-size: 0.66rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); flex-shrink: 0; }
-  .fm-root-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 0.76rem; color: var(--text); }
-  .fm-breadcrumb-row { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; margin-left: 2px; }
-  .fm-breadcrumb { display: flex; align-items: center; gap: 4px; font-size: 0.83rem; color: var(--text-sec); min-width: 0; overflow: hidden; flex: 1; }
-  .fm-breadcrumb-item { cursor: pointer; padding: 3px 7px; border-radius: 999px; white-space: nowrap; color: var(--text-sec); }
-  .fm-breadcrumb-item:hover { background: var(--bg-hover); color: var(--text); }
-  .fm-breadcrumb-item.is-active { color: var(--text); font-weight: 700; cursor: default; background: color-mix(in srgb, var(--bg-hover) 70%, transparent); }
-  .fm-breadcrumb-item.is-active:hover { background: color-mix(in srgb, var(--bg-hover) 70%, transparent); }
-  .fm-breadcrumb-sep { color: var(--text-muted); font-size: 0.75rem; flex-shrink: 0; }
+  .fm-toolbar-titleline { display: flex; align-items: center; min-width: 0; flex: 1; }
+  .fm-location-bar { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
+  .fm-location-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 0.8rem; color: var(--text); padding: 8px 12px; border-radius: 12px; border: 1px solid var(--border); background: color-mix(in srgb, var(--bg-card) 92%, var(--bg-elevated)); }
   .fm-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; flex-shrink: 0; }
   .fm-btn { height: 1.95rem; min-width: 1.95rem; padding: 0 0.55rem; display: inline-flex; align-items: center; justify-content: center; }
   .fm-btn [data-lucide] { width: 14px; height: 14px; stroke-width: 2; }
@@ -2237,7 +2223,6 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
   .fm-tree-item [data-lucide] { width: 14px; height: 14px; stroke-width: 2; flex-shrink: 0; }
   .fm-tree-icon { width: 1.7rem; height: 1.7rem; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--bg-card) 92%, var(--bg-elevated)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 78%, transparent); flex-shrink: 0; }
   .fm-tree-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .fm-tree-children { padding-left: 14px; }
   .fm-filelist { display: flex; flex-direction: column; min-width: 880px; }
   .fm-filelist-head { display: grid; grid-template-columns: minmax(280px,1.8fr) 100px 130px 95px 150px 110px; gap: 12px; padding: 10px 16px; font-size: 0.69rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--bg-subtle) 94%, var(--bg-card)); position: sticky; top: 0; z-index: 1; }
   .fm-file-row { display: grid; grid-template-columns: minmax(280px,1.8fr) 100px 130px 95px 150px 110px; gap: 12px; padding: 10px 16px; font-size: 0.84rem; color: var(--text-sec); border-bottom: 1px solid var(--border); cursor: pointer; align-items: center; }
@@ -2329,15 +2314,14 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
   @media (max-width: 980px) {
     .fm-toolbar-top, .fm-toolbar-titleline { flex-direction: column; align-items: stretch; }
     .fm-actions { justify-content: flex-start; }
-    .fm-root-row { max-width: 100%; }
+    .fm-location-bar { width: 100%; }
     .fm-sidebar { width: 190px; }
     .fm-filelist-head, .fm-file-row { grid-template-columns: minmax(240px,1.8fr) 90px 110px 80px 130px 96px; }
   }
   @media (max-width: 720px) {
     .fm { min-height: 560px; }
     .fm-sidebar { display: none; }
-    .fm-root-row, .fm-breadcrumb-row { align-items: flex-start; flex-direction: row; }
-    .fm-root-row { max-width: 100%; width: 100%; }
+    .fm-location-bar { width: 100%; }
     .fm-actions { width: 100%; }
     .fm-filelist { min-width: 0; }
     .fm-filelist-head, .fm-file-row { grid-template-columns: minmax(0,1fr) 74px 92px; }
@@ -2451,6 +2435,7 @@ $(function () {
     var fmCwd = '';
     var fmCwdParent = '';
     var fmCwdPath = '/';
+    var fmRootHash = '';
     var fmSelected = null;
     var fmClipboard = null;
     var fmUploadQueue = [];
@@ -2526,7 +2511,7 @@ $(function () {
         dataType: 'json'
       }).done(function(data) {
         if (data && data.error) {
-          fmToast(false, data.error);
+          if (!(options && options.silentError)) fmToast(false, data.error);
           if (onErr) onErr(data.error, data);
           return;
         }
@@ -2534,7 +2519,7 @@ $(function () {
       }).fail(function(xhr) {
         var msg = 'File manager request failed';
         if (xhr && xhr.responseJSON && xhr.responseJSON.error) msg = xhr.responseJSON.error;
-        fmToast(false, msg);
+        if (!(options && options.silentError)) fmToast(false, msg);
         if (onErr) onErr(msg, xhr);
       }).always(function() {
         if (options && options.button) fmSetButtonLoading(options.button, false);
@@ -2847,42 +2832,45 @@ $(function () {
       });
     }
 
-    function fmRenderBreadcrumb(path) {
-      var $bc = $('#fm-breadcrumb').empty();
-      var parts = path.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean);
-      parts.unshift('Root');
-      parts.forEach(function(p, i) {
-        if (i > 0) $bc.append('<span class="fm-breadcrumb-sep">/</span>');
-        var hash = (i === 0) ? '' : '/' + parts.slice(1, i + 1).join('/');
-        var $item = $('<span class="fm-breadcrumb-item"></span>').text(p);
-        if (i === parts.length - 1) {
-          $item.addClass('is-active');
-        } else {
-          $item.data('hash', hash).on('click', function() { fmOpen($(this).data('hash')); });
-        }
-        $bc.append($item);
-      });
+    function fmUpdateLocationPath() {
+      var fullPath = String(fmRootPath || '').replace(/\/$/, '');
+      if (fmCwdPath && fmCwdPath !== '/') fullPath += fmCwdPath;
+      $('#fm-location-path').text(fullPath || '/');
     }
 
-    function fmRenderTree(files, $container) {
-      if (!$container) $container = $('#fm-sidebar').empty();
-      files.forEach(function(f) {
-        if (f.mime !== 'directory') return;
-        var icon = fmSidebarIcon(f.name);
+    function fmRenderTree() {
+      var $sidebar = $('#fm-sidebar').empty();
+      var pathParts = fmCwdPath.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean);
+      var rootHash = fmRootHash || '';
+
+      function appendItem(entry, depth, active) {
+        var icon = entry.isRoot ? 'hard-drive' : fmSidebarIcon(entry.name);
         var $item = $('<div class="fm-tree-item"></div>');
-        $item.html('<span class="fm-tree-icon"><i data-lucide="' + icon + '"></i></span><span class="fm-tree-label">' + fmEscape(f.name) + '</span>');
-        if (f.hash === fmCwd) $item.addClass('is-active');
-        $item.data('hash', f.hash).on('click', function() { fmOpen($(this).data('hash')); });
-        $container.append($item);
-        if (f.dirs) {
-          var $children = $('<div class="fm-tree-children"></div>');
-          $container.append($children);
-          fmApi({ cmd: 'tree', target: f.hash }, function(data) {
-            if (data.tree) fmRenderTree(data.tree, $children);
+        $item.css('padding-left', (9 + depth * 14) + 'px');
+        $item.html('<span class="fm-tree-icon"><i data-lucide="' + icon + '"></i></span><span class="fm-tree-label">' + fmEscape(entry.name) + '</span>');
+        if (active) $item.addClass('is-active');
+        $item.data('hash', entry.hash).on('click', function() { fmOpen($(this).data('hash')); });
+        $sidebar.append($item);
+      }
+
+      appendItem({ name: 'Root', hash: rootHash, isRoot: true }, 0, pathParts.length === 0);
+
+      function loadLevel(targetHash, depth, remainingParts) {
+        fmApi({ cmd: 'tree', target: targetHash }, function(data) {
+          var dirs = (data.tree || []).filter(function(f){ return f.mime === 'directory'; });
+          dirs.sort(function(a, b) { return a.name.toLowerCase().localeCompare(b.name.toLowerCase()); });
+          dirs.forEach(function(entry) {
+            var onActiveBranch = remainingParts.length > 0 && entry.name === remainingParts[0];
+            appendItem(entry, depth, onActiveBranch && remainingParts.length === 1);
+            if (onActiveBranch) {
+              loadLevel(entry.hash, depth + 1, remainingParts.slice(1));
+            }
           });
-        }
-      });
-      if (typeof lucide !== 'undefined') lucide.createIcons();
+          if (typeof lucide !== 'undefined') lucide.createIcons();
+        }, null, { silentError: true });
+      }
+
+      loadLevel(rootHash, 1, pathParts);
     }
 
     function fmSidebarIcon(name) {
@@ -2971,14 +2959,15 @@ $(function () {
       }
       fmApi(params, function(data) {
         fmCwd = data.cwd ? data.cwd.hash : hash;
+        if (!fmRootHash && data.cwd && data.options && data.options.path === '/') {
+          fmRootHash = data.cwd.hash;
+        }
         fmCwdParent = data.cwd ? (data.cwd.phash || '') : '';
         fmCwdPath = data.options && data.options.path ? data.options.path : '/';
         fmSelected = null;
-        fmRenderBreadcrumb(fmCwdPath);
+        fmUpdateLocationPath();
         fmRenderFiles(data.files || []);
-        if (params.init === '1' && data.files) {
-          fmRenderTree(data.files.filter(function(item){ return item.mime === 'directory'; }));
-        }
+        fmRenderTree();
         fmUpdateStatusbar((data.files || []).filter(function(item){ return !item.volumeid; }).length);
       });
     }
@@ -3160,7 +3149,7 @@ $(function () {
       }
     });
 
-    $('#fm-root-path').text(fmRootPath);
+    fmUpdateLocationPath();
     fmOpen('');
   }
 
