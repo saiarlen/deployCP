@@ -93,15 +93,21 @@ fi
 echo "Verifying ${ASSET}"
 (
   cd "$TMP_DIR"
+  expected_hash="$(awk 'NF {print $1; exit}' "${ASSET}.sha256")"
+  if [[ -z "$expected_hash" ]]; then
+    echo "invalid checksum file for ${ASSET}" >&2
+    exit 1
+  fi
+  printf '%s  %s\n' "$expected_hash" "$ASSET" > "${ASSET}.sha256.normalized"
   case "$CHECKSUM_CMD" in
     "sha256sum")
-      sha256sum -c "${ASSET}.sha256"
+      sha256sum -c "${ASSET}.sha256.normalized"
       ;;
     "shasum -a 256")
-      shasum -a 256 -c "${ASSET}.sha256"
+      shasum -a 256 -c "${ASSET}.sha256.normalized"
       ;;
     "openssl dgst -sha256")
-      expected="$(awk '{print $1}' "${ASSET}.sha256")"
+      expected="$expected_hash"
       actual="$(openssl dgst -sha256 "${ASSET}" | awk '{print $NF}')"
       if [[ "$expected" != "$actual" ]]; then
         echo "checksum verification failed for ${ASSET}" >&2
