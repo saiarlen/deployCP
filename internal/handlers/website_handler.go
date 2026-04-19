@@ -386,6 +386,7 @@ func (h *WebsiteHandler) ManageCreateSiteUser(c *fiber.Ctx) error {
 		return c.Redirect(platformURLWithTab("website", id, "ssh"))
 	}
 	_ = item
+	_ = h.service.RefreshConfig(c.Context(), id)
 	if strings.TrimSpace(c.FormValue("password")) == "" {
 		h.base.Sessions.SetFlash(c, "SSH user created. Generated password: "+generatedPassword)
 	} else {
@@ -436,6 +437,7 @@ func (h *WebsiteHandler) ManageDeleteSiteUser(c *fiber.Ctx) error {
 	if err := h.siteUserService.Delete(c.Context(), uid, currentUserID(c), c.IP()); err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
 	} else {
+		_ = h.service.RefreshConfig(c.Context(), id)
 		h.base.Sessions.SetFlash(c, "SSH user deleted")
 	}
 	return c.Redirect(platformURLWithTab("website", id, "ssh"))
@@ -978,8 +980,10 @@ func (h *WebsiteHandler) ManageCreateFTPUser(c *fiber.Ctx) error {
 		return c.Redirect(platformURLWithTab("website", id, "ssh"))
 	}
 	if generated {
+		_ = h.service.RefreshConfig(c.Context(), id)
 		h.base.Sessions.SetFlash(c, "FTP user created. Generated password: "+password)
 	} else {
+		_ = h.service.RefreshConfig(c.Context(), id)
 		h.base.Sessions.SetFlash(c, "FTP user created")
 	}
 	return c.Redirect(platformURLWithTab("website", id, "ssh"))
@@ -996,6 +1000,7 @@ func (h *WebsiteHandler) ManageDeleteFTPUser(c *fiber.Ctx) error {
 	} else {
 		_ = h.ftpUsers.Delete(fid)
 	}
+	_ = h.service.RefreshConfig(c.Context(), id)
 	return c.Redirect(platformURLWithTab("website", id, "ssh"))
 }
 

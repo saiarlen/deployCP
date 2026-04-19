@@ -260,6 +260,14 @@ func (u *userManager) ChownRecursive(ctx context.Context, username, path string)
 	return err
 }
 
+func (u *userManager) SyncSharedAccess(_ context.Context, root, primaryUser, groupName string, members []string) error {
+	_ = root
+	_ = primaryUser
+	_ = groupName
+	_ = members
+	return nil
+}
+
 type nginxManager struct{ runner *system.Runner }
 
 func (n *nginxManager) Validate(ctx context.Context, nginxBinary string) error {

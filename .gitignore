@@ -15,6 +15,7 @@ Thumbs.db
 # Go build / test artifacts
 *.test
 *.out
+.ai.md
 *.coverprofile
 coverage.out
 cover.out

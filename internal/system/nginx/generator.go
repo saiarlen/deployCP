@@ -138,6 +138,10 @@ func renderServerContent(body *strings.Builder, site *models.Website, opts Websi
 	} else {
 		body.WriteString(fmt.Sprintf("    root %s;\n", site.RootPath))
 		body.WriteString("    index index.html index.htm;\n")
+		body.WriteString("    error_page 404 /_deploycp_404.html;\n")
+		body.WriteString("    location = /_deploycp_404.html {\n")
+		body.WriteString("        internal;\n")
+		body.WriteString("    }\n")
 		body.WriteString("    location / {\n")
 		body.WriteString("        try_files $uri $uri/ =404;\n")
 		body.WriteString("    }\n")

@@ -157,6 +157,7 @@ if [ ! -d "$allowed" ]; then
   fi
 fi
 export PATH=/usr/local/bin:/usr/bin:/bin
+umask 0002
 runtime_env="$allowed/.deploycp/runtime.env"
 if [ -f "$runtime_env" ]; then
   . "$runtime_env"
@@ -311,21 +312,18 @@ func (u *userManager) Create(ctx context.Context, spec platform.SiteUserSpec) (i
 	// Ensure every parent directory up to the home is world-traversable (o+x)
 	// so SSH and the login shell can reach the home directory.
 	ensureParentTraversable(spec.HomeDir)
-	_, err := u.runner.Run(ctx, system.CommandRequest{Binary: "/usr/sbin/useradd", Args: []string{"-m", "-d", spec.HomeDir, "-s", spec.ShellPath, spec.Username}, Timeout: 20 * time.Second, AuditAction: "site_user.create"})
+	_, err := u.runner.Run(ctx, system.CommandRequest{Binary: "/usr/sbin/useradd", Args: []string{"-M", "-d", spec.HomeDir, "-s", spec.ShellPath, spec.Username}, Timeout: 20 * time.Second, AuditAction: "site_user.create"})
 	if err != nil {
 		return 0, 0, err
 	}
 	if err := u.SetPassword(ctx, spec.Username, spec.Password); err != nil {
 		return 0, 0, err
 	}
-	if _, err := u.runner.Run(ctx, system.CommandRequest{Binary: "/bin/chown", Args: []string{"-R", spec.Username + ":" + spec.Username, spec.HomeDir}, Timeout: 15 * time.Second, AuditAction: "site_user.chown"}); err != nil {
-		return 0, 0, err
-	}
 	if _, err := u.runner.Run(ctx, system.CommandRequest{Binary: "/bin/chmod", Args: []string{"755", spec.HomeDir}, Timeout: 5 * time.Second, AuditAction: "site_user.home.chmod"}); err != nil {
 		return 0, 0, err
 	}
 	allowed := filepath.Join(spec.HomeDir, ".deploycp_allowed_root")
-	if err := utils.WriteFileAtomic(allowed, []byte(spec.AllowedRoot+"\n"), 0o600); err != nil {
+	if err := utils.WriteFileAtomic(allowed, []byte(spec.AllowedRoot+"\n"), 0o644); err != nil {
 		return 0, 0, err
 	}
 	if _, err := u.runner.Run(ctx, system.CommandRequest{Binary: "/bin/chown", Args: []string{spec.Username + ":" + spec.Username, allowed}, Timeout: 5 * time.Second}); err != nil {
@@ -348,7 +346,7 @@ func (u *userManager) SyncHome(ctx context.Context, username, homeDir, allowedRo
 		return err
 	}
 	allowed := filepath.Join(homeDir, ".deploycp_allowed_root")
-	if err := utils.WriteFileAtomic(allowed, []byte(strings.TrimSpace(allowedRoot)+"\n"), 0o600); err != nil {
+	if err := utils.WriteFileAtomic(allowed, []byte(strings.TrimSpace(allowedRoot)+"\n"), 0o644); err != nil {
 		return err
 	}
 	if _, err := u.runner.Run(ctx, system.CommandRequest{
@@ -411,6 +409,99 @@ func (u *userManager) Delete(ctx context.Context, username string) error {
 func (u *userManager) ChownRecursive(ctx context.Context, username, path string) error {
 	_, err := u.runner.Run(ctx, system.CommandRequest{Binary: "/bin/chown", Args: []string{"-R", username + ":" + username, path}, Timeout: 20 * time.Second, AuditAction: "site_user.chown"})
 	return err
+}
+
+func (u *userManager) SyncSharedAccess(ctx context.Context, root, primaryUser, groupName string, members []string) error {
+	root = filepath.Clean(strings.TrimSpace(root))
+	groupName = strings.TrimSpace(groupName)
+	if root == "" || root == "." || groupName == "" {
+		return nil
+	}
+	if err := os.MkdirAll(root, 0o775); err != nil {
+		return err
+	}
+	if _, err := u.runner.Run(ctx, system.CommandRequest{
+		Binary:      "/usr/sbin/groupadd",
+		Args:        []string{"-f", groupName},
+		Timeout:     15 * time.Second,
+		AuditAction: "site_user.group.ensure",
+	}); err != nil {
+		return err
+	}
+	seen := map[string]struct{}{}
+	allMembers := make([]string, 0, len(members)+1)
+	if primary := strings.TrimSpace(primaryUser); primary != "" {
+		seen[primary] = struct{}{}
+		allMembers = append(allMembers, primary)
+	}
+	for _, member := range members {
+		member = strings.TrimSpace(member)
+		if member == "" {
+			continue
+		}
+		if _, ok := seen[member]; ok {
+			continue
+		}
+		seen[member] = struct{}{}
+		allMembers = append(allMembers, member)
+	}
+	for _, member := range allMembers {
+		if _, err := u.runner.Run(ctx, system.CommandRequest{
+			Binary:      "/usr/sbin/usermod",
+			Args:        []string{"-a", "-G", groupName, member},
+			Timeout:     15 * time.Second,
+			AuditAction: "site_user.group.member",
+		}); err != nil {
+			return err
+		}
+	}
+	if primary := strings.TrimSpace(primaryUser); primary != "" {
+		_, _ = u.runner.Run(ctx, system.CommandRequest{
+			Binary:      "/bin/chown",
+			Args:        []string{primary + ":" + groupName, root},
+			Timeout:     10 * time.Second,
+			AuditAction: "site_user.shared.chown_root",
+		})
+	}
+	if _, err := u.runner.Run(ctx, system.CommandRequest{
+		Binary:      "/bin/chgrp",
+		Args:        []string{"-R", groupName, root},
+		Timeout:     60 * time.Second,
+		AuditAction: "site_user.shared.chgrp",
+	}); err != nil {
+		return err
+	}
+	if _, err := u.runner.Run(ctx, system.CommandRequest{
+		Binary:      "/bin/chmod",
+		Args:        []string{"-R", "g+rwX", root},
+		Timeout:     60 * time.Second,
+		AuditAction: "site_user.shared.chmod_group",
+	}); err != nil {
+		return err
+	}
+	if _, err := u.runner.Run(ctx, system.CommandRequest{
+		Binary:      "/usr/bin/find",
+		Args:        []string{root, "-type", "d", "-exec", "/bin/chmod", "g+s", "{}", "+"},
+		Timeout:     60 * time.Second,
+		AuditAction: "site_user.shared.setgid",
+	}); err != nil {
+		return err
+	}
+	if setfacl, err := exec.LookPath("setfacl"); err == nil {
+		_, _ = u.runner.Run(ctx, system.CommandRequest{
+			Binary:      setfacl,
+			Args:        []string{"-R", "-m", "g:" + groupName + ":rwX", root},
+			Timeout:     60 * time.Second,
+			AuditAction: "site_user.shared.acl",
+		})
+		_, _ = u.runner.Run(ctx, system.CommandRequest{
+			Binary:      setfacl,
+			Args:        []string{"-R", "-d", "-m", "g:" + groupName + ":rwX", root},
+			Timeout:     60 * time.Second,
+			AuditAction: "site_user.shared.acl_default",
+		})
+	}
+	return nil
 }
 
 type nginxManager struct{ runner *system.Runner }

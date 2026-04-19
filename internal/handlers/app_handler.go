@@ -641,6 +641,9 @@ func (h *AppHandler) ManageCreateSiteUser(c *fiber.Ctx) error {
 	} else {
 		h.base.Sessions.SetFlash(c, "SSH user created")
 	}
+	if app.WebsiteID != nil && h.websiteService != nil {
+		_ = h.websiteService.RefreshConfig(c.Context(), *app.WebsiteID)
+	}
 	return c.Redirect(platformURLWithTab("app", id, "ssh"))
 }
 
@@ -665,6 +668,9 @@ func (h *AppHandler) ManageDeleteSiteUser(c *fiber.Ctx) error {
 		h.base.Sessions.SetFlash(c, err.Error())
 	} else {
 		h.base.Sessions.SetFlash(c, "SSH user deleted")
+	}
+	if app.WebsiteID != nil && h.websiteService != nil {
+		_ = h.websiteService.RefreshConfig(c.Context(), *app.WebsiteID)
 	}
 	return c.Redirect(platformURLWithTab("app", id, "ssh"))
 }
@@ -716,6 +722,9 @@ func (h *AppHandler) ManageCreateFTPUser(c *fiber.Ctx) error {
 	} else {
 		h.base.Sessions.SetFlash(c, "FTP user created")
 	}
+	if app.WebsiteID != nil && h.websiteService != nil {
+		_ = h.websiteService.RefreshConfig(c.Context(), *app.WebsiteID)
+	}
 	return c.Redirect(platformURLWithTab("app", id, "ssh"))
 }
 
@@ -729,6 +738,9 @@ func (h *AppHandler) ManageDeleteFTPUser(c *fiber.Ctx) error {
 		_ = h.ftpService.DeleteByID(c.Context(), fid, currentUserID(c), c.IP())
 	} else {
 		_ = h.ftpUsers.Delete(fid)
+	}
+	if app, findErr := h.service.Find(id); findErr == nil && app.WebsiteID != nil && h.websiteService != nil {
+		_ = h.websiteService.RefreshConfig(c.Context(), *app.WebsiteID)
 	}
 	return c.Redirect(platformURLWithTab("app", id, "ssh"))
 }

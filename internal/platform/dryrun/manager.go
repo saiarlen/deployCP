@@ -189,6 +189,11 @@ func (u *userManager) ChownRecursive(_ context.Context, username, path string) e
 	return nil
 }
 
+func (u *userManager) SyncSharedAccess(_ context.Context, root, primaryUser, groupName string, members []string) error {
+	drylog("user", "sync shared access root=%s primary=%s group=%s members=%v", root, primaryUser, groupName, members)
+	return nil
+}
+
 // nginxManager simulates nginx validate and reload.
 type nginxManager struct {
 	cfg *config.Config

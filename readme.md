@@ -39,6 +39,8 @@ curl -fsSL https://raw.githubusercontent.com/saiarlen/deployCP/main/scripts/linu
 curl -fsSL https://raw.githubusercontent.com/saiarlen/deployCP/main/scripts/linux/install-remote.sh | sudo bash -s -- --update
 ```
 
+Dashboard update uses the same release/update path. A successful in-panel update already runs host bootstrap and managed-resource reconciliation as part of the update flow, so you normally do not need to run `bootstrap-host` or `reconcile-managed` manually after it finishes.
+
 **Uninstall:**
 
 ```bash
@@ -65,6 +67,13 @@ After install, open `http://your-server-ip:2024` to create your admin account an
 | **Varnish** | Per-site VCL fragments, aggregate include, validate, reload |
 | **Logs** | Real filesystem log paths surfaced in the panel |
 | **Host Hardening** | Automatic firewall bootstrap, fail2ban, logrotate, backup cron, SSH-safe install flow |
+
+Runtime behavior on live Linux:
+
+- runtime selectors and Settings runtime lists only show versions actually installed on the host
+- fresh install attempts to install at least one real PHP-FPM version by default
+- runtime add/remove actions are real host operations
+- runtime removal is blocked if a platform is still using that version
 
 ## Supported Platforms
 
@@ -102,6 +111,20 @@ Tested on Ubuntu, Debian, Rocky Linux, AlmaLinux, CentOS Stream, Fedora, openSUS
     ├── backups/
     └── tmp/
 ```
+
+Per-site layout:
+
+```text
+/home/deploycp/platforms/sites/<domain>/
+├── htdocs/                       # nginx web root
+└── logs/                         # per-site access/error logs
+```
+
+Important:
+
+- SSH user home points to `/home/deploycp/platforms/sites/<domain>`
+- file manager root points to `/home/deploycp/platforms/sites/<domain>`
+- nginx serves `/home/deploycp/platforms/sites/<domain>/htdocs`
 
 ## Documentation
 
@@ -195,6 +218,12 @@ sudo /home/deploycp/core/scripts/linux/harden-host.sh
 3. Fix any reported issues (install missing packages, set env values)
 4. `deploycp reconcile-managed` — re-sync managed resources
 5. Test the affected platform workflow
+
+Use `bootstrap-host` and `reconcile-managed` manually only when:
+
+- an update was interrupted
+- you are recovering from older broken state
+- you want to force-repair SSH, nginx, runtime, or filesystem state on a live host
 
 ## Host Hardening
 

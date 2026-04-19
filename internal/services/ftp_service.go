@@ -179,16 +179,6 @@ func (s *FTPService) ensureSystemUser(ctx context.Context, username, password, h
 	}); err != nil {
 		return err
 	}
-	if _, err := s.runner.Run(ctx, system.CommandRequest{
-		Binary:      "/bin/chown",
-		Args:        []string{"-R", username + ":" + username, homeDir},
-		Timeout:     20 * time.Second,
-		AuditAction: "ftp.user.chown",
-		ActorUserID: actor,
-		IP:          ip,
-	}); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -204,6 +194,7 @@ func (s *FTPService) ensureServerConfig(ctx context.Context, actor *uint, ip str
 		"# DeployCP managed ProFTPD settings",
 		"RequireValidShell off",
 		"DefaultRoot ~",
+		"Umask 002 002",
 	}
 	if strings.TrimSpace(masquerade) != "" {
 		lines = append(lines, "MasqueradeAddress "+strings.TrimSpace(masquerade))
