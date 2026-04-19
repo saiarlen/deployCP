@@ -45,6 +45,7 @@ type ServiceManager interface {
 type UserManager interface {
 	EnsureRestrictedShell(ctx context.Context, shellPath string) error
 	Create(ctx context.Context, spec SiteUserSpec) (uid int, gid int, err error)
+	SyncHome(ctx context.Context, username, homeDir, allowedRoot, shellPath string) error
 	SetPassword(ctx context.Context, username, password string) error
 	Disable(ctx context.Context, username string) error
 	Delete(ctx context.Context, username string) error

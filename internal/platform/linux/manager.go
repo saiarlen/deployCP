@@ -334,6 +334,33 @@ func (u *userManager) Create(ctx context.Context, spec platform.SiteUserSpec) (i
 	return 0, 0, nil
 }
 
+func (u *userManager) SyncHome(ctx context.Context, username, homeDir, allowedRoot, shellPath string) error {
+	if err := os.MkdirAll(homeDir, 0o755); err != nil {
+		return err
+	}
+	ensureParentTraversable(homeDir)
+	if _, err := u.runner.Run(ctx, system.CommandRequest{
+		Binary:      "/usr/sbin/usermod",
+		Args:        []string{"-d", homeDir, "-s", shellPath, username},
+		Timeout:     15 * time.Second,
+		AuditAction: "site_user.home.sync",
+	}); err != nil {
+		return err
+	}
+	allowed := filepath.Join(homeDir, ".deploycp_allowed_root")
+	if err := utils.WriteFileAtomic(allowed, []byte(strings.TrimSpace(allowedRoot)+"\n"), 0o600); err != nil {
+		return err
+	}
+	if _, err := u.runner.Run(ctx, system.CommandRequest{
+		Binary:  "/bin/chown",
+		Args:    []string{username + ":" + username, allowed},
+		Timeout: 5 * time.Second,
+	}); err != nil {
+		return err
+	}
+	return nil
+}
+
 // ensureParentTraversable walks up from the given path and sets o+x on each
 // parent directory so that any Linux user can traverse the path to reach their
 // home directory. Stops at / or /home.

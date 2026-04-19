@@ -155,6 +155,16 @@ func (u *userManager) Create(_ context.Context, spec platform.SiteUserSpec) (int
 	return uid, gid, nil
 }
 
+func (u *userManager) SyncHome(_ context.Context, username, homeDir, allowedRoot, shellPath string) error {
+	if err := os.MkdirAll(homeDir, 0o755); err != nil {
+		return err
+	}
+	allowed := filepath.Join(homeDir, ".deploycp_allowed_root")
+	_ = os.WriteFile(allowed, []byte(allowedRoot+"\n"), 0o600)
+	drylog("user", "sync home for %s -> %s (allowed=%s shell=%s)", username, homeDir, allowedRoot, shellPath)
+	return nil
+}
+
 func (u *userManager) SetPassword(_ context.Context, username, password string) error {
 	masked := "***"
 	if len(password) > 2 {

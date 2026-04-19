@@ -329,25 +329,26 @@
   <div id="panel-services" class="settings-panel {{ if ActiveTab == "services" }}settings-panel-active{{ end }}">
     <section class="surface p-5 sm:p-6 mb-5">
       <h2 class="text-lg font-semibold">Runtime Version Management</h2>
-      <p class="text-sm opacity-70 mt-1">Define supported versions for each runtime. These feed the platform create/update dropdowns.</p>
+      <p class="text-sm opacity-70 mt-1">Installed versions are discovered from the host and synced into the panel catalog. Add and remove actions perform real Linux package/runtime changes.</p>
       <div class="grid gap-4 lg:grid-cols-2 mt-4">
         <div class="rounded-lg border border-[var(--border)] p-4">
           <h3 class="font-semibold mb-2">Go Versions</h3>
           <div class="runtime-version-list mb-3">
-            {{ range _, v := GoVersions }}
+            {{ range _, v := GoRuntimeEntries }}
             <div class="runtime-version-chip">
-              <span class="badge badge-neutral runtime-version-badge">{{ v }}</span>
-              <form action="/settings/runtime-versions/go/remove" method="post" class="runtime-version-remove-form" data-confirm-message="Remove {{ v }} from Go versions? If any platform uses this version, removal will be blocked.">
+              <span class="badge badge-neutral runtime-version-badge">{{ v.Version }}</span>
+              {{ if v.Installed }}<span class="badge badge-ok runtime-version-state">installed</span>{{ else }}<span class="badge badge-neutral runtime-version-state">catalog only</span>{{ end }}
+              <form action="/settings/runtime-versions/go/remove" method="post" class="runtime-version-remove-form runtime-version-action-form" data-confirm-message="Remove {{ v.Version }} from Go versions? If any platform uses this version, removal will be blocked." data-runtime-action="remove" data-runtime-kind="go" data-runtime-version="{{ v.Version }}">
                 <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
-                <input type="hidden" name="version" value="{{ v }}">
-                <button class="runtime-version-remove-btn" type="submit" aria-label="Remove {{ v }} from Go versions">
+                <input type="hidden" name="version" value="{{ v.Version }}">
+                <button class="runtime-version-remove-btn" type="submit" aria-label="Remove {{ v.Version }} from Go versions">
                   <i data-lucide="x"></i>
                 </button>
               </form>
             </div>
             {{ end }}
           </div>
-          <form action="/settings/runtime-versions/go/add" method="post" class="flex gap-2">
+          <form action="/settings/runtime-versions/go/add" method="post" class="flex gap-2 runtime-version-action-form" data-runtime-action="install" data-runtime-kind="go">
             <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
             <input class="field flex-1" name="version" placeholder="go1.26" required>
             <button class="btn btn-primary" type="submit">Add Version</button>
@@ -356,20 +357,21 @@
         <div class="rounded-lg border border-[var(--border)] p-4">
           <h3 class="font-semibold mb-2">Node Versions</h3>
           <div class="runtime-version-list mb-3">
-            {{ range _, v := NodeVersions }}
+            {{ range _, v := NodeRuntimeEntries }}
             <div class="runtime-version-chip">
-              <span class="badge badge-neutral runtime-version-badge">{{ v }}</span>
-              <form action="/settings/runtime-versions/node/remove" method="post" class="runtime-version-remove-form" data-confirm-message="Remove {{ v }} from Node versions? If any platform uses this version, removal will be blocked.">
+              <span class="badge badge-neutral runtime-version-badge">{{ v.Version }}</span>
+              {{ if v.Installed }}<span class="badge badge-ok runtime-version-state">installed</span>{{ else }}<span class="badge badge-neutral runtime-version-state">catalog only</span>{{ end }}
+              <form action="/settings/runtime-versions/node/remove" method="post" class="runtime-version-remove-form runtime-version-action-form" data-confirm-message="Remove {{ v.Version }} from Node versions? If any platform uses this version, removal will be blocked." data-runtime-action="remove" data-runtime-kind="node" data-runtime-version="{{ v.Version }}">
                 <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
-                <input type="hidden" name="version" value="{{ v }}">
-                <button class="runtime-version-remove-btn" type="submit" aria-label="Remove {{ v }} from Node versions">
+                <input type="hidden" name="version" value="{{ v.Version }}">
+                <button class="runtime-version-remove-btn" type="submit" aria-label="Remove {{ v.Version }} from Node versions">
                   <i data-lucide="x"></i>
                 </button>
               </form>
             </div>
             {{ end }}
           </div>
-          <form action="/settings/runtime-versions/node/add" method="post" class="flex gap-2">
+          <form action="/settings/runtime-versions/node/add" method="post" class="flex gap-2 runtime-version-action-form" data-runtime-action="install" data-runtime-kind="node">
             <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
             <input class="field flex-1" name="version" placeholder="node26" required>
             <button class="btn btn-primary" type="submit">Add Version</button>
@@ -378,20 +380,21 @@
         <div class="rounded-lg border border-[var(--border)] p-4">
           <h3 class="font-semibold mb-2">Python Versions</h3>
           <div class="runtime-version-list mb-3">
-            {{ range _, v := PythonVersions }}
+            {{ range _, v := PythonRuntimeEntries }}
             <div class="runtime-version-chip">
-              <span class="badge badge-neutral runtime-version-badge">{{ v }}</span>
-              <form action="/settings/runtime-versions/python/remove" method="post" class="runtime-version-remove-form" data-confirm-message="Remove {{ v }} from Python versions? If any platform uses this version, removal will be blocked.">
+              <span class="badge badge-neutral runtime-version-badge">{{ v.Version }}</span>
+              {{ if v.Installed }}<span class="badge badge-ok runtime-version-state">installed</span>{{ else }}<span class="badge badge-neutral runtime-version-state">catalog only</span>{{ end }}
+              <form action="/settings/runtime-versions/python/remove" method="post" class="runtime-version-remove-form runtime-version-action-form" data-confirm-message="Remove {{ v.Version }} from Python versions? If any platform uses this version, removal will be blocked." data-runtime-action="remove" data-runtime-kind="python" data-runtime-version="{{ v.Version }}">
                 <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
-                <input type="hidden" name="version" value="{{ v }}">
-                <button class="runtime-version-remove-btn" type="submit" aria-label="Remove {{ v }} from Python versions">
+                <input type="hidden" name="version" value="{{ v.Version }}">
+                <button class="runtime-version-remove-btn" type="submit" aria-label="Remove {{ v.Version }} from Python versions">
                   <i data-lucide="x"></i>
                 </button>
               </form>
             </div>
             {{ end }}
           </div>
-          <form action="/settings/runtime-versions/python/add" method="post" class="flex gap-2">
+          <form action="/settings/runtime-versions/python/add" method="post" class="flex gap-2 runtime-version-action-form" data-runtime-action="install" data-runtime-kind="python">
             <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
             <input class="field flex-1" name="version" placeholder="python3.14" required>
             <button class="btn btn-primary" type="submit">Add Version</button>
@@ -400,20 +403,21 @@
         <div class="rounded-lg border border-[var(--border)] p-4">
           <h3 class="font-semibold mb-2">PHP Versions</h3>
           <div class="runtime-version-list mb-3">
-            {{ range _, v := PHPVersions }}
+            {{ range _, v := PHPRuntimeEntries }}
             <div class="runtime-version-chip">
-              <span class="badge badge-neutral runtime-version-badge">{{ v }}</span>
-              <form action="/settings/runtime-versions/php/remove" method="post" class="runtime-version-remove-form" data-confirm-message="Remove {{ v }} from PHP versions? If any platform uses this version, removal will be blocked.">
+              <span class="badge badge-neutral runtime-version-badge">{{ v.Version }}</span>
+              {{ if v.Installed }}<span class="badge badge-ok runtime-version-state">installed</span>{{ else }}<span class="badge badge-neutral runtime-version-state">catalog only</span>{{ end }}
+              <form action="/settings/runtime-versions/php/remove" method="post" class="runtime-version-remove-form runtime-version-action-form" data-confirm-message="Remove {{ v.Version }} from PHP versions? If any platform uses this version, removal will be blocked." data-runtime-action="remove" data-runtime-kind="php" data-runtime-version="{{ v.Version }}">
                 <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
-                <input type="hidden" name="version" value="{{ v }}">
-                <button class="runtime-version-remove-btn" type="submit" aria-label="Remove {{ v }} from PHP versions">
+                <input type="hidden" name="version" value="{{ v.Version }}">
+                <button class="runtime-version-remove-btn" type="submit" aria-label="Remove {{ v.Version }} from PHP versions">
                   <i data-lucide="x"></i>
                 </button>
               </form>
             </div>
             {{ end }}
           </div>
-          <form action="/settings/runtime-versions/php/add" method="post" class="flex gap-2">
+          <form action="/settings/runtime-versions/php/add" method="post" class="flex gap-2 runtime-version-action-form" data-runtime-action="install" data-runtime-kind="php">
             <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
             <input class="field flex-1" name="version" placeholder="8.5" required>
             <button class="btn btn-primary" type="submit">Add Version</button>
@@ -481,8 +485,8 @@
             </div>
             <div class="flex flex-wrap gap-2">
               {{ if !item.Installed }}<span class="badge badge-neutral">not installed</span>{{ else if item.Status.Active }}<span class="badge badge-ok">running</span>{{ else }}<span class="badge badge-danger">stopped</span>{{ end }}
-              {{ if item.Record.Enabled }}<span class="badge badge-ok">enabled</span>{{ else }}<span class="badge badge-neutral">disabled</span>{{ end }}
               {{ if item.Installed }}<span class="badge badge-ok">installed</span>{{ end }}
+              {{ if item.Installed }}{{ if item.Status.Enabled }}<span class="badge badge-ok">autostart enabled</span>{{ else }}<span class="badge badge-neutral">autostart disabled</span>{{ end }}{{ end }}
               {{ if item.Record.ID == 0 }}<span class="badge badge-neutral">default</span>{{ end }}
             </div>
           </div>
@@ -498,6 +502,19 @@
         {{ end }}
       </div>
     </section>
+  </div>
+
+  <div class="confirm-modal hidden" id="runtime-terminal-modal" aria-hidden="true">
+    <div class="confirm-modal-backdrop" data-runtime-terminal-close></div>
+    <div class="confirm-modal-card runtime-terminal-card">
+      <div class="update-terminal-head">
+        <span id="runtime-terminal-title">Runtime operation</span>
+        <button type="button" class="btn btn-ghost" id="runtime-terminal-close" disabled>Close</button>
+      </div>
+      <div class="update-terminal-wrap runtime-terminal-wrap">
+        <pre class="update-terminal runtime-terminal" id="runtime-terminal-output"></pre>
+      </div>
+    </div>
   </div>
 
   <div id="panel-firewall" class="settings-panel {{ if ActiveTab == "firewall" }}settings-panel-active{{ end }}">
@@ -922,6 +939,103 @@ $(function () {
         }
       }
     }
+  });
+
+  var runtimeTerminalModal = document.getElementById('runtime-terminal-modal');
+  var runtimeTerminalOutput = document.getElementById('runtime-terminal-output');
+  var runtimeTerminalTitle = document.getElementById('runtime-terminal-title');
+  var runtimeTerminalClose = document.getElementById('runtime-terminal-close');
+  var runtimeTerminalTimer = null;
+
+  function runtimeLine(text) {
+    if (!runtimeTerminalOutput) return;
+    runtimeTerminalOutput.textContent += text + '\n';
+    runtimeTerminalOutput.scrollTop = runtimeTerminalOutput.scrollHeight;
+  }
+
+  function runtimeCloseReady() {
+    if (!runtimeTerminalClose) return;
+    runtimeTerminalClose.disabled = false;
+  }
+
+  function runtimeOpenModal(title) {
+    if (!runtimeTerminalModal || !runtimeTerminalOutput) return;
+    runtimeTerminalTitle.textContent = title;
+    runtimeTerminalOutput.textContent = '';
+    runtimeTerminalModal.classList.remove('hidden');
+    runtimeTerminalModal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('confirm-modal-active');
+    if (runtimeTerminalClose) runtimeTerminalClose.disabled = true;
+  }
+
+  function runtimeCloseModal() {
+    if (!runtimeTerminalModal) return;
+    runtimeTerminalModal.classList.add('hidden');
+    runtimeTerminalModal.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('confirm-modal-active');
+    if (runtimeTerminalTimer) {
+      window.clearInterval(runtimeTerminalTimer);
+      runtimeTerminalTimer = null;
+    }
+  }
+
+  function runtimeProgressScript(action, runtime, version) {
+    var noun = action === 'remove' ? 'Removing' : 'Installing';
+    return [
+      noun + ' ' + runtime + ' ' + version + '...',
+      'Resolving packages and runtime binaries...',
+      'Syncing runtime catalog and validating platform usage...',
+      'This can take a few minutes on a fresh Linux host.'
+    ];
+  }
+
+  $(document).on('click', '#runtime-terminal-close, [data-runtime-terminal-close]', function () {
+    if (!runtimeTerminalClose || runtimeTerminalClose.disabled) return;
+    runtimeCloseModal();
+  });
+
+  $(document).on('submit', '.runtime-version-action-form', function (e) {
+    e.preventDefault();
+    var form = this;
+    var action = String(form.getAttribute('data-runtime-action') || 'install').toLowerCase();
+    var runtime = String(form.getAttribute('data-runtime-kind') || '').toLowerCase();
+    var versionInput = form.querySelector('input[name="version"]');
+    var version = versionInput ? String(versionInput.value || '').trim() : String(form.getAttribute('data-runtime-version') || '').trim();
+    var title = (action === 'remove' ? 'Remove ' : 'Install ') + runtime.toUpperCase() + ' ' + version;
+    runtimeOpenModal(title);
+    var lines = runtimeProgressScript(action, runtime, version);
+    var idx = 0;
+    runtimeLine('$ ' + (action === 'remove' ? 'remove' : 'install') + ' ' + runtime + ' ' + version);
+    runtimeLine(lines[idx++]);
+    runtimeTerminalTimer = window.setInterval(function () {
+      if (idx >= lines.length) {
+        window.clearInterval(runtimeTerminalTimer);
+        runtimeTerminalTimer = null;
+        return;
+      }
+      runtimeLine(lines[idx++]);
+    }, 1200);
+
+    var submitButton = form.querySelector('button[type="submit"]');
+    if (submitButton) submitButton.disabled = true;
+
+    fetch(form.action, {
+      method: (form.method || 'POST').toUpperCase(),
+      body: new FormData(form),
+      headers: { 'Accept': 'text/html' },
+      credentials: 'same-origin'
+    }).then(function (resp) {
+      runtimeLine(resp.ok ? 'Host operation completed. Refreshing service catalog...' : 'Operation returned an error. Reloading settings for details...');
+      runtimeCloseReady();
+      window.setTimeout(function () {
+        window.location.href = resp.url || '/settings?tab=services';
+      }, 700);
+    }).catch(function (err) {
+      runtimeLine('Request failed: ' + (err && err.message ? err.message : 'unknown error'));
+      runtimeLine('Close this window and retry once the server is reachable.');
+      runtimeCloseReady();
+      if (submitButton) submitButton.disabled = false;
+    });
   });
 });
 

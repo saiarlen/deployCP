@@ -227,11 +227,6 @@ func (s *SystemPackageService) serviceSpec(serviceName string) (servicePackageSp
 			basePackages: map[string]string{"apt": "varnish", "dnf": "varnish", "yum": "varnish", "zypper": "varnish", "pacman": "varnish"},
 			baseUnits:    map[string][]string{"apt": {"varnish"}, "dnf": {"varnish"}, "yum": {"varnish"}, "zypper": {"varnish"}, "pacman": {"varnish"}},
 		}, true
-	case "memcached":
-		return servicePackageSpec{
-			basePackages: map[string]string{"apt": "memcached", "dnf": "memcached", "yum": "memcached", "zypper": "memcached", "pacman": "memcached"},
-			baseUnits:    map[string][]string{"apt": {"memcached"}, "dnf": {"memcached"}, "yum": {"memcached"}, "zypper": {"memcached"}, "pacman": {"memcached"}},
-		}, true
 	case "rabbitmq-server", "rabbitmq":
 		return servicePackageSpec{
 			basePackages: map[string]string{"apt": "rabbitmq-server", "dnf": "rabbitmq-server", "yum": "rabbitmq-server", "zypper": "rabbitmq-server", "pacman": "rabbitmq"},

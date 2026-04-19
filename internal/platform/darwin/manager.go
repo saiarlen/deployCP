@@ -224,6 +224,25 @@ func (u *userManager) Create(ctx context.Context, spec platform.SiteUserSpec) (i
 	}
 	return 0, 0, nil
 }
+func (u *userManager) SyncHome(ctx context.Context, username, homeDir, allowedRoot, shellPath string) error {
+	if err := os.MkdirAll(homeDir, 0o755); err != nil {
+		return err
+	}
+	commands := [][]string{
+		{".", "-create", "/Users/" + username, "UserShell", shellPath},
+		{".", "-create", "/Users/" + username, "NFSHomeDirectory", homeDir},
+	}
+	for _, args := range commands {
+		if _, err := u.runner.Run(ctx, system.CommandRequest{Binary: "/usr/bin/dscl", Args: args, Timeout: 15 * time.Second, AuditAction: "site_user.home.sync"}); err != nil {
+			return err
+		}
+	}
+	allowed := filepath.Join(homeDir, ".deploycp_allowed_root")
+	if err := utils.WriteFileAtomic(allowed, []byte(strings.TrimSpace(allowedRoot)+"\n"), 0o600); err != nil {
+		return err
+	}
+	return u.ChownRecursive(ctx, username, homeDir)
+}
 func (u *userManager) SetPassword(ctx context.Context, username, password string) error {
 	_, err := u.runner.Run(ctx, system.CommandRequest{Binary: "/usr/sbin/sysadminctl", Args: []string{"-resetPasswordFor", username, "-newPassword", password}, Timeout: 20 * time.Second, AuditAction: "site_user.password.reset"})
 	return err

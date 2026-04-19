@@ -169,6 +169,31 @@ install_packages() {
   esac
 }
 
+install_default_php_runtime() {
+  local helper=""
+  local candidate=""
+  local runtime_root="${CORE_DIR}/storage/runtimes"
+
+  for helper in "${CORE_DIR}/scripts/linux/runtime-manager.sh" "${PACKAGE_ROOT}/scripts/linux/runtime-manager.sh"; do
+    if [[ -x "$helper" ]]; then
+      break
+    fi
+    helper=""
+  done
+  if [[ -z "$helper" ]]; then
+    return 0
+  fi
+
+  mkdir -p "$runtime_root"
+  for candidate in 8.4 8.3 8.2 8.1; do
+    if /bin/bash "$helper" install php "$candidate" "$runtime_root" >/dev/null 2>&1; then
+      chown -R "${APP_USER}:${APP_USER}" "$runtime_root"
+      return 0
+    fi
+  done
+  return 0
+}
+
 command_path() {
   local fallback="$1"
   shift
@@ -641,6 +666,7 @@ fi
 
 set_env_value "${CORE_DIR}/.env" "APP_VERSION" "$(resolved_release_version)"
 set_env_value "${CORE_DIR}/.env" "DEPLOYCP_REPO" "${DEPLOYCP_REPO:-saiarlen/deployCP}"
+install_default_php_runtime
 if [[ -x "${CORE_DIR}/scripts/linux/harden-host.sh" ]]; then
   bash "${CORE_DIR}/scripts/linux/harden-host.sh"
 fi

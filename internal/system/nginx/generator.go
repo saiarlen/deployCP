@@ -139,7 +139,7 @@ func renderServerContent(body *strings.Builder, site *models.Website, opts Websi
 		body.WriteString(fmt.Sprintf("    root %s;\n", site.RootPath))
 		body.WriteString("    index index.html index.htm;\n")
 		body.WriteString("    location / {\n")
-		body.WriteString("        try_files $uri $uri/ /index.html;\n")
+		body.WriteString("        try_files $uri $uri/ =404;\n")
 		body.WriteString("    }\n")
 	}
 	if strings.TrimSpace(site.CustomDirectives) != "" {

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -161,7 +163,6 @@ func (s *ServiceService) Catalog() []ServiceCatalogItem {
 		{Key: "postgresql", Title: "PostgreSQL", Description: "Advanced SQL database service", Name: "postgresql", Type: "database", Priority: 21},
 		{Key: "redis", Title: "Redis", Description: "In-memory data structure store", Name: "redis-server", Type: "cache", Priority: 30},
 		{Key: "varnish", Title: "Varnish Cache", Description: "HTTP accelerator and caching layer", Name: "varnish", Type: "cache", Priority: 31},
-		{Key: "memcached", Title: "Memcached", Description: "Lightweight distributed cache", Name: "memcached", Type: "cache", Priority: 32},
 		{Key: "rabbitmq", Title: "RabbitMQ", Description: "Message broker for queues and events", Name: "rabbitmq-server", Type: "queue", Priority: 40},
 		{Key: "docker", Title: "Docker", Description: "Container runtime daemon", Name: "docker", Type: "system", Priority: 50},
 	}
@@ -481,6 +482,54 @@ func (s *ServiceService) findByRef(ref string) (*models.ManagedService, error) {
 
 func (s *ServiceService) phpVersions() []string {
 	defaults := []string{"8.3", "8.2", "8.1"}
+	root := filepath.Join(s.cfg.Paths.RuntimeRoot, "php")
+	if entries, err := os.ReadDir(root); err == nil {
+		found := make([]string, 0, len(entries))
+		seen := map[string]struct{}{}
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			v := strings.TrimSpace(entry.Name())
+			if v == "" || !phpVersionPattern.MatchString(v) {
+				continue
+			}
+			if _, ok := seen[v]; ok {
+				continue
+			}
+			seen[v] = struct{}{}
+			found = append(found, v)
+		}
+		if len(found) > 0 {
+			sort.SliceStable(found, func(i, j int) bool { return found[i] > found[j] })
+			return found
+		}
+	}
+	if entries, err := os.ReadDir("/etc/php"); err == nil {
+		found := make([]string, 0, len(entries))
+		seen := map[string]struct{}{}
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			v := strings.TrimSpace(entry.Name())
+			if v == "" || !phpVersionPattern.MatchString(v) {
+				continue
+			}
+			if _, err := os.Stat(filepath.Join("/etc/php", v, "fpm")); err != nil {
+				continue
+			}
+			if _, ok := seen[v]; ok {
+				continue
+			}
+			seen[v] = struct{}{}
+			found = append(found, v)
+		}
+		if len(found) > 0 {
+			sort.SliceStable(found, func(i, j int) bool { return found[i] > found[j] })
+			return found
+		}
+	}
 	raw, err := s.settings.Get("php_versions")
 	if err != nil {
 		return defaults
@@ -512,7 +561,6 @@ func (s *ServiceService) coreSystemServices() []models.ManagedService {
 		{Name: "mariadb", Type: "database", PlatformName: platformName, Enabled: true, Tags: "db,mysql", Description: "MariaDB SQL database server."},
 		{Name: "postgresql", Type: "database", PlatformName: platformName, Enabled: true, Tags: "db,postgres", Description: "PostgreSQL SQL database server."},
 		{Name: "redis-server", Type: "cache", PlatformName: platformName, Enabled: true, Tags: "cache,redis", Description: "Redis in-memory cache and data store."},
-		{Name: "memcached", Type: "cache", PlatformName: platformName, Enabled: false, Tags: "cache,memcached", Description: "Memcached in-memory caching service."},
 		{Name: "varnish", Type: "cache", PlatformName: platformName, Enabled: false, Tags: "cache,varnish", Description: "Varnish HTTP accelerator cache."},
 	}
 	for _, version := range s.phpVersions() {

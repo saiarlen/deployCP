@@ -441,6 +441,24 @@ func (s *WebsiteService) ensureWebsiteFilesystem(ctx context.Context, site *mode
 		}
 	}
 	if siteUser != nil && strings.TrimSpace(siteUser.Username) != "" {
+		expectedHome := platformHome
+		expectedAllowedRoot := platformHome
+		needsSync := filepath.Clean(strings.TrimSpace(siteUser.HomeDirectory)) != filepath.Clean(expectedHome) ||
+			filepath.Clean(strings.TrimSpace(siteUser.AllowedRoot)) != filepath.Clean(expectedAllowedRoot) ||
+			strings.TrimSpace(siteUser.Shell) != strings.TrimSpace(s.cfg.Paths.RestrictedShellPath)
+		if needsSync {
+			if err := s.adapter.Users().SyncHome(ctx, siteUser.Username, expectedHome, expectedAllowedRoot, s.cfg.Paths.RestrictedShellPath); err != nil {
+				return err
+			}
+			siteUser.HomeDirectory = filepath.Clean(expectedHome)
+			siteUser.AllowedRoot = filepath.Clean(expectedAllowedRoot)
+			siteUser.Shell = s.cfg.Paths.RestrictedShellPath
+			if s.siteUsers != nil {
+				if err := s.siteUsers.Update(siteUser); err != nil {
+					return err
+				}
+			}
+		}
 		if err := s.adapter.Users().ChownRecursive(ctx, siteUser.Username, platformHome); err != nil {
 			return err
 		}

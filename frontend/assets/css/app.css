@@ -971,6 +971,9 @@ body.light-theme .settings-tab-active { color: var(--primary-dark); }
   pointer-events: none;
   user-select: none;
 }
+.runtime-version-state {
+  line-height: 1;
+}
 .runtime-version-remove-form {
   display: inline-flex;
 }
@@ -998,6 +1001,16 @@ body.light-theme .settings-tab-active { color: var(--primary-dark); }
   border-color: rgba(248, 113, 113, 0.55);
   color: var(--danger);
   background: var(--danger-soft);
+}
+.runtime-terminal-card {
+  width: min(760px, calc(100vw - 2rem));
+}
+.runtime-terminal-wrap {
+  margin-top: 0;
+}
+.runtime-terminal {
+  min-height: 18rem;
+  max-height: 28rem;
 }
 @media (max-width: 560px) {
   .settings-split-actions {

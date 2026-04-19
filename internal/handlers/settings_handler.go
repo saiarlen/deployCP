@@ -103,6 +103,9 @@ func (h *SettingsHandler) Index(c *fiber.Ctx) error {
 	if err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
 	}
+	if err := h.service.SyncInstalledRuntimeCatalogs(); err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+	}
 
 	svcItems, svcErr := h.svcService.ListSystem(c.Context())
 	if svcErr != nil {
@@ -115,7 +118,11 @@ func (h *SettingsHandler) Index(c *fiber.Ctx) error {
 		if item.Status.Active {
 			running++
 		}
-		if item.Record.Enabled {
+		if item.Installed {
+			if item.Status.Enabled {
+				enabled++
+			}
+		} else if item.Record.Enabled {
 			enabled++
 		}
 	}
@@ -255,6 +262,10 @@ func (h *SettingsHandler) Index(c *fiber.Ctx) error {
 		"SupportedTimezones":       h.service.SupportedTimezones(),
 		"PanelBasicEnabled":        basicAuthEnabled,
 		"PanelBasicUser":           basicAuthUsername,
+		"GoRuntimeEntries":         h.service.RuntimeVersionStates("go"),
+		"NodeRuntimeEntries":       h.service.RuntimeVersionStates("node"),
+		"PythonRuntimeEntries":     h.service.RuntimeVersionStates("python"),
+		"PHPRuntimeEntries":        h.service.RuntimeVersionStates("php"),
 		"GoVersions":               h.service.RuntimeVersions("go"),
 		"NodeVersions":             h.service.RuntimeVersions("node"),
 		"PythonVersions":           h.service.RuntimeVersions("python"),
@@ -447,16 +458,17 @@ func (h *SettingsHandler) UsersDelete(c *fiber.Ctx) error {
 func (h *SettingsHandler) RuntimeVersionAdd(c *fiber.Ctx) error {
 	runtime := strings.ToLower(strings.TrimSpace(c.Params("runtime")))
 	version := strings.TrimSpace(c.FormValue("version"))
-	if err := h.service.AddRuntimeVersion(runtime, version, currentUserID(c), c.IP()); err != nil {
-		h.base.Sessions.SetFlash(c, err.Error())
-		return c.Redirect("/settings?tab=services")
-	}
 	if h.runtimeService != nil {
 		if err := h.runtimeService.InstallVersion(c.Context(), runtime, version, currentUserID(c), c.IP()); err != nil {
 			h.base.Sessions.SetFlash(c, err.Error())
 			return c.Redirect("/settings?tab=services")
 		}
 	}
+	if err := h.service.AddRuntimeVersion(runtime, version, currentUserID(c), c.IP()); err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect("/settings?tab=services")
+	}
+	_ = h.service.SyncInstalledRuntimeCatalogs()
 	h.base.Sessions.SetFlash(c, "version added")
 	return c.Redirect("/settings?tab=services")
 }
@@ -486,16 +498,17 @@ func (h *SettingsHandler) RuntimeVersionRemove(c *fiber.Ctx) error {
 		h.base.Sessions.SetFlash(c, msg)
 		return c.Redirect("/settings?tab=services")
 	}
-	if err := h.service.RemoveRuntimeVersion(runtime, version, currentUserID(c), c.IP()); err != nil {
-		h.base.Sessions.SetFlash(c, err.Error())
-		return c.Redirect("/settings?tab=services")
-	}
 	if h.runtimeService != nil {
 		if err := h.runtimeService.RemoveVersion(c.Context(), runtime, version, currentUserID(c), c.IP()); err != nil {
 			h.base.Sessions.SetFlash(c, err.Error())
 			return c.Redirect("/settings?tab=services")
 		}
 	}
+	if err := h.service.RemoveRuntimeVersion(runtime, version, currentUserID(c), c.IP()); err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect("/settings?tab=services")
+	}
+	_ = h.service.SyncInstalledRuntimeCatalogs()
 	h.base.Sessions.SetFlash(c, "version removed")
 	return c.Redirect("/settings?tab=services")
 }

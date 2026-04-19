@@ -3,6 +3,7 @@ package services
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -18,6 +19,11 @@ type SettingsService struct {
 	repo     *repositories.SettingRepository
 	userRepo *repositories.UserPreferenceRepository
 	audit    *AuditService
+}
+
+type RuntimeVersionState struct {
+	Version   string
+	Installed bool
 }
 
 var (
@@ -143,6 +149,35 @@ func (s *SettingsService) SetUserTheme(userID uint, theme string, actor *uint, i
 }
 
 func (s *SettingsService) RuntimeVersions(runtime string) []string {
+	installed := s.installedRuntimeVersions(runtime)
+	if len(installed) > 0 {
+		return installed
+	}
+	if strings.EqualFold(strings.TrimSpace(s.cfg.Features.PlatformMode), "dryrun") {
+		return s.configuredRuntimeVersions(runtime)
+	}
+	return []string{}
+}
+
+func (s *SettingsService) RuntimeVersionStates(runtime string) []RuntimeVersionState {
+	installed := s.installedRuntimeVersions(runtime)
+	out := make([]RuntimeVersionState, 0, len(installed))
+	for _, v := range installed {
+		out = append(out, RuntimeVersionState{Version: v, Installed: true})
+	}
+	return out
+}
+
+func (s *SettingsService) SyncInstalledRuntimeCatalogs() error {
+	for _, runtime := range []string{"go", "node", "python", "php"} {
+		if err := s.syncInstalledRuntimeCatalog(runtime); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *SettingsService) configuredRuntimeVersions(runtime string) []string {
 	key := runtimeVersionKey(runtime)
 	if key == "" {
 		return []string{}
@@ -168,6 +203,91 @@ func (s *SettingsService) RuntimeVersions(runtime string) []string {
 		out = append(out, v)
 	}
 	return out
+}
+
+func (s *SettingsService) installedRuntimeVersions(runtime string) []string {
+	runtime = strings.ToLower(strings.TrimSpace(runtime))
+	if runtime == "" {
+		return []string{}
+	}
+	out := make([]string, 0, 8)
+	seen := map[string]struct{}{}
+
+	root := filepath.Join(s.cfg.Paths.RuntimeRoot, runtime)
+	if entries, err := os.ReadDir(root); err == nil {
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			version := strings.TrimSpace(entry.Name())
+			if version == "" || !isValidRuntimeVersion(runtime, version) {
+				continue
+			}
+			if _, ok := seen[version]; ok {
+				continue
+			}
+			seen[version] = struct{}{}
+			out = append(out, version)
+		}
+	}
+
+	if runtime == "php" {
+		if entries, err := os.ReadDir("/etc/php"); err == nil {
+			for _, entry := range entries {
+				if !entry.IsDir() {
+					continue
+				}
+				version := strings.TrimSpace(entry.Name())
+				if version == "" || !isValidRuntimeVersion(runtime, version) {
+					continue
+				}
+				if _, err := os.Stat(filepath.Join("/etc/php", version, "fpm")); err != nil {
+					continue
+				}
+				if _, ok := seen[version]; ok {
+					continue
+				}
+				seen[version] = struct{}{}
+				out = append(out, version)
+			}
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i] > out[j] })
+	return out
+}
+
+func (s *SettingsService) syncInstalledRuntimeCatalog(runtime string) error {
+	key := runtimeVersionKey(runtime)
+	if key == "" {
+		return nil
+	}
+	installed := s.installedRuntimeVersions(runtime)
+	if len(installed) == 0 {
+		return nil
+	}
+	configured := s.configuredRuntimeVersions(runtime)
+	merged := make([]string, 0, len(installed)+len(configured))
+	seen := map[string]struct{}{}
+	for _, version := range installed {
+		if _, ok := seen[version]; ok {
+			continue
+		}
+		seen[version] = struct{}{}
+		merged = append(merged, version)
+	}
+	for _, version := range configured {
+		if _, ok := seen[version]; ok {
+			continue
+		}
+		seen[version] = struct{}{}
+		merged = append(merged, version)
+	}
+	current := strings.Join(configured, ",")
+	next := strings.Join(merged, ",")
+	if current == next {
+		return nil
+	}
+	return s.repo.Set(key, next, false)
 }
 
 func (s *SettingsService) AddRuntimeVersion(runtime, version string, actor *uint, ip string) error {
