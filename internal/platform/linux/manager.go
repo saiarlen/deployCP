@@ -144,12 +144,17 @@ type userManager struct {
 
 func (u *userManager) EnsureRestrictedShell(ctx context.Context, shellPath string) error {
 	script := `#!/bin/bash
-allowed="$HOME"
-if [ -f "$HOME/.deploycp_allowed_root" ]; then
-  read -r allowed < "$HOME/.deploycp_allowed_root" 2>/dev/null || true
+original_home="$HOME"
+allowed="$original_home"
+if [ -f "$original_home/.deploycp_allowed_root" ]; then
+  read -r allowed < "$original_home/.deploycp_allowed_root" 2>/dev/null || true
 fi
 if [ ! -d "$allowed" ]; then
-  allowed="$HOME"
+  if [ "$(basename "$original_home")" = "htdocs" ] && [ -d "$(dirname "$original_home")" ]; then
+    allowed="$(dirname "$original_home")"
+  else
+    allowed="$original_home"
+  fi
 fi
 export PATH=/usr/local/bin:/usr/bin:/bin
 runtime_env="$allowed/.deploycp/runtime.env"
@@ -158,8 +163,7 @@ if [ -f "$runtime_env" ]; then
 fi
 export HOME="$allowed"
 export DEPLOYCP_ALLOWED_ROOT="$allowed"
-mkdir -p "$HOME/.deploycp"
-rcfile="$HOME/.deploycp/shellrc"
+rcfile="$(mktemp /tmp/deploycp-shell.XXXXXX)"
 cat > "$rcfile" <<'EOF'
 deploycp_resolve_path() {
   local target="$1"

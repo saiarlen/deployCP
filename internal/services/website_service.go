@@ -132,16 +132,6 @@ func (s *WebsiteService) Create(ctx context.Context, in WebsiteInput, actor *uin
 		return nil, err
 	}
 	platformHome := platformHomeFromWebRoot(in.RootPath)
-	// Create the platform home plus the folders that are actually used.
-	for _, sub := range []string{"", "htdocs", "logs"} {
-		if err := os.MkdirAll(filepath.Join(platformHome, sub), 0o755); err != nil {
-			return nil, fmt.Errorf("create platform directory: %w", err)
-		}
-	}
-	ensurePathTraversable(in.RootPath)
-	if err := s.ensurePublicWebRoot(in.RootPath); err != nil {
-		return nil, err
-	}
 	site := &models.Website{
 		Name:             in.Name,
 		RootPath:         in.RootPath,
@@ -155,10 +145,6 @@ func (s *WebsiteService) Create(ctx context.Context, in WebsiteInput, actor *uin
 		AccessLogPath:    filepath.Join(platformHome, "logs", "access.log"),
 		ErrorLogPath:     filepath.Join(platformHome, "logs", "error.log"),
 	}
-	if err := os.MkdirAll(filepath.Dir(site.AccessLogPath), 0o755); err != nil {
-		return nil, err
-	}
-	ensurePathTraversable(filepath.Dir(site.AccessLogPath))
 	if err := s.repo.Create(site, in.Domains); err != nil {
 		return nil, err
 	}
@@ -166,17 +152,14 @@ func (s *WebsiteService) Create(ctx context.Context, in WebsiteInput, actor *uin
 	if created, err := s.repo.Find(site.ID); err == nil {
 		site = created
 	}
+	if err := s.ensureWebsiteFilesystem(ctx, site); err != nil {
+		return nil, err
+	}
 	if err := s.applyPlatformRuntime(site, actor, ip); err != nil {
 		return nil, err
 	}
 	if err := s.writeNginxConfig(ctx, site); err != nil {
 		return nil, err
-	}
-	// Chown the entire platform home to the site user so files created by root
-	// (index.html, runtime.env, logs dir) are owned by the correct user.
-	if site.SiteUser != nil && strings.TrimSpace(site.SiteUser.Username) != "" {
-		platHome := platformHomeFromWebRoot(site.RootPath)
-		_ = s.adapter.Users().ChownRecursive(ctx, site.SiteUser.Username, platHome)
 	}
 	s.audit.Record(actor, "website.create", "website", fmt.Sprintf("%d", site.ID), ip, in)
 	return site, nil
@@ -184,9 +167,6 @@ func (s *WebsiteService) Create(ctx context.Context, in WebsiteInput, actor *uin
 
 func (s *WebsiteService) Update(ctx context.Context, id uint, in WebsiteInput, actor *uint, ip string) error {
 	if err := s.validate(in); err != nil {
-		return err
-	}
-	if err := s.ensurePublicWebRoot(in.RootPath); err != nil {
 		return err
 	}
 	site, err := s.repo.Find(id)
@@ -202,6 +182,12 @@ func (s *WebsiteService) Update(ctx context.Context, id uint, in WebsiteInput, a
 	site.SiteUserID = in.SiteUserID
 	site.Enabled = in.Enabled
 	if err := s.repo.Update(site, in.Domains); err != nil {
+		return err
+	}
+	if refreshed, err := s.repo.Find(id); err == nil {
+		site = refreshed
+	}
+	if err := s.ensureWebsiteFilesystem(ctx, site); err != nil {
 		return err
 	}
 	if err := s.applyPlatformRuntime(site, actor, ip); err != nil {
@@ -403,10 +389,63 @@ func (s *WebsiteService) RefreshConfig(ctx context.Context, id uint) error {
 	if err != nil {
 		return err
 	}
+	if err := s.ensureWebsiteFilesystem(ctx, site); err != nil {
+		return err
+	}
 	if err := s.applyPlatformRuntime(site, nil, ""); err != nil {
 		return err
 	}
 	return s.writeNginxConfig(ctx, site)
+}
+
+func (s *WebsiteService) ensureWebsiteFilesystem(ctx context.Context, site *models.Website) error {
+	if site == nil {
+		return nil
+	}
+	platformHome := platformHomeFromWebRoot(site.RootPath)
+	requiredDirs := []string{
+		platformHome,
+		site.RootPath,
+		filepath.Join(platformHome, "logs"),
+	}
+	for _, dir := range requiredDirs {
+		if strings.TrimSpace(dir) == "" {
+			continue
+		}
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("create platform directory %s: %w", dir, err)
+		}
+		ensurePathTraversable(dir)
+	}
+	for _, logPath := range []string{site.AccessLogPath, site.ErrorLogPath} {
+		if strings.TrimSpace(logPath) == "" {
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
+			return fmt.Errorf("prepare log directory: %w", err)
+		}
+		if _, err := os.Stat(logPath); os.IsNotExist(err) {
+			if err := os.WriteFile(logPath, []byte(""), 0o644); err != nil {
+				return fmt.Errorf("create log file: %w", err)
+			}
+		}
+	}
+	if err := s.ensurePublicWebRoot(site.RootPath); err != nil {
+		return err
+	}
+	siteUser := site.SiteUser
+	if siteUser == nil && site.SiteUserID != nil && *site.SiteUserID > 0 && s.siteUsers != nil {
+		if item, err := s.siteUsers.Find(*site.SiteUserID); err == nil {
+			siteUser = item
+			site.SiteUser = item
+		}
+	}
+	if siteUser != nil && strings.TrimSpace(siteUser.Username) != "" {
+		if err := s.adapter.Users().ChownRecursive(ctx, siteUser.Username, platformHome); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *WebsiteService) writeNginxConfig(ctx context.Context, site *models.Website) error {
@@ -488,6 +527,9 @@ func (s *WebsiteService) ensurePublicWebRoot(root string) error {
 	root = strings.TrimSpace(root)
 	if root == "" {
 		return nil
+	}
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		return fmt.Errorf("create site root: %w", err)
 	}
 	// Site root (htdocs) must be world-readable and traversable for nginx (www-data).
 	if err := os.Chmod(root, 0o755); err != nil {
