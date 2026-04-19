@@ -3,6 +3,9 @@ package services
 import (
 	"context"
 	"fmt"
+	"io"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -62,6 +65,9 @@ func (s *SSLService) CreateForWebsite(ctx context.Context, site *models.Website,
 	if err := os.MkdirAll(acmeDir, 0o755); err != nil {
 		return fmt.Errorf("prepare acme path: %w", err)
 	}
+	if err := s.preflightHTTPChallenge(ctx, site, domain); err != nil {
+		return err
+	}
 
 	args := []string{"certonly", "--non-interactive", "--agree-tos", "--webroot", "-w", site.RootPath, "-d", domain, "--cert-name", domain}
 	if email := strings.TrimSpace(os.Getenv("DEPLOYCP_LETSENCRYPT_EMAIL")); email != "" {
@@ -84,6 +90,48 @@ func (s *SSLService) CreateForWebsite(ctx context.Context, site *models.Website,
 	liveDir := filepath.Join("/etc/letsencrypt/live", domain)
 	item := s.upsertIssuedCert(domain, filepath.Join(liveDir, "fullchain.pem"), filepath.Join(liveDir, "privkey.pem"), "Let's Encrypt", notAfter)
 	s.audit.Record(actor, "ssl.issue.complete", "ssl_certificate", fmt.Sprintf("%d", item.ID), ip, map[string]string{"domain": domain})
+	return nil
+}
+
+func (s *SSLService) preflightHTTPChallenge(ctx context.Context, site *models.Website, domain string) error {
+	domain = strings.TrimSpace(strings.ToLower(domain))
+	if domain == "" {
+		return fmt.Errorf("domain is required")
+	}
+
+	if _, err := net.LookupIP(domain); err != nil {
+		return fmt.Errorf("domain %s does not resolve yet: %w", domain, err)
+	}
+
+	acmeDir := filepath.Join(site.RootPath, ".well-known", "acme-challenge")
+	token := fmt.Sprintf("deploycp-%d", time.Now().UnixNano())
+	challengePath := filepath.Join(acmeDir, token)
+	if err := os.WriteFile(challengePath, []byte(token), 0o644); err != nil {
+		return fmt.Errorf("write acme challenge file: %w", err)
+	}
+	defer os.Remove(challengePath)
+
+	client := &http.Client{Timeout: 12 * time.Second}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+domain+"/.well-known/acme-challenge/"+token, nil)
+	if err != nil {
+		return fmt.Errorf("build acme validation request: %w", err)
+	}
+	req.Header.Set("User-Agent", "DeployCP-SSL-Preflight/1.0")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("domain %s is not reachable on port 80 from this server: %w", domain, err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	got := strings.TrimSpace(string(body))
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("domain %s returned HTTP %d for the ACME challenge path instead of 200", domain, resp.StatusCode)
+	}
+	if got != token {
+		return fmt.Errorf("domain %s is not serving the expected ACME challenge file from %s", domain, site.RootPath)
+	}
 	return nil
 }
 

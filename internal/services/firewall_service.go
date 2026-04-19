@@ -131,6 +131,11 @@ func (s *FirewallService) ufwStatus(ctx context.Context) (string, bool, []models
 			port = strings.TrimSpace(target[:slash])
 			protocol = strings.ToLower(strings.TrimSpace(target[slash+1:]))
 		}
+		protocol = normalizedRuleProtocol(protocol)
+		source = normalizedRuleSource(source)
+		if strings.Contains(strings.ToLower(target), "(v6)") && source == "0.0.0.0/0" {
+			source = "::/0"
+		}
 		rules = append(rules, models.PanelFirewallRule{
 			Name:        target,
 			Protocol:    protocol,
@@ -467,8 +472,23 @@ func validateFirewallRule(rule *models.PanelFirewallRule) error {
 
 func normalizedRuleProtocol(value string) string {
 	v := strings.ToLower(strings.TrimSpace(value))
+	v = strings.ReplaceAll(v, "(v6)", "")
+	v = strings.TrimSpace(v)
 	if v == "" {
 		return "tcp"
+	}
+	switch v {
+	case "tcp", "udp", "icmp", "any":
+		return v
+	}
+	if strings.HasPrefix(v, "tcp") {
+		return "tcp"
+	}
+	if strings.HasPrefix(v, "udp") {
+		return "udp"
+	}
+	if strings.HasPrefix(v, "icmp") {
+		return "icmp"
 	}
 	return v
 }

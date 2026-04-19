@@ -799,7 +799,7 @@ func (h *AppHandler) ManageSSLLetsEncrypt(c *fiber.Ctx) error {
 		return c.Redirect(platformURLWithTab("app", id, "ssl"))
 	}
 	if err := h.sslService.CreateForWebsite(c.Context(), site, domain, currentUserID(c), c.IP()); err != nil {
-		h.base.Sessions.SetFlash(c, err.Error())
+		h.base.Sessions.SetFlash(c, friendlySSLIssueMessage(domain, err))
 	} else {
 		_ = h.websiteService.RefreshConfig(c.Context(), websiteID)
 		h.base.Sessions.SetFlash(c, "Let's Encrypt certificate requested for "+domain)

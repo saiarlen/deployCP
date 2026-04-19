@@ -241,6 +241,14 @@ func (s *WebsiteService) Delete(ctx context.Context, id uint, actor *uint, ip st
 	if err := os.Remove(filepath.Join(s.cfg.Paths.NginxAvailableDir, site.Name+".conf")); err != nil && !os.IsNotExist(err) {
 		return err
 	}
+	if s.cfg.Features.EnableNginxManage {
+		if err := s.adapter.Nginx().Validate(ctx, s.cfg.Paths.NginxBinary); err != nil {
+			return err
+		}
+		if err := s.adapter.Nginx().Reload(ctx, s.cfg.Paths.NginxBinary); err != nil {
+			return err
+		}
+	}
 	if strings.TrimSpace(site.RootPath) != "" {
 		platformHome := platformHomeFromWebRoot(site.RootPath)
 		if err := removeTreeSafe(platformHome, s.cfg.Paths.DefaultSiteRoot, s.cfg.Paths.StorageRoot); err != nil {

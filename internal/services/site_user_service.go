@@ -111,6 +111,9 @@ func (s *SiteUserService) ResetPassword(ctx context.Context, id uint, password s
 	if err != nil {
 		return "", err
 	}
+	if err := s.adapter.Users().EnsureRestrictedShell(ctx, s.cfg.Paths.RestrictedShellPath); err != nil {
+		return "", err
+	}
 	if err := s.adapter.Users().SetPassword(ctx, user.Username, password); err != nil {
 		return "", err
 	}

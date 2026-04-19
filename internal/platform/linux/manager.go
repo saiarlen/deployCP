@@ -156,12 +156,48 @@ runtime_env="$allowed/.deploycp/runtime.env"
 if [ -f "$runtime_env" ]; then
   . "$runtime_env"
 fi
+export HOME="$allowed"
+export DEPLOYCP_ALLOWED_ROOT="$allowed"
+mkdir -p "$HOME/.deploycp"
+rcfile="$HOME/.deploycp/shellrc"
+cat > "$rcfile" <<'EOF'
+deploycp_resolve_path() {
+  local target="$1"
+  if [ -z "$target" ]; then
+    target="$HOME"
+  fi
+  readlink -m -- "$target"
+}
+deploycp_guarded_cd() {
+  local target="$1"
+  local resolved
+  resolved="$(deploycp_resolve_path "$target")" || return 1
+  case "$resolved" in
+    "$DEPLOYCP_ALLOWED_ROOT"|"$DEPLOYCP_ALLOWED_ROOT"/*)
+      builtin cd "$resolved"
+      ;;
+    *)
+      printf 'Access denied outside platform root: %s\n' "$DEPLOYCP_ALLOWED_ROOT"
+      return 1
+      ;;
+  esac
+}
+cd() {
+  deploycp_guarded_cd "$1"
+}
+pushd() {
+  deploycp_guarded_cd "${1:-$HOME}" >/dev/null || return 1
+  dirs -v
+}
+popd() {
+  builtin popd "$@"
+}
+PROMPT_COMMAND='pwd_now="$(pwd -P 2>/dev/null || pwd)"; case "$pwd_now" in "$DEPLOYCP_ALLOWED_ROOT"|"$DEPLOYCP_ALLOWED_ROOT"/*) ;; *) builtin cd "$DEPLOYCP_ALLOWED_ROOT" >/dev/null 2>&1 || true ;; esac'
+PS1='\u@\h:\w\$ '
+EOF
+chmod 600 "$rcfile"
 cd "$allowed" 2>/dev/null || cd "$HOME"
-if [ -x /bin/rbash ]; then
-  exec /bin/rbash
-else
-  exec /bin/bash --restricted
-fi
+exec /bin/bash --noprofile --rcfile "$rcfile"
 `
 	if err := utils.WriteFileAtomic(shellPath, []byte(script), 0o755); err != nil {
 		return err
@@ -318,7 +354,15 @@ func ensureParentTraversable(target string) {
 
 func (u *userManager) SetPassword(ctx context.Context, username, password string) error {
 	stdin := fmt.Sprintf("%s:%s\n", username, password)
-	_, err := u.runner.Run(ctx, system.CommandRequest{Binary: "/usr/sbin/chpasswd", Stdin: stdin, Timeout: 10 * time.Second, AuditAction: "site_user.password.reset"})
+	if _, err := u.runner.Run(ctx, system.CommandRequest{Binary: "/usr/sbin/chpasswd", Stdin: stdin, Timeout: 10 * time.Second, AuditAction: "site_user.password.reset"}); err != nil {
+		return err
+	}
+	_, err := u.runner.Run(ctx, system.CommandRequest{
+		Binary:      "/usr/sbin/usermod",
+		Args:        []string{"-s", u.cfg.Paths.RestrictedShellPath, username},
+		Timeout:     10 * time.Second,
+		AuditAction: "site_user.shell.sync",
+	})
 	return err
 }
 func (u *userManager) Disable(ctx context.Context, username string) error {

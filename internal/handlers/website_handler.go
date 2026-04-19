@@ -490,13 +490,31 @@ func (h *WebsiteHandler) ManageSSLLetsEncrypt(c *fiber.Ctx) error {
 	}
 	for _, d := range site.Domains {
 		if err := h.sslService.CreateForWebsite(c.Context(), site, d.Domain, currentUserID(c), c.IP()); err != nil {
-			h.base.Sessions.SetFlash(c, "Let's Encrypt for "+d.Domain+": "+err.Error())
+			h.base.Sessions.SetFlash(c, friendlySSLIssueMessage(d.Domain, err))
 			return c.Redirect(platformURLWithTab("website", id, "ssl"))
 		}
 	}
 	_ = h.service.RefreshConfig(c.Context(), id)
 	h.base.Sessions.SetFlash(c, "Let's Encrypt certificate requested for all domains")
 	return c.Redirect(platformURLWithTab("website", id, "ssl"))
+}
+
+func friendlySSLIssueMessage(domain string, err error) string {
+	raw := strings.TrimSpace(err.Error())
+	base := "Let's Encrypt failed for " + domain + "."
+	switch {
+	case strings.Contains(raw, "Some challenges have failed"):
+		return base + " Confirm DNS points to this server and port 80 is publicly reachable. Check /var/log/letsencrypt/letsencrypt.log for full details."
+	case strings.Contains(strings.ToLower(raw), "timeout"):
+		return base + " The ACME request timed out. Confirm the domain resolves here and the site is reachable on port 80."
+	case strings.Contains(raw, "NXDOMAIN"), strings.Contains(raw, "DNS problem"):
+		return base + " DNS is not resolving correctly yet. Wait for propagation, then retry."
+	default:
+		if raw == "" {
+			return base
+		}
+		return base + " " + raw
+	}
 }
 
 func (h *WebsiteHandler) ManageSSLImport(c *fiber.Ctx) error {
