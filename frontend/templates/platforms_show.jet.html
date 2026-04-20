@@ -1903,18 +1903,22 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
 
   <!-- Cloudflare -->
   <div class="surface p-5">
-    <div class="flex items-center gap-3 mb-3">
-      <label class="relative inline-flex items-center cursor-pointer">
-        <input type="checkbox" class="sr-only peer" disabled>
-        <span class="toggle-track"></span>
-      </label>
-      <span class="text-sm font-semibold">Cloudflare</span>
-    </div>
-    <p class="text-sm opacity-70">Allow traffic from Cloudflare only</p>
-    <p class="text-xs opacity-50 mt-1">The name servers must point to Cloudflare, and the proxy needs to be enabled for your dns records.</p>
-    <div class="mt-4 flex justify-end">
-      <button class="btn btn-primary" disabled>Save</button>
-    </div>
+    <form action="/websites/{{ Item.ID }}/manage/security/cloudflare" method="post">
+      <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+      <div class="flex items-center gap-3 mb-3">
+        <label class="relative inline-flex items-center cursor-pointer">
+          <input type="hidden" name="enabled" value="false">
+          <input type="checkbox" name="enabled" value="true" class="sr-only peer" {{ if CloudflareConfig }}{{ if CloudflareConfig.Enabled }}checked{{ end }}{{ end }}>
+          <span class="toggle-track"></span>
+        </label>
+        <span class="text-sm font-semibold">Cloudflare</span>
+      </div>
+      <p class="text-sm opacity-70">Restore real visitor IP from Cloudflare proxy</p>
+      <p class="text-xs opacity-50 mt-1">Adds <code>set_real_ip_from</code> and <code>real_ip_header CF-Connecting-IP</code> to the nginx server block so logs and apps see the actual visitor IP instead of Cloudflare's proxy IP. Requires the proxy (orange cloud) to be enabled in Cloudflare DNS.</p>
+      <div class="mt-4 flex justify-end">
+        <button class="btn btn-primary" type="submit">Save</button>
+      </div>
+    </form>
   </div>
 </div>
 

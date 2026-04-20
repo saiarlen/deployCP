@@ -59,6 +59,7 @@ func migrate(cfg *config.Config, db *gorm.DB) error {
 		&models.IPBlock{},
 		&models.BotBlock{},
 		&models.BasicAuth{},
+		&models.CloudflareConfig{},
 		&models.FTPUser{},
 	); err != nil {
 		return err

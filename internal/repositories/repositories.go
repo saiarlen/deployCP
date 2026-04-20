@@ -34,6 +34,7 @@ type Repositories struct {
 	IPBlocks           *IPBlockRepository
 	BotBlocks          *BotBlockRepository
 	BasicAuths         *BasicAuthRepository
+	CloudflareConfigs  *CloudflareConfigRepository
 	FTPUsers           *FTPUserRepository
 	Firewalls          *PanelFirewallRuleRepository
 }
@@ -61,6 +62,7 @@ func New(db *gorm.DB) *Repositories {
 		IPBlocks:           &IPBlockRepository{db},
 		BotBlocks:          &BotBlockRepository{db},
 		BasicAuths:         &BasicAuthRepository{db},
+		CloudflareConfigs:  &CloudflareConfigRepository{db},
 		FTPUsers:           &FTPUserRepository{db},
 		Firewalls:          &PanelFirewallRuleRepository{db},
 	}
@@ -931,6 +933,32 @@ func (r *BasicAuthRepository) Upsert(item *models.BasicAuth) error {
 
 func (r *BasicAuthRepository) DeleteByWebsite(websiteID uint) error {
 	return r.db.Where("website_id = ?", websiteID).Delete(&models.BasicAuth{}).Error
+}
+
+// ── CloudflareConfig ──
+
+type CloudflareConfigRepository struct{ db *gorm.DB }
+
+func (r *CloudflareConfigRepository) FindByWebsite(websiteID uint) (*models.CloudflareConfig, error) {
+	var item models.CloudflareConfig
+	if err := r.db.Where("website_id = ?", websiteID).First(&item).Error; err != nil {
+		return nil, err
+	}
+	return &item, nil
+}
+
+func (r *CloudflareConfigRepository) Upsert(item *models.CloudflareConfig) error {
+	var existing models.CloudflareConfig
+	err := r.db.Where("website_id = ?", item.WebsiteID).First(&existing).Error
+	if err == nil {
+		existing.Enabled = item.Enabled
+		return r.db.Save(&existing).Error
+	}
+	return r.db.Create(item).Error
+}
+
+func (r *CloudflareConfigRepository) DeleteByWebsite(websiteID uint) error {
+	return r.db.Where("website_id = ?", websiteID).Delete(&models.CloudflareConfig{}).Error
 }
 
 // ── FTPUser ──

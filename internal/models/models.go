@@ -335,6 +335,14 @@ type BasicAuth struct {
 	UpdatedAt      time.Time
 }
 
+type CloudflareConfig struct {
+	ID        uint `gorm:"primaryKey"`
+	WebsiteID uint `gorm:"uniqueIndex;not null"`
+	Enabled   bool `gorm:"not null;default:false"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
 type FTPUser struct {
 	ID          uint   `gorm:"primaryKey"`
 	WebsiteID   uint   `gorm:"index;not null"`

@@ -125,6 +125,7 @@ func Build() (*Application, error) {
 		repos.IPBlocks,
 		repos.BotBlocks,
 		repos.BasicAuths,
+		repos.CloudflareConfigs,
 		platformAdapter,
 		auditService,
 		sslService,
@@ -301,7 +302,7 @@ func Build() (*Application, error) {
 		UpdateService:    updateService,
 		AuthHandler:      handlers.NewAuthHandler(cfg, sessionManager, authService, settingsService),
 		DashboardHandler: handlers.NewDashboardHandler(cfg, sessionManager, dashboardService),
-		WebsiteHandler:   handlers.NewWebsiteHandler(cfg, sessionManager, websiteService, repos.SiteUsers, siteUserService, databaseService, sslService, repos.Databases, repos.SSL, settingsService, repos.NginxSites, repos.CronJobs, repos.Varnish, repos.IPBlocks, repos.BotBlocks, repos.BasicAuths, repos.FTPUsers, appService, cronService, ftpService, varnishService),
+		WebsiteHandler:   handlers.NewWebsiteHandler(cfg, sessionManager, websiteService, repos.SiteUsers, siteUserService, databaseService, sslService, repos.Databases, repos.SSL, settingsService, repos.NginxSites, repos.CronJobs, repos.Varnish, repos.IPBlocks, repos.BotBlocks, repos.BasicAuths, repos.CloudflareConfigs, repos.FTPUsers, appService, cronService, ftpService, varnishService),
 		AppHandler:       handlers.NewAppHandler(cfg, sessionManager, appService, websiteService, settingsService, siteUserService, repos.SiteUsers, databaseService, sslService, repos.Databases, repos.FTPUsers, ftpService),
 		ServiceHandler:   handlers.NewServiceHandler(cfg, sessionManager, serviceService),
 		SettingsHandler:  handlers.NewSettingsHandler(cfg, sessionManager, settingsService, serviceService, panelUserService, repos.Audit, repos.Firewalls, repos.UserPlatformAccess, websiteService, appService, auditService, firewallService, runtimeService, ftpService, updateService),
@@ -394,6 +395,7 @@ func (a *Application) registerRoutes() {
 	secured.Post("/websites/:id/manage/security/bot-block", a.WebsiteHandler.ManageAddBotBlock)
 	secured.Post("/websites/:id/manage/security/bot-block/:bid/delete", a.WebsiteHandler.ManageDeleteBotBlock)
 	secured.Post("/websites/:id/manage/security/basic-auth", a.WebsiteHandler.ManageUpdateBasicAuth)
+	secured.Post("/websites/:id/manage/security/cloudflare", a.WebsiteHandler.ManageUpdateCloudflare)
 	secured.Post("/websites/:id/manage/ftp-users", a.WebsiteHandler.ManageCreateFTPUser)
 	secured.Post("/websites/:id/manage/ftp-users/:fid/delete", a.WebsiteHandler.ManageDeleteFTPUser)
 	secured.Post("/websites/:id/manage/php-settings", a.WebsiteHandler.ManageSavePhpSettings)

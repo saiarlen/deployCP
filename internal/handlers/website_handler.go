@@ -33,10 +33,11 @@ type WebsiteHandler struct {
 	nginxSites      *repositories.NginxSiteRepository
 	cronJobs        *repositories.CronJobRepository
 	varnish         *repositories.VarnishConfigRepository
-	ipBlocks        *repositories.IPBlockRepository
-	botBlocks       *repositories.BotBlockRepository
-	basicAuths      *repositories.BasicAuthRepository
-	ftpUsers        *repositories.FTPUserRepository
+	ipBlocks          *repositories.IPBlockRepository
+	botBlocks         *repositories.BotBlockRepository
+	basicAuths        *repositories.BasicAuthRepository
+	cloudflareCfgs    *repositories.CloudflareConfigRepository
+	ftpUsers          *repositories.FTPUserRepository
 	appService      *services.AppService
 	cronService     *services.CronService
 	ftpService      *services.FTPService
@@ -66,6 +67,7 @@ func NewWebsiteHandler(
 	ipBlocks *repositories.IPBlockRepository,
 	botBlocks *repositories.BotBlockRepository,
 	basicAuths *repositories.BasicAuthRepository,
+	cloudflareCfgs *repositories.CloudflareConfigRepository,
 	ftpUsers *repositories.FTPUserRepository,
 	appService *services.AppService,
 	cronService *services.CronService,
@@ -85,10 +87,11 @@ func NewWebsiteHandler(
 		nginxSites:      nginxSites,
 		cronJobs:        cronJobs,
 		varnish:         varnish,
-		ipBlocks:        ipBlocks,
-		botBlocks:       botBlocks,
-		basicAuths:      basicAuths,
-		ftpUsers:        ftpUsers,
+		ipBlocks:       ipBlocks,
+		botBlocks:      botBlocks,
+		basicAuths:     basicAuths,
+		cloudflareCfgs: cloudflareCfgs,
+		ftpUsers:       ftpUsers,
 		appService:      appService,
 		cronService:     cronService,
 		ftpService:      ftpService,
@@ -156,6 +159,7 @@ func (h *WebsiteHandler) ShowByID(c *fiber.Ctx, id uint) error {
 	ipBlocks, _ := h.ipBlocks.ListByWebsite(id)
 	botBlocks, _ := h.botBlocks.ListByWebsite(id)
 	basicAuth, _ := h.basicAuths.FindByWebsite(id)
+	cloudflareCfg, _ := h.cloudflareCfgs.FindByWebsite(id)
 	ftpUsers, _ := h.ftpUsers.ListByWebsite(id)
 
 	// Collect all SSH users: primary (from Website.SiteUser) + additional (from SiteUser.WebsiteID)
@@ -230,6 +234,7 @@ func (h *WebsiteHandler) ShowByID(c *fiber.Ctx, id uint) error {
 		"IPBlocks":             ipBlocks,
 		"BotBlocks":            botBlocks,
 		"BasicAuth":            basicAuth,
+		"CloudflareConfig":     cloudflareCfg,
 		"FTPUsers":             ftpUsers,
 		"PHPVersions":          phpVersions,
 		"DefaultHomeDir":       platformHomeFromRoot(item.RootPath),
@@ -935,6 +940,26 @@ func (h *WebsiteHandler) ManageUpdateBasicAuth(c *fiber.Ctx) error {
 	} else {
 		_ = h.service.RefreshConfig(c.Context(), id)
 		h.base.Sessions.SetFlash(c, "Basic auth settings saved")
+	}
+	return c.Redirect(platformURLWithTab("website", id, "security"))
+}
+
+// ── Security: Cloudflare ──
+
+func (h *WebsiteHandler) ManageUpdateCloudflare(c *fiber.Ctx) error {
+	id, err := repositories.ParseID(c.Params("id"))
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	item := &models.CloudflareConfig{
+		WebsiteID: id,
+		Enabled:   boolFromForm(c, "enabled"),
+	}
+	if err := h.cloudflareCfgs.Upsert(item); err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+	} else {
+		_ = h.service.RefreshConfig(c.Context(), id)
+		h.base.Sessions.SetFlash(c, "Cloudflare settings saved")
 	}
 	return c.Redirect(platformURLWithTab("website", id, "security"))
 }

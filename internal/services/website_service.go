@@ -56,10 +56,11 @@ type WebsiteService struct {
 	redisRepo *repositories.RedisConnectionRepository
 	sslRepo   *repositories.SSLCertificateRepository
 	varnish   *repositories.VarnishConfigRepository
-	ipBlocks  *repositories.IPBlockRepository
-	botBlocks *repositories.BotBlockRepository
-	basicAuth *repositories.BasicAuthRepository
-	adapter   platform.Adapter
+	ipBlocks   *repositories.IPBlockRepository
+	botBlocks  *repositories.BotBlockRepository
+	basicAuth  *repositories.BasicAuthRepository
+	cloudflare *repositories.CloudflareConfigRepository
+	adapter    platform.Adapter
 	audit     *AuditService
 	ssl       *SSLService
 	runtime   *RuntimeService
@@ -84,6 +85,7 @@ func NewWebsiteService(
 	ipBlocks *repositories.IPBlockRepository,
 	botBlocks *repositories.BotBlockRepository,
 	basicAuth *repositories.BasicAuthRepository,
+	cloudflare *repositories.CloudflareConfigRepository,
 	adapter platform.Adapter,
 	audit *AuditService,
 	ssl *SSLService,
@@ -105,10 +107,11 @@ func NewWebsiteService(
 		redisRepo: redisRepo,
 		sslRepo:   sslRepo,
 		varnish:   varnish,
-		ipBlocks:  ipBlocks,
-		botBlocks: botBlocks,
-		basicAuth: basicAuth,
-		adapter:   adapter,
+		ipBlocks:   ipBlocks,
+		botBlocks:  botBlocks,
+		basicAuth:  basicAuth,
+		cloudflare: cloudflare,
+		adapter:    adapter,
 		audit:     audit,
 		ssl:       ssl,
 		runtime:   runtime,
@@ -518,19 +521,26 @@ func (s *WebsiteService) writeNginxConfig(ctx context.Context, site *models.Webs
 		botBlocks, _ = s.botBlocks.ListByWebsite(site.ID)
 	}
 	basicAuthPath := ""
-	if basicAuth != nil && basicAuth.Enabled && strings.TrimSpace(basicAuth.Username) != "" && strings.TrimSpace(basicAuth.Password) != "" {
+	if basicAuth != nil && basicAuth.Enabled && strings.TrimSpace(basicAuth.Username) != "" && strings.TrimSpace(basicAuth.PasswordEnc) != "" {
 		path, err := s.ensureBasicAuthFile(site, basicAuth)
 		if err != nil {
 			return err
 		}
 		basicAuthPath = path
 	}
+	cloudflareEnabled := false
+	if s.cloudflare != nil {
+		if cfCfg, err := s.cloudflare.FindByWebsite(site.ID); err == nil && cfCfg != nil {
+			cloudflareEnabled = cfCfg.Enabled
+		}
+	}
 	cfg := nginx.BuildWebsiteConfig(s.cfg, site, nginx.WebsiteConfigOptions{
-		Certificate:   cert,
-		BasicAuth:     basicAuth,
-		BasicAuthPath: basicAuthPath,
-		IPBlocks:      ipBlocks,
-		BotBlocks:     botBlocks,
+		Certificate:       cert,
+		BasicAuth:         basicAuth,
+		BasicAuthPath:     basicAuthPath,
+		IPBlocks:          ipBlocks,
+		BotBlocks:         botBlocks,
+		CloudflareEnabled: cloudflareEnabled,
 	})
 	if err := utils.WriteFileAtomic(cfg.ConfigPath, []byte(cfg.Content), 0o644); err != nil {
 		return err
@@ -1019,6 +1029,9 @@ func (s *WebsiteService) ListLogFiles(id uint) ([]LogFileInfo, error) {
 	if err != nil {
 		return nil, err
 	}
+	platformHome := platformHomeFromWebRoot(site.RootPath)
+	platformLogDir := filepath.Join(platformHome, "logs")
+	_ = os.MkdirAll(platformLogDir, 0o755)
 	seen := map[string]struct{}{}
 	files := make([]LogFileInfo, 0, 6)
 	addFile := func(path string, logType string) {
@@ -1040,52 +1053,8 @@ func (s *WebsiteService) ListLogFiles(id uint) ([]LogFileInfo, error) {
 			Path: path,
 		})
 	}
-	for _, item := range s.discoverLogFiles(site) {
-		addFile(item.Path, item.Type)
-	}
-	sort.Slice(files, func(i, j int) bool {
-		if files[i].Type != files[j].Type {
-			typeRank := func(kind string) int {
-				switch kind {
-				case "access":
-					return 0
-				case "error":
-					return 1
-				default:
-					return 2
-				}
-			}
-			return typeRank(files[i].Type) < typeRank(files[j].Type)
-		}
-		return files[i].Name < files[j].Name
-	})
-	return files, nil
-}
-
-func (s *WebsiteService) discoverLogFiles(site *models.Website) []LogFileInfo {
-	if site == nil {
-		return nil
-	}
-	platformHome := platformHomeFromWebRoot(site.RootPath)
-	platformLogDir := filepath.Join(platformHome, "logs")
-	_ = os.MkdirAll(platformLogDir, 0o755)
-	seen := map[string]struct{}{}
-	files := make([]LogFileInfo, 0, 6)
-	add := func(path string, logType string) {
-		path = strings.TrimSpace(path)
-		if path == "" {
-			return
-		}
-		name := filepath.Base(path)
-		if name == "." || name == "" {
-			return
-		}
-		if _, ok := seen[path]; ok {
-			return
-		}
-		seen[path] = struct{}{}
-		files = append(files, LogFileInfo{Name: name, Type: logType, Path: path})
-	}
+	addFile(site.AccessLogPath, "access")
+	addFile(site.ErrorLogPath, "error")
 	if entries, err := os.ReadDir(platformLogDir); err == nil {
 		for _, e := range entries {
 			if e.IsDir() {
@@ -1098,12 +1067,13 @@ func (s *WebsiteService) discoverLogFiles(site *models.Website) []LogFileInfo {
 			} else if strings.Contains(name, "error") {
 				logType = "error"
 			}
-			add(filepath.Join(platformLogDir, name), logType)
+			addFile(filepath.Join(platformLogDir, name), logType)
 		}
 	}
-	add(site.AccessLogPath, "access")
-	add(site.ErrorLogPath, "error")
-	return files
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].Name > files[j].Name
+	})
+	return files, nil
 }
 
 func (s *WebsiteService) ReadLogFile(id uint, filename string, lines int) (string, error) {
@@ -1113,19 +1083,12 @@ func (s *WebsiteService) ReadLogFile(id uint, filename string, lines int) (strin
 	}
 	safe := filepath.Base(filename)
 	var fp string
-	for _, item := range s.discoverLogFiles(site) {
-		if item.Name != safe {
-			continue
-		}
-		if strings.TrimSpace(item.Path) == "" {
-			continue
-		}
-		fp = item.Path
-		if info, statErr := os.Stat(fp); statErr == nil && !info.IsDir() {
-			break
-		}
-	}
-	if fp == "" {
+	switch safe {
+	case filepath.Base(site.AccessLogPath):
+		fp = site.AccessLogPath
+	case filepath.Base(site.ErrorLogPath):
+		fp = site.ErrorLogPath
+	default:
 		dir, dirErr := s.LogDir(id)
 		if dirErr != nil {
 			return "", dirErr

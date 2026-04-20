@@ -653,6 +653,61 @@ func (h *AppHandler) ManageCreateSiteUser(c *fiber.Ctx) error {
 	return c.Redirect(platformURLWithTab("app", id, "ssh"))
 }
 
+func (h *AppHandler) ManageResetSiteUserPassword(c *fiber.Ctx) error {
+	id, err := repositories.ParseID(c.Params("id"))
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	app, err := h.service.Find(id)
+	if err != nil {
+		return c.Status(404).SendString("application not found")
+	}
+	if app.WebsiteID == nil {
+		h.base.Sessions.SetFlash(c, "platform has no linked SSH user")
+		return c.Redirect(platformURLWithTab("app", id, "ssh"))
+	}
+	site, err := h.websiteService.Find(*app.WebsiteID)
+	if err != nil {
+		return c.Status(404).SendString("linked website not found")
+	}
+	targetID := uint(0)
+	if uidRaw := strings.TrimSpace(c.Params("uid")); uidRaw != "" {
+		uid, parseErr := repositories.ParseID(uidRaw)
+		if parseErr != nil {
+			return c.Status(400).SendString(parseErr.Error())
+		}
+		targetID = uid
+	}
+	if targetID == 0 && site.SiteUserID != nil {
+		targetID = *site.SiteUserID
+	}
+	if targetID == 0 {
+		h.base.Sessions.SetFlash(c, "No site user to update")
+		return c.Redirect(platformURLWithTab("app", id, "ssh"))
+	}
+	isAllowed := site.SiteUserID != nil && *site.SiteUserID == targetID
+	if !isAllowed {
+		user, findErr := h.siteUsers.Find(targetID)
+		if findErr != nil {
+			return c.Status(404).SendString("site user not found")
+		}
+		isAllowed = user.WebsiteID != nil && *user.WebsiteID == *app.WebsiteID
+	}
+	if !isAllowed {
+		return c.Status(403).SendString("site user does not belong to this platform")
+	}
+	password := c.FormValue("password")
+	generated, err := h.siteUserService.ResetPassword(c.Context(), targetID, password, currentUserID(c), c.IP())
+	if err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+	} else if strings.TrimSpace(password) == "" {
+		h.base.Sessions.SetFlash(c, "Password reset. Generated password: "+generated)
+	} else {
+		h.base.Sessions.SetFlash(c, "Password updated")
+	}
+	return c.Redirect(platformURLWithTab("app", id, "ssh"))
+}
+
 func (h *AppHandler) ManageDeleteSiteUser(c *fiber.Ctx) error {
 	id, _ := repositories.ParseID(c.Params("id"))
 	uid, err := repositories.ParseID(c.Params("uid"))
