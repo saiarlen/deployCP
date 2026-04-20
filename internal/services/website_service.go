@@ -1019,9 +1019,6 @@ func (s *WebsiteService) ListLogFiles(id uint) ([]LogFileInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	platformHome := platformHomeFromWebRoot(site.RootPath)
-	platformLogDir := filepath.Join(platformHome, "logs")
-	_ = os.MkdirAll(platformLogDir, 0o755)
 	seen := map[string]struct{}{}
 	files := make([]LogFileInfo, 0, 6)
 	addFile := func(path string, logType string) {
@@ -1043,8 +1040,52 @@ func (s *WebsiteService) ListLogFiles(id uint) ([]LogFileInfo, error) {
 			Path: path,
 		})
 	}
-	addFile(site.AccessLogPath, "access")
-	addFile(site.ErrorLogPath, "error")
+	for _, item := range s.discoverLogFiles(site) {
+		addFile(item.Path, item.Type)
+	}
+	sort.Slice(files, func(i, j int) bool {
+		if files[i].Type != files[j].Type {
+			typeRank := func(kind string) int {
+				switch kind {
+				case "access":
+					return 0
+				case "error":
+					return 1
+				default:
+					return 2
+				}
+			}
+			return typeRank(files[i].Type) < typeRank(files[j].Type)
+		}
+		return files[i].Name < files[j].Name
+	})
+	return files, nil
+}
+
+func (s *WebsiteService) discoverLogFiles(site *models.Website) []LogFileInfo {
+	if site == nil {
+		return nil
+	}
+	platformHome := platformHomeFromWebRoot(site.RootPath)
+	platformLogDir := filepath.Join(platformHome, "logs")
+	_ = os.MkdirAll(platformLogDir, 0o755)
+	seen := map[string]struct{}{}
+	files := make([]LogFileInfo, 0, 6)
+	add := func(path string, logType string) {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			return
+		}
+		name := filepath.Base(path)
+		if name == "." || name == "" {
+			return
+		}
+		if _, ok := seen[path]; ok {
+			return
+		}
+		seen[path] = struct{}{}
+		files = append(files, LogFileInfo{Name: name, Type: logType, Path: path})
+	}
 	if entries, err := os.ReadDir(platformLogDir); err == nil {
 		for _, e := range entries {
 			if e.IsDir() {
@@ -1057,13 +1098,12 @@ func (s *WebsiteService) ListLogFiles(id uint) ([]LogFileInfo, error) {
 			} else if strings.Contains(name, "error") {
 				logType = "error"
 			}
-			addFile(filepath.Join(platformLogDir, name), logType)
+			add(filepath.Join(platformLogDir, name), logType)
 		}
 	}
-	sort.Slice(files, func(i, j int) bool {
-		return files[i].Name > files[j].Name
-	})
-	return files, nil
+	add(site.AccessLogPath, "access")
+	add(site.ErrorLogPath, "error")
+	return files
 }
 
 func (s *WebsiteService) ReadLogFile(id uint, filename string, lines int) (string, error) {
@@ -1073,12 +1113,19 @@ func (s *WebsiteService) ReadLogFile(id uint, filename string, lines int) (strin
 	}
 	safe := filepath.Base(filename)
 	var fp string
-	switch safe {
-	case filepath.Base(site.AccessLogPath):
-		fp = site.AccessLogPath
-	case filepath.Base(site.ErrorLogPath):
-		fp = site.ErrorLogPath
-	default:
+	for _, item := range s.discoverLogFiles(site) {
+		if item.Name != safe {
+			continue
+		}
+		if strings.TrimSpace(item.Path) == "" {
+			continue
+		}
+		fp = item.Path
+		if info, statErr := os.Stat(fp); statErr == nil && !info.IsDir() {
+			break
+		}
+	}
+	if fp == "" {
 		dir, dirErr := s.LogDir(id)
 		if dirErr != nil {
 			return "", dirErr

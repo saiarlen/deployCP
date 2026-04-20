@@ -174,14 +174,15 @@ func (h *AppHandler) SitesAppsCreate(c *fiber.Ctx) error {
 	case "static", "php":
 		root := strings.TrimSpace(c.FormValue("root_path"))
 		if root == "" {
-			root = strings.TrimSuffix(h.base.Config.Paths.DefaultSiteRoot, "/") + "/" + strings.ReplaceAll(domain, "*.", "wildcard-")
+			root = strings.TrimSuffix(h.base.Config.Paths.DefaultSiteRoot, "/") + "/" + strings.ReplaceAll(domain, "*.", "wildcard-") + "/htdocs"
 		}
 		var siteUserID *uint
 		if siteUsername != "" {
+			platformHome := platformHomeFromRoot(root)
 			user, generatedPassword, err := h.siteUserService.Create(c.Context(), services.SiteUserInput{
 				Username:      siteUsername,
-				HomeDirectory: root,
-				AllowedRoot:   root,
+				HomeDirectory: platformHome,
+				AllowedRoot:   platformHome,
 				Password:      sitePassword,
 				SSHEnabled:    true,
 			}, currentUserID(c), c.IP())
@@ -222,14 +223,15 @@ func (h *AppHandler) SitesAppsCreate(c *fiber.Ctx) error {
 		}
 		root := strings.TrimSpace(c.FormValue("root_path"))
 		if root == "" {
-			root = strings.TrimSuffix(h.base.Config.Paths.DefaultSiteRoot, "/") + "/" + strings.ReplaceAll(domain, "*.", "wildcard-")
+			root = strings.TrimSuffix(h.base.Config.Paths.DefaultSiteRoot, "/") + "/" + strings.ReplaceAll(domain, "*.", "wildcard-") + "/htdocs"
 		}
 		var siteUserID *uint
 		if siteUsername != "" {
+			platformHome := platformHomeFromRoot(root)
 			user, generatedPassword, err := h.siteUserService.Create(c.Context(), services.SiteUserInput{
 				Username:      siteUsername,
-				HomeDirectory: root,
-				AllowedRoot:   root,
+				HomeDirectory: platformHome,
+				AllowedRoot:   platformHome,
 				Password:      sitePassword,
 				SSHEnabled:    true,
 			}, currentUserID(c), c.IP())
@@ -622,14 +624,18 @@ func (h *AppHandler) ManageCreateSiteUser(c *fiber.Ctx) error {
 	if workdir == "" {
 		workdir = strings.TrimSuffix(h.base.Config.Paths.DefaultSiteRoot, "/") + "/" + app.Name
 	}
+	userHome := workdir
+	if app.WebsiteID != nil {
+		userHome = platformHomeFromRoot(workdir)
+	}
 	var websiteID *uint
 	if app.WebsiteID != nil {
 		websiteID = app.WebsiteID
 	}
 	_, generatedPassword, err := h.siteUserService.Create(c.Context(), services.SiteUserInput{
 		Username:      strings.TrimSpace(c.FormValue("username")),
-		HomeDirectory: workdir,
-		AllowedRoot:   workdir,
+		HomeDirectory: userHome,
+		AllowedRoot:   userHome,
 		Password:      c.FormValue("password"),
 		SSHEnabled:    true,
 		WebsiteID:     websiteID,
@@ -703,6 +709,9 @@ func (h *AppHandler) ManageCreateFTPUser(c *fiber.Ctx) error {
 		homeDir = app.WorkingDirectory
 		if homeDir == "" {
 			homeDir = strings.TrimSuffix(h.base.Config.Paths.DefaultSiteRoot, "/") + "/" + app.Name
+		}
+		if app.WebsiteID != nil {
+			homeDir = platformHomeFromRoot(homeDir)
 		}
 	}
 	item := &models.FTPUser{WebsiteID: *app.WebsiteID, Username: username, Password: password, HomeDir: homeDir}
