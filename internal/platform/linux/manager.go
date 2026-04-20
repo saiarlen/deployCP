@@ -166,6 +166,7 @@ export HOME="$allowed"
 export DEPLOYCP_ALLOWED_ROOT="$allowed"
 rcfile="$(mktemp /tmp/deploycp-shell.XXXXXX)"
 cat > "$rcfile" <<'EOF'
+umask 0002
 deploycp_resolve_path() {
   local target="$1"
   if [ -z "$target" ]; then
@@ -326,9 +327,6 @@ func (u *userManager) Create(ctx context.Context, spec platform.SiteUserSpec) (i
 	if err := utils.WriteFileAtomic(allowed, []byte(spec.AllowedRoot+"\n"), 0o644); err != nil {
 		return 0, 0, err
 	}
-	if _, err := u.runner.Run(ctx, system.CommandRequest{Binary: "/bin/chown", Args: []string{spec.Username + ":" + spec.Username, allowed}, Timeout: 5 * time.Second}); err != nil {
-		return 0, 0, err
-	}
 	return 0, 0, nil
 }
 
@@ -347,13 +345,6 @@ func (u *userManager) SyncHome(ctx context.Context, username, homeDir, allowedRo
 	}
 	allowed := filepath.Join(homeDir, ".deploycp_allowed_root")
 	if err := utils.WriteFileAtomic(allowed, []byte(strings.TrimSpace(allowedRoot)+"\n"), 0o644); err != nil {
-		return err
-	}
-	if _, err := u.runner.Run(ctx, system.CommandRequest{
-		Binary:  "/bin/chown",
-		Args:    []string{username + ":" + username, allowed},
-		Timeout: 5 * time.Second,
-	}); err != nil {
 		return err
 	}
 	return nil
@@ -461,6 +452,12 @@ func (u *userManager) SyncSharedAccess(ctx context.Context, root, primaryUser, g
 			Args:        []string{primary + ":" + groupName, root},
 			Timeout:     10 * time.Second,
 			AuditAction: "site_user.shared.chown_root",
+		})
+		_, _ = u.runner.Run(ctx, system.CommandRequest{
+			Binary:      "/usr/bin/find",
+			Args:        []string{root, "-user", "root", "-exec", "/bin/chown", primary + ":" + groupName, "{}", "+"},
+			Timeout:     60 * time.Second,
+			AuditAction: "site_user.shared.chown_root_owned",
 		})
 	}
 	if _, err := u.runner.Run(ctx, system.CommandRequest{

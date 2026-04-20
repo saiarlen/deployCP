@@ -440,7 +440,7 @@ func (h *ElfinderHandler) cmdMkdir(c *fiber.Ctx, site *models.Website, root stri
 	if !pathWithinRoot(root, newDir) {
 		return c.JSON(fiber.Map{"error": "path escapes root"})
 	}
-	if err := h.mkdirsForSite(c.Context(), site, newDir, 0o755); err != nil {
+	if err := h.mkdirsForSite(c.Context(), site, newDir, 0o775); err != nil {
 		return c.JSON(fiber.Map{"error": err.Error()})
 	}
 	info, _ := os.Stat(newDir)
@@ -459,7 +459,7 @@ func (h *ElfinderHandler) cmdMkfile(c *fiber.Ctx, site *models.Website, root str
 	if !pathWithinRoot(root, fp) {
 		return c.JSON(fiber.Map{"error": "path escapes root"})
 	}
-	if err := h.writeFileForSite(c.Context(), site, fp, []byte{}, 0o644); err != nil {
+	if err := h.writeFileForSite(c.Context(), site, fp, []byte{}, 0o664); err != nil {
 		return c.JSON(fiber.Map{"error": err.Error()})
 	}
 	info, _ := os.Stat(fp)
@@ -519,7 +519,7 @@ func (h *ElfinderHandler) cmdUpload(c *fiber.Ctx, site *models.Website, root str
 	if err != nil {
 		return c.JSON(fiber.Map{"error": err.Error()})
 	}
-	_ = os.MkdirAll(dir, 0o755)
+	_ = os.MkdirAll(dir, 0o775)
 
 	form, err := c.MultipartForm()
 	if err != nil {
@@ -545,7 +545,7 @@ func (h *ElfinderHandler) cmdUpload(c *fiber.Ctx, site *models.Website, root str
 		if readErr != nil {
 			continue
 		}
-		if err := h.writeFileForSite(c.Context(), site, dest, content, 0o644); err != nil {
+		if err := h.writeFileForSite(c.Context(), site, dest, content, 0o664); err != nil {
 			continue
 		}
 		info, _ := os.Stat(dest)
@@ -576,7 +576,7 @@ func (h *ElfinderHandler) cmdPut(c *fiber.Ctx, site *models.Website, root string
 	if err != nil {
 		return c.JSON(fiber.Map{"error": err.Error()})
 	}
-	if err := h.writeFileForSite(c.Context(), site, abs, []byte(content), 0o644); err != nil {
+	if err := h.writeFileForSite(c.Context(), site, abs, []byte(content), 0o664); err != nil {
 		return c.JSON(fiber.Map{"error": err.Error()})
 	}
 	info, _ := os.Stat(abs)
@@ -1206,7 +1206,9 @@ func (h *ElfinderHandler) mkdirsForSite(ctx context.Context, site *models.Websit
 func (h *ElfinderHandler) chmodForSite(ctx context.Context, site *models.Website, path string, perm os.FileMode) error {
 	mode := fmt.Sprintf("%04o", perm.Perm())
 	if h.canRunAsSiteUser(site) {
-		return h.runAsSiteUser(ctx, site, "/bin/chmod", []string{mode, path}, "")
+		if err := h.runAsSiteUser(ctx, site, "/bin/chmod", []string{mode, path}, ""); err == nil {
+			return nil
+		}
 	}
 	if err := os.Chmod(path, perm); err != nil {
 		return err
@@ -1215,9 +1217,14 @@ func (h *ElfinderHandler) chmodForSite(ctx context.Context, site *models.Website
 }
 
 func (h *ElfinderHandler) writeFileForSite(ctx context.Context, site *models.Website, path string, content []byte, perm os.FileMode) error {
+	_, statErr := os.Stat(path)
+	existed := statErr == nil
 	if h.canRunAsSiteUser(site) {
 		if err := h.runAsSiteUser(ctx, site, "/bin/dd", []string{"of=" + path, "status=none"}, string(content)); err != nil {
 			return err
+		}
+		if existed {
+			return nil
 		}
 		return h.chmodForSite(ctx, site, path, perm)
 	}
