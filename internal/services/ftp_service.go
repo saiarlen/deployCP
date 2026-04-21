@@ -79,6 +79,39 @@ func (s *FTPService) Create(ctx context.Context, item *models.FTPUser, actor *ui
 	return nil
 }
 
+func (s *FTPService) ResetPassword(ctx context.Context, id uint, password string, actor *uint, ip string) (string, error) {
+	item, err := s.repo.Find(id)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(password) == "" {
+		password = utils.GeneratePassword()
+	}
+	encrypted, err := utils.EncryptString(s.cfg.Security.SessionSecret, password)
+	if err != nil {
+		return "", err
+	}
+	if s.cfg.Features.PlatformMode != "dryrun" {
+		if _, err := s.runner.Run(ctx, system.CommandRequest{
+			Binary:      "/usr/sbin/chpasswd",
+			Stdin:       fmt.Sprintf("%s:%s\n", item.Username, password),
+			Timeout:     10 * time.Second,
+			AuditAction: "ftp.user.password.reset",
+			ActorUserID: actor,
+			IP:          ip,
+		}); err != nil {
+			return "", err
+		}
+	}
+	item.PasswordEnc = encrypted
+	item.Password = ""
+	if err := s.repo.Update(item); err != nil {
+		return "", err
+	}
+	s.audit.Record(actor, "ftp_user.password.reset", "ftp_user", fmt.Sprintf("%d", id), ip, map[string]string{"username": item.Username})
+	return password, nil
+}
+
 func (s *FTPService) DeleteByID(ctx context.Context, id uint, actor *uint, ip string) error {
 	item, err := s.repo.Find(id)
 	if err != nil {

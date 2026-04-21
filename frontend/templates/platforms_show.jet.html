@@ -581,63 +581,73 @@
   <!-- ── SSH Users ── -->
   <div class="surface p-5 mb-5">
     <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
-      <h3 class="text-sm font-semibold">SSH Users</h3>
+      <div>
+        <h3 class="text-sm font-semibold">SSH Users</h3>
+        <p class="text-xs opacity-60 mt-1">Manage SSH access accounts for this application.</p>
+      </div>
     </div>
 
     {{ if len(SSHUsers) > 0 }}
-    <div class="overflow-x-auto mb-4">
-      <table class="w-full text-sm text-left">
-        <thead>
-          <tr class="text-xs uppercase tracking-wide">
-            <th class="py-2 pr-4">Username</th>
-            <th class="py-2 pr-4">Home Directory</th>
-            <th class="py-2 pr-4">Shell</th>
-            <th class="py-2 pr-4">SSH</th>
-            <th class="py-2 pr-4">Status</th>
-            <th class="py-2 text-right">Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {{ range _, u := SSHUsers }}
-          <tr class="border-b hover:bg-[var(--bg-hover)] transition-colors">
-            <td class="py-2.5 pr-4 font-medium font-medium">{{ u.Username }}{{ if u.ID == PrimarySSHUserID }} <span class="text-[10px]  border border-[var(--accent)] rounded px-1.5 py-0.5 ml-1">primary</span>{{ end }}</td>
-            <td class="py-2.5 pr-4 font-mono text-xs ">{{ u.HomeDirectory }}</td>
-            <td class="py-2.5 pr-4 font-mono text-xs opacity-70">{{ u.Shell }}</td>
-            <td class="py-2.5 pr-4">{{ if u.SSHEnabled }}<span class="inline-flex items-center gap-1 text-xs "><svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg> Enabled</span>{{ else }}<span class="text-xs opacity-50">Disabled</span>{{ end }}</td>
-            <td class="py-2.5 pr-4">{{ if u.IsActive }}<span class="badge badge-ok">Active</span>{{ else }}<span class="badge badge-danger">Inactive</span>{{ end }}</td>
-            <td class="py-2.5 text-right">
-              {{ if u.ID != PrimarySSHUserID }}
-              <form action="/apps/{{ Status.App.ID }}/manage/site-user/{{ u.ID }}/delete" method="post" style="display:inline" data-confirm-message="Delete SSH user {{ u.Username }}?">
-                <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
-                <button class="text-xs hover:underline font-medium" type="submit">Delete</button>
-              </form>
-              {{ else }}
-              <span class="text-xs opacity-30">—</span>
-              {{ end }}
-            </td>
-          </tr>
+    <div class="space-y-3 mb-4">
+      {{ range _, u := SSHUsers }}
+      <div class="rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] p-4">
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <div class="flex items-center gap-2">
+            <span class="font-mono text-sm font-medium">{{ u.Username }}</span>
+            {{ if u.ID == PrimarySSHUserID }}<span class="badge badge-ok">primary</span>{{ end }}
+            {{ if u.IsActive }}<span class="badge badge-ok">Active</span>{{ else }}<span class="badge badge-danger">Inactive</span>{{ end }}
+            {{ if u.SSHEnabled }}<span class="badge badge-neutral">SSH Enabled</span>{{ else }}<span class="badge badge-neutral">SSH Disabled</span>{{ end }}
+          </div>
+          {{ if u.ID != PrimarySSHUserID }}
+          <div class="flex items-center gap-2">
+            <form action="/apps/{{ Status.App.ID }}/manage/site-user/{{ u.ID }}/delete" method="post" data-confirm-message="Delete SSH user {{ u.Username }}?">
+              <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+              <button class="btn btn-danger" type="submit"><i data-lucide="trash-2"></i> Delete</button>
+            </form>
+          </div>
           {{ end }}
-        </tbody>
-      </table>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+          <div>
+            <span class="uppercase tracking-wide opacity-50">Home Directory</span>
+            <div class="font-mono mt-1 truncate">{{ u.HomeDirectory }}</div>
+          </div>
+          <div>
+            <span class="uppercase tracking-wide opacity-50">Shell</span>
+            <div class="font-mono mt-1">{{ u.Shell }}</div>
+          </div>
+        </div>
+        {{ if u.ID != PrimarySSHUserID }}
+        <details class="mt-3 pt-3 border-t border-[var(--border)]">
+          <summary class="cursor-pointer text-xs font-semibold hover:underline select-none">Reset Password</summary>
+          <form action="/apps/{{ Status.App.ID }}/manage/site-user/{{ u.ID }}/password" method="post" class="mt-3 flex flex-wrap items-end gap-2">
+            <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+            <label class="block flex-1 min-w-[200px] text-xs font-medium">New Password
+              <input class="field mt-1" type="text" name="password" autocomplete="new-password" placeholder="Leave blank to auto-generate">
+            </label>
+            <button class="btn btn-primary" type="submit">Update Password</button>
+          </form>
+        </details>
+        {{ end }}
+      </div>
+      {{ end }}
     </div>
     {{ else }}
-    <div class="rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] p-4 mb-4">
-      <p class="text-sm opacity-70">No SSH user configured for this application. Add one below to enable SSH access.</p>
-    </div>
+    <p class="text-sm opacity-70 mb-4">No SSH user configured for this application. Add one below to enable SSH access.</p>
     {{ end }}
 
     <details class="pt-3 border-t border-[var(--border)]" {{ if len(SSHUsers) == 0 }}open{{ end }}>
       <summary class="cursor-pointer text-sm font-semibold hover:underline select-none">+ Add SSH User</summary>
       <form class="mt-4 space-y-4" action="/apps/{{ Status.App.ID }}/manage/site-user" method="post">
         <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
-        <div class="grid gap-4 sm:grid-cols-2">
+        <div class="form-grid">
           <label class="block text-sm font-medium">Username
-            <input class="field mt-1" name="username" placeholder="e.g. appuser" required>
+            <input class="field mt-2" name="username" placeholder="e.g. appuser" required>
           </label>
           <label class="block text-sm font-medium">Password
-            <div class="flex gap-2 mt-1">
+            <div class="flex gap-2 mt-2">
               <input class="field flex-1" type="text" name="password" id="app-ssh-password" autocomplete="new-password" placeholder="auto-generated if empty">
-              <button type="button" class="btn whitespace-nowrap" onclick="var p='';var c='abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%';for(var i=0;i<20;i++)p+=c[Math.floor(Math.random()*c.length)];document.getElementById('app-ssh-password').value=p;">Generate</button>
+              <button type="button" class="btn" onclick="var p='';var c='abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%';for(var i=0;i<20;i++)p+=c[Math.floor(Math.random()*c.length)];document.getElementById('app-ssh-password').value=p;">Generate</button>
             </div>
           </label>
         </div>
@@ -651,60 +661,66 @@
   <!-- ── FTP Users ── -->
   <div class="surface p-5">
     <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
-      <h3 class="text-sm font-semibold">FTP Users</h3>
+      <div>
+        <h3 class="text-sm font-semibold">FTP Users</h3>
+        <p class="text-xs opacity-60 mt-1">Manage FTP access accounts for this application.</p>
+      </div>
     </div>
 
     {{ if FTPUsers }}
-    <div class="overflow-x-auto mb-4">
-      <table class="w-full text-sm text-left">
-        <thead>
-          <tr class="text-xs uppercase tracking-wide">
-            <th class="py-2 pr-4">Username</th>
-            <th class="py-2 pr-4">Home Directory</th>
-            <th class="py-2 pr-4">Status</th>
-            <th class="py-2 text-right">Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {{ range _, u := FTPUsers }}
-          <tr class="border-b hover:bg-[var(--bg-hover)] transition-colors">
-            <td class="py-2.5 pr-4 font-medium font-medium">{{ u.Username }}</td>
-            <td class="py-2.5 pr-4 font-mono text-xs ">{{ u.HomeDir }}</td>
-            <td class="py-2.5 pr-4">{{ if u.IsActive }}<span class="badge badge-ok">Active</span>{{ else }}<span class="badge badge-danger">Inactive</span>{{ end }}</td>
-            <td class="py-2.5 text-right">
-              <form action="/apps/{{ Status.App.ID }}/manage/ftp-users/{{ u.ID }}/delete" method="post" style="display:inline" data-confirm-message="Delete FTP user {{ u.Username }}?">
-                <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
-                <button class="text-xs hover:underline font-medium" type="submit">Delete</button>
-              </form>
-            </td>
-          </tr>
-          {{ end }}
-        </tbody>
-      </table>
+    <div class="space-y-3 mb-4">
+      {{ range _, u := FTPUsers }}
+      <div class="rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] p-4">
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <div class="flex items-center gap-2">
+            <span class="font-mono text-sm font-medium">{{ u.Username }}</span>
+            {{ if u.IsActive }}<span class="badge badge-ok">Active</span>{{ else }}<span class="badge badge-danger">Inactive</span>{{ end }}
+          </div>
+          <div class="flex items-center gap-2">
+            <form action="/apps/{{ Status.App.ID }}/manage/ftp-users/{{ u.ID }}/delete" method="post" data-confirm-message="Delete FTP user {{ u.Username }}?">
+              <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+              <button class="btn btn-danger" type="submit"><i data-lucide="trash-2"></i> Delete</button>
+            </form>
+          </div>
+        </div>
+        <div class="text-xs">
+          <span class="uppercase tracking-wide opacity-50">Home Directory</span>
+          <div class="font-mono mt-1 truncate">{{ u.HomeDir }}</div>
+        </div>
+        <details class="mt-3 pt-3 border-t border-[var(--border)]">
+          <summary class="cursor-pointer text-xs font-semibold hover:underline select-none">Reset Password</summary>
+          <form action="/apps/{{ Status.App.ID }}/manage/ftp-users/{{ u.ID }}/password" method="post" class="mt-3 flex flex-wrap items-end gap-2">
+            <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+            <label class="block flex-1 min-w-[200px] text-xs font-medium">New Password
+              <input class="field mt-1" type="text" name="password" autocomplete="new-password" placeholder="Leave blank to auto-generate">
+            </label>
+            <button class="btn btn-primary" type="submit">Update Password</button>
+          </form>
+        </details>
+      </div>
+      {{ end }}
     </div>
     {{ else }}
-    <div class="rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] p-4 mb-4">
-      <p class="text-sm opacity-70">No FTP users configured. Add one below to enable FTP access.</p>
-    </div>
+    <p class="text-sm opacity-70 mb-4">No FTP users configured. Add one below to enable FTP access.</p>
     {{ end }}
 
     <details class="pt-3 border-t border-[var(--border)]" {{ if !FTPUsers }}open{{ end }}>
       <summary class="cursor-pointer text-sm font-semibold hover:underline select-none">+ Add FTP User</summary>
       <form class="mt-4 space-y-4" action="/apps/{{ Status.App.ID }}/manage/ftp-users" method="post">
         <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
-        <div class="grid gap-4 sm:grid-cols-2">
+        <div class="form-grid">
           <label class="block text-sm font-medium">Username
-            <input class="field mt-1" name="username" placeholder="e.g. ftpuser" required>
+            <input class="field mt-2" name="username" placeholder="e.g. ftpuser" required>
           </label>
           <label class="block text-sm font-medium">Password
-            <div class="flex gap-2 mt-1">
+            <div class="flex gap-2 mt-2">
               <input class="field flex-1" type="text" name="password" id="app-ftp-password" autocomplete="new-password" placeholder="auto-generated if empty">
-              <button type="button" class="btn whitespace-nowrap" onclick="var p='';var c='abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%';for(var i=0;i<20;i++)p+=c[Math.floor(Math.random()*c.length)];document.getElementById('app-ftp-password').value=p;">Generate</button>
+              <button type="button" class="btn" onclick="var p='';var c='abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%';for(var i=0;i<20;i++)p+=c[Math.floor(Math.random()*c.length)];document.getElementById('app-ftp-password').value=p;">Generate</button>
             </div>
           </label>
         </div>
         <label class="block text-sm font-medium">Home Directory
-          <input class="field mt-1 font-mono text-xs" name="home_dir" value="{{ DefaultHomeDir }}" placeholder="/home/app/workdir">
+          <input class="field mt-2 font-mono text-xs" name="home_dir" value="{{ DefaultHomeDir }}" placeholder="/home/app/workdir">
           <span class="text-xs opacity-50 mt-1">The root directory this FTP user can access. Defaults to the application working directory.</span>
         </label>
         <div class="flex justify-end">
@@ -1628,7 +1644,6 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
       <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
       <div class="flex items-center gap-3 mb-5">
         <label class="relative inline-flex items-center cursor-pointer">
-          <input type="hidden" name="enabled" value="false">
           <input type="checkbox" name="enabled" value="true" class="sr-only peer" {{ if VarnishCfg }}{{ if VarnishCfg.Enabled }}checked{{ end }}{{ end }}>
           <span class="toggle-track"></span>
         </label>
@@ -1877,7 +1892,6 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
       <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
       <div class="flex items-center gap-3 mb-5">
         <label class="relative inline-flex items-center cursor-pointer">
-          <input type="hidden" name="enabled" value="false">
           <input type="checkbox" name="enabled" value="true" class="sr-only peer" {{ if BasicAuth }}{{ if BasicAuth.Enabled }}checked{{ end }}{{ end }}>
           <span class="toggle-track"></span>
         </label>
@@ -1907,7 +1921,6 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
       <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
       <div class="flex items-center gap-3 mb-3">
         <label class="relative inline-flex items-center cursor-pointer">
-          <input type="hidden" name="enabled" value="false">
           <input type="checkbox" name="enabled" value="true" class="sr-only peer" {{ if CloudflareConfig }}{{ if CloudflareConfig.Enabled }}checked{{ end }}{{ end }}>
           <span class="toggle-track"></span>
         </label>
@@ -1928,63 +1941,73 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
   <!-- ── SSH Users ── -->
   <div class="surface p-5 mb-5">
     <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
-      <h3 class="text-sm font-semibold">SSH Users</h3>
+      <div>
+        <h3 class="text-sm font-semibold">SSH Users</h3>
+        <p class="text-xs opacity-60 mt-1">Manage SSH access accounts for this site.</p>
+      </div>
     </div>
 
     {{ if len(SSHUsers) > 0 }}
-    <div class="overflow-x-auto mb-4">
-      <table class="w-full text-sm text-left">
-        <thead>
-          <tr class="text-xs uppercase tracking-wide">
-            <th class="py-2 pr-4">Username</th>
-            <th class="py-2 pr-4">Home Directory</th>
-            <th class="py-2 pr-4">Shell</th>
-            <th class="py-2 pr-4">SSH</th>
-            <th class="py-2 pr-4">Status</th>
-            <th class="py-2 text-right">Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {{ range _, u := SSHUsers }}
-          <tr class="border-b hover:bg-[var(--bg-hover)] transition-colors">
-            <td class="py-2.5 pr-4 font-medium font-medium">{{ u.Username }}{{ if u.ID == PrimarySSHUserID }} <span class="text-[10px]  border border-[var(--accent)] rounded px-1.5 py-0.5 ml-1">primary</span>{{ end }}</td>
-            <td class="py-2.5 pr-4 font-mono text-xs ">{{ u.HomeDirectory }}</td>
-            <td class="py-2.5 pr-4 font-mono text-xs opacity-70">{{ u.Shell }}</td>
-            <td class="py-2.5 pr-4">{{ if u.SSHEnabled }}<span class="inline-flex items-center gap-1 text-xs "><svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg> Enabled</span>{{ else }}<span class="text-xs opacity-50">Disabled</span>{{ end }}</td>
-            <td class="py-2.5 pr-4">{{ if u.IsActive }}<span class="badge badge-ok">Active</span>{{ else }}<span class="badge badge-danger">Inactive</span>{{ end }}</td>
-            <td class="py-2.5 text-right">
-              {{ if u.ID != PrimarySSHUserID }}
-              <form action="/websites/{{ Item.ID }}/manage/site-user/{{ u.ID }}/delete" method="post" style="display:inline" data-confirm-message="Delete SSH user {{ u.Username }}?">
-                <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
-                <button class="text-xs hover:underline font-medium" type="submit">Delete</button>
-              </form>
-              {{ else }}
-              <span class="text-xs opacity-30">—</span>
-              {{ end }}
-            </td>
-          </tr>
+    <div class="space-y-3 mb-4">
+      {{ range _, u := SSHUsers }}
+      <div class="rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] p-4">
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <div class="flex items-center gap-2">
+            <span class="font-mono text-sm font-medium">{{ u.Username }}</span>
+            {{ if u.ID == PrimarySSHUserID }}<span class="badge badge-ok">primary</span>{{ end }}
+            {{ if u.IsActive }}<span class="badge badge-ok">Active</span>{{ else }}<span class="badge badge-danger">Inactive</span>{{ end }}
+            {{ if u.SSHEnabled }}<span class="badge badge-neutral">SSH Enabled</span>{{ else }}<span class="badge badge-neutral">SSH Disabled</span>{{ end }}
+          </div>
+          {{ if u.ID != PrimarySSHUserID }}
+          <div class="flex items-center gap-2">
+            <form action="/websites/{{ Item.ID }}/manage/site-user/{{ u.ID }}/delete" method="post" data-confirm-message="Delete SSH user {{ u.Username }}?">
+              <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+              <button class="btn btn-danger" type="submit"><i data-lucide="trash-2"></i> Delete</button>
+            </form>
+          </div>
           {{ end }}
-        </tbody>
-      </table>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+          <div>
+            <span class="uppercase tracking-wide opacity-50">Home Directory</span>
+            <div class="font-mono mt-1 truncate">{{ u.HomeDirectory }}</div>
+          </div>
+          <div>
+            <span class="uppercase tracking-wide opacity-50">Shell</span>
+            <div class="font-mono mt-1">{{ u.Shell }}</div>
+          </div>
+        </div>
+        {{ if u.ID != PrimarySSHUserID }}
+        <details class="mt-3 pt-3 border-t border-[var(--border)]">
+          <summary class="cursor-pointer text-xs font-semibold hover:underline select-none">Reset Password</summary>
+          <form action="/websites/{{ Item.ID }}/manage/site-user/{{ u.ID }}/password" method="post" class="mt-3 flex flex-wrap items-end gap-2">
+            <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+            <label class="block flex-1 min-w-[200px] text-xs font-medium">New Password
+              <input class="field mt-1" type="text" name="password" autocomplete="new-password" placeholder="Leave blank to auto-generate">
+            </label>
+            <button class="btn btn-primary" type="submit">Update Password</button>
+          </form>
+        </details>
+        {{ end }}
+      </div>
+      {{ end }}
     </div>
     {{ else }}
-    <div class="rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] p-4 mb-4">
-      <p class="text-sm opacity-70">No SSH user configured for this site. Add one below to enable SSH access.</p>
-    </div>
+    <p class="text-sm opacity-70 mb-4">No SSH user configured for this site. Add one below to enable SSH access.</p>
     {{ end }}
 
     <details class="pt-3 border-t border-[var(--border)]" {{ if len(SSHUsers) == 0 }}open{{ end }}>
       <summary class="cursor-pointer text-sm font-semibold hover:underline select-none">+ Add SSH User</summary>
       <form class="mt-4 space-y-4" action="/websites/{{ Item.ID }}/manage/site-user" method="post">
         <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
-        <div class="grid gap-4 sm:grid-cols-2">
+        <div class="form-grid">
           <label class="block text-sm font-medium">Username
-            <input class="field mt-1" name="username" placeholder="e.g. siteuser" required>
+            <input class="field mt-2" name="username" placeholder="e.g. siteuser" required>
           </label>
           <label class="block text-sm font-medium">Password
-            <div class="flex gap-2 mt-1">
+            <div class="flex gap-2 mt-2">
               <input class="field flex-1" type="text" name="password" id="ssh-password" autocomplete="new-password" placeholder="auto-generated if empty">
-              <button type="button" class="btn whitespace-nowrap" onclick="var p='';var c='abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%';for(var i=0;i<20;i++)p+=c[Math.floor(Math.random()*c.length)];document.getElementById('ssh-password').value=p;">Generate</button>
+              <button type="button" class="btn" onclick="var p='';var c='abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%';for(var i=0;i<20;i++)p+=c[Math.floor(Math.random()*c.length)];document.getElementById('ssh-password').value=p;">Generate</button>
             </div>
           </label>
         </div>
@@ -1998,60 +2021,66 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
   <!-- ── FTP Users ── -->
   <div class="surface p-5">
     <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
-      <h3 class="text-sm font-semibold">FTP Users</h3>
+      <div>
+        <h3 class="text-sm font-semibold">FTP Users</h3>
+        <p class="text-xs opacity-60 mt-1">Manage FTP access accounts for this site.</p>
+      </div>
     </div>
 
     {{ if FTPUsers }}
-    <div class="overflow-x-auto mb-4">
-      <table class="w-full text-sm text-left">
-        <thead>
-          <tr class="text-xs uppercase tracking-wide">
-            <th class="py-2 pr-4">Username</th>
-            <th class="py-2 pr-4">Home Directory</th>
-            <th class="py-2 pr-4">Status</th>
-            <th class="py-2 text-right">Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {{ range _, u := FTPUsers }}
-          <tr class="border-b hover:bg-[var(--bg-hover)] transition-colors">
-            <td class="py-2.5 pr-4 font-medium font-medium">{{ u.Username }}</td>
-            <td class="py-2.5 pr-4 font-mono text-xs ">{{ u.HomeDir }}</td>
-            <td class="py-2.5 pr-4">{{ if u.IsActive }}<span class="badge badge-ok">Active</span>{{ else }}<span class="badge badge-danger">Inactive</span>{{ end }}</td>
-            <td class="py-2.5 text-right">
-              <form action="/websites/{{ Item.ID }}/manage/ftp-users/{{ u.ID }}/delete" method="post" style="display:inline" data-confirm-message="Delete FTP user {{ u.Username }}?">
-                <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
-                <button class="text-xs hover:underline font-medium" type="submit">Delete</button>
-              </form>
-            </td>
-          </tr>
-          {{ end }}
-        </tbody>
-      </table>
+    <div class="space-y-3 mb-4">
+      {{ range _, u := FTPUsers }}
+      <div class="rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] p-4">
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <div class="flex items-center gap-2">
+            <span class="font-mono text-sm font-medium">{{ u.Username }}</span>
+            {{ if u.IsActive }}<span class="badge badge-ok">Active</span>{{ else }}<span class="badge badge-danger">Inactive</span>{{ end }}
+          </div>
+          <div class="flex items-center gap-2">
+            <form action="/websites/{{ Item.ID }}/manage/ftp-users/{{ u.ID }}/delete" method="post" data-confirm-message="Delete FTP user {{ u.Username }}?">
+              <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+              <button class="btn btn-danger" type="submit"><i data-lucide="trash-2"></i> Delete</button>
+            </form>
+          </div>
+        </div>
+        <div class="text-xs">
+          <span class="uppercase tracking-wide opacity-50">Home Directory</span>
+          <div class="font-mono mt-1 truncate">{{ u.HomeDir }}</div>
+        </div>
+        <details class="mt-3 pt-3 border-t border-[var(--border)]">
+          <summary class="cursor-pointer text-xs font-semibold hover:underline select-none">Reset Password</summary>
+          <form action="/websites/{{ Item.ID }}/manage/ftp-users/{{ u.ID }}/password" method="post" class="mt-3 flex flex-wrap items-end gap-2">
+            <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+            <label class="block flex-1 min-w-[200px] text-xs font-medium">New Password
+              <input class="field mt-1" type="text" name="password" autocomplete="new-password" placeholder="Leave blank to auto-generate">
+            </label>
+            <button class="btn btn-primary" type="submit">Update Password</button>
+          </form>
+        </details>
+      </div>
+      {{ end }}
     </div>
     {{ else }}
-    <div class="rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] p-4 mb-4">
-      <p class="text-sm opacity-70">No FTP users configured. Add one below to enable FTP access.</p>
-    </div>
+    <p class="text-sm opacity-70 mb-4">No FTP users configured. Add one below to enable FTP access.</p>
     {{ end }}
 
     <details class="pt-3 border-t border-[var(--border)]" {{ if !FTPUsers }}open{{ end }}>
       <summary class="cursor-pointer text-sm font-semibold hover:underline select-none">+ Add FTP User</summary>
       <form class="mt-4 space-y-4" action="/websites/{{ Item.ID }}/manage/ftp-users" method="post">
         <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
-        <div class="grid gap-4 sm:grid-cols-2">
+        <div class="form-grid">
           <label class="block text-sm font-medium">Username
-            <input class="field mt-1" name="username" placeholder="e.g. ftpuser" required>
+            <input class="field mt-2" name="username" placeholder="e.g. ftpuser" required>
           </label>
           <label class="block text-sm font-medium">Password
-            <div class="flex gap-2 mt-1">
+            <div class="flex gap-2 mt-2">
               <input class="field flex-1" type="text" name="password" id="ftp-password" autocomplete="new-password" placeholder="auto-generated if empty">
-              <button type="button" class="btn whitespace-nowrap" onclick="var p='';var c='abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%';for(var i=0;i<20;i++)p+=c[Math.floor(Math.random()*c.length)];document.getElementById('ftp-password').value=p;">Generate</button>
+              <button type="button" class="btn" onclick="var p='';var c='abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%';for(var i=0;i<20;i++)p+=c[Math.floor(Math.random()*c.length)];document.getElementById('ftp-password').value=p;">Generate</button>
             </div>
           </label>
         </div>
         <label class="block text-sm font-medium">Home Directory
-          <input class="field mt-1 font-mono text-xs" name="home_dir" value="{{ DefaultHomeDir }}" placeholder="/home/site/htdocs">
+          <input class="field mt-2 font-mono text-xs" name="home_dir" value="{{ DefaultHomeDir }}" placeholder="/home/site/htdocs">
           <span class="text-xs opacity-50 mt-1">The root directory this FTP user can access. Defaults to the site root.</span>
         </label>
         <div class="flex justify-end">
@@ -2518,6 +2547,22 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
 <script>
 $(function () {
   var pageKey = 'deploycp_manage_tab_' + location.pathname;
+
+  function pageEscape(text) {
+    return $('<span>').text(text == null ? '' : String(text)).html();
+  }
+  function pageSetButtonLoading($btn, loading, busyText) {
+    if (!$btn || !$btn.length) return;
+    if (loading) {
+      if (!$btn.data('page-html')) $btn.data('page-html', $btn.html());
+      $btn.addClass('is-loading').prop('disabled', true);
+      if (busyText) $btn.html('<i data-lucide="loader-circle"></i> ' + pageEscape(busyText));
+    } else {
+      $btn.removeClass('is-loading').prop('disabled', false);
+      if ($btn.data('page-html')) { $btn.html($btn.data('page-html')); $btn.removeData('page-html'); }
+    }
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+  }
 
   function activateTab(name) {
     $('#manage-tabs .manage-tab').each(function () {

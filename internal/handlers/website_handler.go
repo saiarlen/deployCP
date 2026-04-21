@@ -425,6 +425,46 @@ func (h *WebsiteHandler) ManageResetSiteUserPassword(c *fiber.Ctx) error {
 	return c.Redirect(platformURLWithTab("website", id, "settings"))
 }
 
+func (h *WebsiteHandler) ManageResetSiteUserPasswordByUID(c *fiber.Ctx) error {
+	id, _ := repositories.ParseID(c.Params("id"))
+	uid, err := repositories.ParseID(c.Params("uid"))
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	password := c.FormValue("password")
+	generated, err := h.siteUserService.ResetPassword(c.Context(), uid, password, currentUserID(c), c.IP())
+	if err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+	} else if strings.TrimSpace(password) == "" {
+		h.base.Sessions.SetFlash(c, "Password reset. Generated password: "+generated)
+	} else {
+		h.base.Sessions.SetFlash(c, "Password updated")
+	}
+	return c.Redirect(platformURLWithTab("website", id, "ssh"))
+}
+
+func (h *WebsiteHandler) ManageResetFTPPassword(c *fiber.Ctx) error {
+	id, _ := repositories.ParseID(c.Params("id"))
+	fid, err := repositories.ParseID(c.Params("fid"))
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	password := c.FormValue("password")
+	if h.ftpService != nil {
+		generated, resetErr := h.ftpService.ResetPassword(c.Context(), fid, password, currentUserID(c), c.IP())
+		if resetErr != nil {
+			h.base.Sessions.SetFlash(c, resetErr.Error())
+		} else if strings.TrimSpace(password) == "" {
+			h.base.Sessions.SetFlash(c, "FTP password reset. Generated password: "+generated)
+		} else {
+			h.base.Sessions.SetFlash(c, "FTP password updated")
+		}
+	} else {
+		h.base.Sessions.SetFlash(c, "FTP service not available")
+	}
+	return c.Redirect(platformURLWithTab("website", id, "ssh"))
+}
+
 func (h *WebsiteHandler) ManageDeleteSiteUser(c *fiber.Ctx) error {
 	id, _ := repositories.ParseID(c.Params("id"))
 	uid, err := repositories.ParseID(c.Params("uid"))

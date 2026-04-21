@@ -991,6 +991,7 @@ func (r *FTPUserRepository) FindByUsername(username string) (*models.FTPUser, er
 	return &item, nil
 }
 func (r *FTPUserRepository) Create(item *models.FTPUser) error { return r.db.Create(item).Error }
+func (r *FTPUserRepository) Update(item *models.FTPUser) error { return r.db.Save(item).Error }
 func (r *FTPUserRepository) Delete(id uint) error {
 	return r.db.Delete(&models.FTPUser{}, id).Error
 }
