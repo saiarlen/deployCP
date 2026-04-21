@@ -110,6 +110,9 @@ func (s *DatabaseService) CreateRedis(in RedisInput, actor *uint, ip string) err
 	if in.DB < 0 {
 		return fmt.Errorf("redis database number must be 0 or greater")
 	}
+	if in.Port < 1 || in.Port > 65535 {
+		in.Port = 6379
+	}
 	if nextDB, adjusted, err := s.ensureRedisDBUnique(in.Host, in.DB); err != nil {
 		return err
 	} else if adjusted {
@@ -253,7 +256,10 @@ func (s *DatabaseService) RedisInfo(id uint) (*RedisDiagnostics, error) {
 	defer cancel()
 	client := redis.NewClient(&redis.Options{Addr: fmt.Sprintf("%s:%d", item.Host, item.Port), Password: password, DB: item.DB})
 	defer client.Close()
-	pong, _ := client.Ping(ctx).Result()
+	pong, err := client.Ping(ctx).Result()
+	if err != nil {
+		return nil, fmt.Errorf("redis connect failed: %w", err)
+	}
 	info, _ := client.Info(ctx).Result()
 	size, _ := client.DBSize(ctx).Result()
 	if len(info) > 2000 {
@@ -387,21 +393,16 @@ func (s *DatabaseService) provisionMariaDB(in DBConnectionInput) error {
 	if err == nil {
 		defer sqlDB.Close()
 	}
+	escapedPass := escapeMariaDBString(in.Password)
 	statements := []string{
 		fmt.Sprintf("CREATE DATABASE IF NOT EXISTS `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci", in.Database),
-		fmt.Sprintf("CREATE USER IF NOT EXISTS '%s'@'localhost' IDENTIFIED BY ?", in.Username),
-		fmt.Sprintf("CREATE USER IF NOT EXISTS '%s'@'127.0.0.1' IDENTIFIED BY ?", in.Username),
+		fmt.Sprintf("CREATE USER IF NOT EXISTS '%s'@'localhost' IDENTIFIED BY '%s'", in.Username, escapedPass),
+		fmt.Sprintf("CREATE USER IF NOT EXISTS '%s'@'127.0.0.1' IDENTIFIED BY '%s'", in.Username, escapedPass),
 		fmt.Sprintf("GRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'localhost'", in.Database, in.Username),
 		fmt.Sprintf("GRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'127.0.0.1'", in.Database, in.Username),
 		"FLUSH PRIVILEGES",
 	}
 	for _, stmt := range statements {
-		if strings.Contains(stmt, "IDENTIFIED BY ?") {
-			if err := db.Exec(stmt, in.Password).Error; err != nil {
-				return err
-			}
-			continue
-		}
 		if err := db.Exec(stmt).Error; err != nil {
 			return err
 		}
@@ -448,7 +449,7 @@ func (s *DatabaseService) provisionPostgres(in DBConnectionInput) error {
 		return err
 	}
 	if roleExists == 0 {
-		if err := db.Exec(fmt.Sprintf("CREATE ROLE \"%s\" LOGIN PASSWORD ?", in.Username), in.Password).Error; err != nil {
+		if err := db.Exec(fmt.Sprintf("CREATE ROLE \"%s\" LOGIN PASSWORD '%s'", in.Username, escapePostgresString(in.Password))).Error; err != nil {
 			return err
 		}
 	}
@@ -504,14 +505,26 @@ func (s *DatabaseService) dropPostgres(item *models.DatabaseConnection) error {
 	return nil
 }
 
-// postgresDSN builds a Go PostgreSQL DSN. When the password is empty, it omits
-// the password field so the driver can fall back to trust/peer auth.
+// postgresDSN builds a Go PostgreSQL DSN. When the password is empty and the
+// host is local, it tries unix socket directories for peer/ident auth (same
+// pattern as mariaDBDSN). Setting host= to a directory path is the standard
+// libpq way to force a unix socket connection.
 func (s *DatabaseService) postgresDSN() string {
 	user := s.cfg.Managed.PostgresAdminUser
 	pass := s.cfg.Managed.PostgresAdminPass
 	host := s.cfg.Managed.PostgresAdminHost
 	port := s.cfg.Managed.PostgresAdminPort
 	dbname := s.cfg.Managed.PostgresAdminDB
+	if strings.TrimSpace(pass) == "" && isManagedLocalHost(host) {
+		for _, dir := range []string{
+			"/var/run/postgresql",
+			"/tmp",
+		} {
+			if _, err := os.Stat(dir); err == nil {
+				return fmt.Sprintf("host=%s port=%d user=%s dbname=%s sslmode=disable", dir, port, user, dbname)
+			}
+		}
+	}
 	if strings.TrimSpace(pass) == "" {
 		return fmt.Sprintf("host=%s port=%d user=%s dbname=%s sslmode=disable", host, port, user, dbname)
 	}
@@ -566,7 +579,7 @@ func (s *DatabaseService) provisionManagedRedis(item *models.RedisConnection, pa
 		"dbfilename dump.rdb",
 		fmt.Sprintf("logfile %s", logPath),
 		fmt.Sprintf("databases %d", maxInt(item.DB+1, 16)),
-		fmt.Sprintf("requirepass %s", password),
+		fmt.Sprintf("requirepass \"%s\"", escapeRedisConfString(password)),
 	}, "\n") + "\n"
 	if err := utils.WriteFileAtomic(confPath, []byte(content), 0o640); err != nil {
 		return err
@@ -649,4 +662,26 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// escapeMariaDBString escapes a string for safe use inside MySQL/MariaDB single-quoted literals.
+// The MySQL driver does not support ? placeholders in DDL statements (CREATE USER, etc.).
+func escapeMariaDBString(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `'`, `\'`)
+	return s
+}
+
+// escapePostgresString escapes a string for safe use inside PostgreSQL single-quoted literals.
+// The pq/pgx driver does not substitute ? placeholders in DDL statements (CREATE ROLE, etc.).
+func escapePostgresString(s string) string {
+	return strings.ReplaceAll(s, `'`, `''`)
+}
+
+// escapeRedisConfString escapes a password for use inside a double-quoted redis.conf value.
+// Redis config parser interprets \\ as backslash and \" as double-quote inside quoted strings.
+func escapeRedisConfString(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `"`, `\"`)
+	return s
 }
