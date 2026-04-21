@@ -254,6 +254,98 @@ func (s *AppService) Action(ctx context.Context, id uint, action string, actor *
 	return nil
 }
 
+// ListLogFiles returns the known log files for an app (stdout, stderr, and any
+// files discovered in the app's working directory or log subdirectory).
+func (s *AppService) ListLogFiles(id uint) ([]LogFileInfo, error) {
+	app, err := s.repo.Find(id)
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]struct{}{}
+	files := make([]LogFileInfo, 0, 4)
+	addFile := func(path, logType string) {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			return
+		}
+		name := filepath.Base(path)
+		if name == "." || name == "" {
+			return
+		}
+		if _, ok := seen[name]; ok {
+			return
+		}
+		seen[name] = struct{}{}
+		files = append(files, LogFileInfo{Name: name, Type: logType, Path: path})
+	}
+	addFile(app.StdoutLogPath, "stdout")
+	addFile(app.StderrLogPath, "stderr")
+	// Also look in the app's log storage directory.
+	if app.StdoutLogPath != "" {
+		logDir := filepath.Dir(app.StdoutLogPath)
+		if entries, err := os.ReadDir(logDir); err == nil {
+			for _, e := range entries {
+				if e.IsDir() {
+					continue
+				}
+				name := e.Name()
+				lt := "other"
+				if strings.Contains(name, "stdout") {
+					lt = "stdout"
+				} else if strings.Contains(name, "stderr") || strings.Contains(name, "error") {
+					lt = "stderr"
+				}
+				addFile(filepath.Join(logDir, name), lt)
+			}
+		}
+	}
+	return files, nil
+}
+
+// ReadLogFile reads the last N lines from a specific log file belonging to an app.
+func (s *AppService) ReadLogFile(id uint, filename string, lines int) (string, error) {
+	app, err := s.repo.Find(id)
+	if err != nil {
+		return "", err
+	}
+	safe := filepath.Base(filename)
+	var fp string
+	switch safe {
+	case filepath.Base(app.StdoutLogPath):
+		fp = app.StdoutLogPath
+	case filepath.Base(app.StderrLogPath):
+		fp = app.StderrLogPath
+	default:
+		if app.StdoutLogPath != "" {
+			fp = filepath.Join(filepath.Dir(app.StdoutLogPath), safe)
+		} else {
+			return "", fmt.Errorf("log file not found")
+		}
+	}
+	// Validate path is within an allowed directory.
+	abs, err := filepath.Abs(fp)
+	if err != nil {
+		return "", err
+	}
+	allowed := false
+	for _, root := range []string{
+		filepath.Dir(strings.TrimSpace(app.StdoutLogPath)),
+		filepath.Dir(strings.TrimSpace(app.StderrLogPath)),
+	} {
+		if root == "" || root == "." {
+			continue
+		}
+		if absRoot, e := filepath.Abs(root); e == nil && strings.HasPrefix(abs, absRoot+string(filepath.Separator)) {
+			allowed = true
+			break
+		}
+	}
+	if !allowed {
+		return "", fmt.Errorf("log file path is not allowed")
+	}
+	return tailFile(abs, lines)
+}
+
 func (s *AppService) Logs(id uint, lines int) (string, string, error) {
 	app, err := s.repo.Find(id)
 	if err != nil {

@@ -301,7 +301,7 @@ func (h *WebsiteHandler) ManageCreateDatabase(c *fiber.Ctx) error {
 	host, port, err := managedDatabaseTarget(strings.TrimSpace(c.FormValue("engine")))
 	if err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
-		return c.Redirect(platformURLWithTab("website", id, "db"))
+		return c.Redirect(platformURLWithTab("website", id, "databases"))
 	}
 	in := services.DBConnectionInput{
 		Label:       strings.TrimSpace(c.FormValue("label")),
@@ -325,7 +325,7 @@ func (h *WebsiteHandler) ManageCreateDatabase(c *fiber.Ctx) error {
 	} else {
 		h.base.Sessions.SetFlash(c, "Database connection saved")
 	}
-	return c.Redirect(platformURLWithTab("website", id, "db"))
+	return c.Redirect(platformURLWithTab("website", id, "databases"))
 }
 
 func (h *WebsiteHandler) createDatabaseFromScopedForm(c *fiber.Ctx, fallbackLabel string, websiteID uint) error {
@@ -512,6 +512,7 @@ func (h *WebsiteHandler) ManageAddDomain(c *fiber.Ctx) error {
 		ProxyTarget:      site.ProxyTarget,
 		Domains:          domains,
 		CustomDirectives: site.CustomDirectives,
+		MaintenanceBypassIPs: site.MaintenanceBypassIPs,
 		SiteUserID:       site.SiteUserID,
 		Enabled:          site.Enabled,
 	}, currentUserID(c), c.IP()); err != nil {
@@ -677,6 +678,50 @@ func (h *WebsiteHandler) ManageDeleteDatabase(c *fiber.Ctx) error {
 	}
 	h.base.Sessions.SetFlash(c, "Database connection deleted")
 	return c.Redirect(platformURLWithTab("website", site.ID, "databases"))
+}
+
+func (h *WebsiteHandler) ManageUpdateDatabasePassword(c *fiber.Ctx) error {
+	id, err := repositories.ParseID(c.Params("id"))
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	dbid, err := repositories.ParseID(c.Params("dbid"))
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	site, _, err := h.websiteDatabaseItem(id, dbid)
+	if err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect(platformURLWithTab("website", id, "databases"))
+	}
+	password := c.FormValue("password")
+	if err := h.databaseService.UpdateDatabasePassword(dbid, password, currentUserID(c), c.IP()); err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+	} else {
+		h.base.Sessions.SetFlash(c, "Database password updated")
+	}
+	return c.Redirect(platformURLWithTab("website", site.ID, "databases"))
+}
+
+func (h *WebsiteHandler) ManageAdminerDB(c *fiber.Ctx) error {
+	id, err := repositories.ParseID(c.Params("id"))
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	dbid, err := repositories.ParseID(c.Params("dbid"))
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	if _, _, err := h.websiteDatabaseItem(id, dbid); err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect(platformURLWithTab("website", id, "databases"))
+	}
+	adminerURL, err := h.databaseService.AdminerDBURL(dbid)
+	if err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect(platformURLWithTab("website", id, "databases"))
+	}
+	return c.Redirect(adminerURL)
 }
 
 func (h *WebsiteHandler) ManageOpenPostgresGUI(c *fiber.Ctx) error {
@@ -1334,6 +1379,7 @@ func (h *WebsiteHandler) payload(c *fiber.Ctx) (websiteFormInput, error) {
 			ProxyTarget:      proxyTarget,
 			Domains:          domains,
 			CustomDirectives: c.FormValue("custom_directives"),
+			MaintenanceBypassIPs: c.FormValue("maintenance_bypass_ips"),
 			SiteUserID:       siteUserID,
 			Enabled:          enabled,
 		},

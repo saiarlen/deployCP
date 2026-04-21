@@ -155,6 +155,7 @@ func reconcilePlatformColumns(db *gorm.DB) error {
 		"PHPVersion",
 		"ProxyTarget",
 		"CustomDirectives",
+		"MaintenanceBypassIPs",
 		"PhpSettings",
 		"Enabled",
 		"SSLReady",

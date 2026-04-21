@@ -276,77 +276,83 @@
 
   <!-- ── MariaDB / MySQL ── -->
   <div class="surface p-5 mb-5">
-    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
-      <div>
-        <h3 class="text-sm font-semibold">MariaDB / MySQL</h3>
-        <p class="text-xs opacity-70 mt-1">Host: 127.0.0.1 &nbsp; Port: 3306</p>
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
+      <div class="flex items-center gap-3">
+        <div class="db-engine-icon db-engine-mariadb"><i data-lucide="database"></i></div>
+        <div>
+          <h3 class="text-sm font-semibold">MariaDB / MySQL</h3>
+          <p class="text-xs text-[var(--text-muted)] mt-0.5 font-mono">127.0.0.1:3306</p>
+        </div>
       </div>
-      <a class="btn" href="{{ AdminerURL }}" target="_blank" rel="noreferrer">Open Adminer</a>
     </div>
     {{ if MariaDBItems }}
-    <div class="overflow-x-auto mb-4">
-      <table class="w-full text-sm text-left">
-        <thead>
-          <tr class="text-xs uppercase tracking-wide">
-            <th class="py-2 pr-4">Label</th>
-            <th class="py-2 pr-4">Database</th>
-            <th class="py-2 pr-4">Username</th>
-            <th class="py-2">Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {{ range _, db := MariaDBItems }}
-          <tr class="border-b">
-            <td class="py-2.5 pr-4 font-medium">{{ db.Label }}</td>
-            <td class="py-2.5 pr-4 font-mono text-xs ">{{ db.Database }}</td>
-            <td class="py-2.5 pr-4 ">{{ db.Username }}</td>
-            <td class="py-2.5">
-              <div class="db-actions">
-                <form action="/apps/{{ Status.App.ID }}/manage/database/{{ db.ID }}/delete" method="post" data-confirm-message="Delete this connection?">
-                  <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
-                  <button class="btn btn-danger" type="submit">Delete</button>
-                </form>
-              </div>
-            </td>
-          </tr>
-          {{ end }}
-        </tbody>
-      </table>
+    <div class="space-y-3 mb-5">
+      {{ range _, db := MariaDBItems }}
+      <div class="db-card">
+        <div class="db-card-header">
+          <div class="db-card-info">
+            <span class="db-card-label">{{ db.Label }}</span>
+            <div class="db-card-meta">
+              <span class="db-card-badge">DB: <code>{{ db.Database }}</code></span>
+              <span class="db-card-badge">User: <code>{{ db.Username }}</code></span>
+              <span class="db-card-badge">{{ db.Host }}:{{ db.Port }}</span>
+            </div>
+          </div>
+          <div class="db-card-actions">
+            <a class="btn btn-sm" href="/apps/{{ Status.App.ID }}/manage/database/{{ db.ID }}/adminer" target="_blank" rel="noreferrer" title="Open in Adminer with credentials pre-filled"><i data-lucide="table-2"></i> Adminer</a>
+            <form action="/apps/{{ Status.App.ID }}/manage/database/{{ db.ID }}/delete" method="post" data-confirm-message="Delete this database connection?">
+              <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+              <button class="btn btn-sm btn-danger" type="submit" title="Delete"><i data-lucide="trash-2"></i></button>
+            </form>
+          </div>
+        </div>
+        <details class="db-card-expand">
+          <summary class="db-expand-toggle"><i data-lucide="key"></i> Change Password</summary>
+          <form class="db-expand-form" action="/apps/{{ Status.App.ID }}/manage/database/{{ db.ID }}/password" method="post">
+            <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+            <div class="flex gap-2">
+              <input class="field flex-1" type="text" name="password" autocomplete="new-password" placeholder="New password" required>
+              <button type="button" class="btn" onclick="this.previousElementSibling.value=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>String.fromCharCode(33+b%93)).join('')">Generate</button>
+              <button class="btn btn-primary" type="submit">Update</button>
+            </div>
+          </form>
+        </details>
+      </div>
+      {{ end }}
     </div>
     {{ else }}
-    <p class="text-sm opacity-70 mb-4">No MariaDB databases found.</p>
+    <div class="db-empty-state">
+      <i data-lucide="database"></i>
+      <p>No MariaDB databases yet. Add one below.</p>
+    </div>
     {{ end }}
-    <details class="pt-3 border-t border-[var(--border)]">
-      <summary class="cursor-pointer text-sm font-semibold hover:underline">Add MariaDB Database</summary>
-      <form class="mt-4 space-y-3" action="/apps/{{ Status.App.ID }}/manage/database" method="post" data-db-validate novalidate>
+    <details class="db-add-section" {{ if !MariaDBItems }}open{{ end }}>
+      <summary class="db-add-toggle"><i data-lucide="plus"></i> Add MariaDB Database</summary>
+      <form class="db-add-form" action="/apps/{{ Status.App.ID }}/manage/database" method="post" data-db-validate novalidate>
         <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
         <input type="hidden" name="engine" value="mariadb">
         <div class="form-grid">
           <label class="block text-sm font-medium">Label
             <input class="field mt-2" name="label" value="{{ Status.App.Name }}-db">
           </label>
-          <label class="block text-sm font-medium">Host
-            <input class="field mt-2" name="host" value="127.0.0.1" readonly>
-          </label>
-          <label class="block text-sm font-medium">Port
-            <input class="field mt-2" name="port" value="3306" readonly>
-          </label>
-          <label class="block text-sm font-medium">Database
+          <label class="block text-sm font-medium">Database Name
             <input class="field mt-2" name="database" placeholder="app_db" required>
           </label>
           <label class="block text-sm font-medium">Username
             <input class="field mt-2" name="username" placeholder="app_user" required>
           </label>
-          <label class="block text-sm font-medium md:col-span-2">Password
+          <label class="block text-sm font-medium">Password
             <div class="flex gap-2 mt-2">
               <input class="field flex-1" type="text" name="password" autocomplete="new-password" required>
               <button type="button" class="btn" onclick="this.previousElementSibling.value=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>String.fromCharCode(33+b%93)).join('')">Generate</button>
             </div>
           </label>
-          <div class="md:col-span-2 flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-[var(--border)]">
-            <span class="text-xs opacity-70">Managed locally on `127.0.0.1:3306`. Username must be unique.</span>
-            <button class="btn btn-primary" type="submit">Add MariaDB Database</button>
-          </div>
+          <input type="hidden" name="host" value="127.0.0.1">
+          <input type="hidden" name="port" value="3306">
+        </div>
+        <div class="flex flex-wrap items-center justify-between gap-3 pt-3 mt-1 border-t border-[var(--border)]">
+          <span class="text-xs text-[var(--text-muted)]">Managed on 127.0.0.1:3306 &mdash; username must be unique.</span>
+          <button class="btn btn-primary" type="submit"><i data-lucide="plus"></i> Add Database</button>
         </div>
       </form>
     </details>
@@ -354,77 +360,83 @@
 
   <!-- ── PostgreSQL ── -->
   <div class="surface p-5 mb-5">
-    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
-      <div>
-        <h3 class="text-sm font-semibold">PostgreSQL</h3>
-        <p class="text-xs opacity-70 mt-1">Host: 127.0.0.1 &nbsp; Port: 5432</p>
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
+      <div class="flex items-center gap-3">
+        <div class="db-engine-icon db-engine-postgres"><i data-lucide="database"></i></div>
+        <div>
+          <h3 class="text-sm font-semibold">PostgreSQL</h3>
+          <p class="text-xs text-[var(--text-muted)] mt-0.5 font-mono">127.0.0.1:5432</p>
+        </div>
       </div>
     </div>
     {{ if PostgresItems }}
-    <div class="overflow-x-auto mb-4">
-      <table class="w-full text-sm text-left">
-        <thead>
-          <tr class="text-xs uppercase tracking-wide">
-            <th class="py-2 pr-4">Label</th>
-            <th class="py-2 pr-4">Database</th>
-            <th class="py-2 pr-4">Username</th>
-            <th class="py-2">Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {{ range _, db := PostgresItems }}
-          <tr class="border-b">
-            <td class="py-2.5 pr-4 font-medium">{{ db.Label }}</td>
-            <td class="py-2.5 pr-4 font-mono text-xs ">{{ db.Database }}</td>
-            <td class="py-2.5 pr-4 ">{{ db.Username }}</td>
-            <td class="py-2.5">
-              <div class="db-actions">
-                <a class="btn btn-ghost" href="/apps/{{ Status.App.ID }}/manage/database/{{ db.ID }}/postgres-gui" target="_blank">Open Postgres UI</a>
-                <form action="/apps/{{ Status.App.ID }}/manage/database/{{ db.ID }}/delete" method="post" data-confirm-message="Delete this connection?">
-                  <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
-                  <button class="btn btn-danger" type="submit">Delete</button>
-                </form>
-              </div>
-            </td>
-          </tr>
-          {{ end }}
-        </tbody>
-      </table>
+    <div class="space-y-3 mb-5">
+      {{ range _, db := PostgresItems }}
+      <div class="db-card">
+        <div class="db-card-header">
+          <div class="db-card-info">
+            <span class="db-card-label">{{ db.Label }}</span>
+            <div class="db-card-meta">
+              <span class="db-card-badge">DB: <code>{{ db.Database }}</code></span>
+              <span class="db-card-badge">User: <code>{{ db.Username }}</code></span>
+              <span class="db-card-badge">{{ db.Host }}:{{ db.Port }}</span>
+            </div>
+          </div>
+          <div class="db-card-actions">
+            <a class="btn btn-sm btn-ghost" href="/apps/{{ Status.App.ID }}/manage/database/{{ db.ID }}/postgres-gui" target="_blank" title="Open in pgAdmin / Postgres GUI"><i data-lucide="layout-dashboard"></i> pgAdmin</a>
+            <form action="/apps/{{ Status.App.ID }}/manage/database/{{ db.ID }}/delete" method="post" data-confirm-message="Delete this database connection?">
+              <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+              <button class="btn btn-sm btn-danger" type="submit" title="Delete"><i data-lucide="trash-2"></i></button>
+            </form>
+          </div>
+        </div>
+        <details class="db-card-expand">
+          <summary class="db-expand-toggle"><i data-lucide="key"></i> Change Password</summary>
+          <form class="db-expand-form" action="/apps/{{ Status.App.ID }}/manage/database/{{ db.ID }}/password" method="post">
+            <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+            <div class="flex gap-2">
+              <input class="field flex-1" type="text" name="password" autocomplete="new-password" placeholder="New password" required>
+              <button type="button" class="btn" onclick="this.previousElementSibling.value=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>String.fromCharCode(33+b%93)).join('')">Generate</button>
+              <button class="btn btn-primary" type="submit">Update</button>
+            </div>
+          </form>
+        </details>
+      </div>
+      {{ end }}
     </div>
     {{ else }}
-    <p class="text-sm opacity-70 mb-4">No PostgreSQL databases found.</p>
+    <div class="db-empty-state">
+      <i data-lucide="database"></i>
+      <p>No PostgreSQL databases yet. Add one below.</p>
+    </div>
     {{ end }}
-    <details class="pt-3 border-t border-[var(--border)]">
-      <summary class="cursor-pointer text-sm font-semibold hover:underline">Add PostgreSQL Database</summary>
-      <form class="mt-4 space-y-3" action="/apps/{{ Status.App.ID }}/manage/database" method="post" data-db-validate novalidate>
+    <details class="db-add-section" {{ if !PostgresItems }}open{{ end }}>
+      <summary class="db-add-toggle"><i data-lucide="plus"></i> Add PostgreSQL Database</summary>
+      <form class="db-add-form" action="/apps/{{ Status.App.ID }}/manage/database" method="post" data-db-validate novalidate>
         <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
         <input type="hidden" name="engine" value="postgres">
         <div class="form-grid">
           <label class="block text-sm font-medium">Label
             <input class="field mt-2" name="label" value="{{ Status.App.Name }}-pg">
           </label>
-          <label class="block text-sm font-medium">Host
-            <input class="field mt-2" name="host" value="127.0.0.1" readonly>
-          </label>
-          <label class="block text-sm font-medium">Port
-            <input class="field mt-2" name="port" value="5432" readonly>
-          </label>
-          <label class="block text-sm font-medium">Database
+          <label class="block text-sm font-medium">Database Name
             <input class="field mt-2" name="database" placeholder="app_db" required>
           </label>
           <label class="block text-sm font-medium">Username
             <input class="field mt-2" name="username" placeholder="app_user" required>
           </label>
-          <label class="block text-sm font-medium md:col-span-2">Password
+          <label class="block text-sm font-medium">Password
             <div class="flex gap-2 mt-2">
               <input class="field flex-1" type="text" name="password" autocomplete="new-password" required>
               <button type="button" class="btn" onclick="this.previousElementSibling.value=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>String.fromCharCode(33+b%93)).join('')">Generate</button>
             </div>
           </label>
-          <div class="md:col-span-2 flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-[var(--border)]">
-            <span class="text-xs opacity-70">Managed locally on `127.0.0.1:5432`. Username must be unique.</span>
-            <button class="btn btn-primary" type="submit">Add PostgreSQL Database</button>
-          </div>
+          <input type="hidden" name="host" value="127.0.0.1">
+          <input type="hidden" name="port" value="5432">
+        </div>
+        <div class="flex flex-wrap items-center justify-between gap-3 pt-3 mt-1 border-t border-[var(--border)]">
+          <span class="text-xs text-[var(--text-muted)]">Managed on 127.0.0.1:5432 &mdash; POSTGRES_ADMIN_PASSWORD must be set in .env.</span>
+          <button class="btn btn-primary" type="submit"><i data-lucide="plus"></i> Add Database</button>
         </div>
       </form>
     </details>
@@ -432,49 +444,47 @@
 
   <!-- ── Redis ── -->
   <div class="surface p-5">
-    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
-      <div>
-        <h3 class="text-sm font-semibold">Redis</h3>
-        <p class="text-xs opacity-70 mt-1">Host: 127.0.0.1 &nbsp; Port: 6379</p>
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
+      <div class="flex items-center gap-3">
+        <div class="db-engine-icon db-engine-redis"><i data-lucide="server"></i></div>
+        <div>
+          <h3 class="text-sm font-semibold">Redis</h3>
+          <p class="text-xs text-[var(--text-muted)] mt-0.5 font-mono">127.0.0.1:6379</p>
+        </div>
       </div>
     </div>
     {{ if RedisItems }}
-    <div class="overflow-x-auto mb-4">
-      <table class="w-full text-sm text-left">
-        <thead>
-          <tr class="text-xs uppercase tracking-wide">
-            <th class="py-2 pr-4">Label</th>
-            <th class="py-2 pr-4">Host</th>
-            <th class="py-2 pr-4">DB</th>
-            <th class="py-2">Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {{ range _, r := RedisItems }}
-          <tr class="border-b">
-            <td class="py-2.5 pr-4 font-medium">{{ r.Label }}</td>
-            <td class="py-2.5 pr-4 font-mono text-xs ">{{ r.Host }}:{{ r.Port }}</td>
-            <td class="py-2.5 pr-4 ">{{ r.DB }}</td>
-            <td class="py-2.5">
-              <div class="db-actions">
-                <a class="btn btn-ghost" href="/apps/{{ Status.App.ID }}/manage/redis/{{ r.ID }}/info">Info</a>
-                <form action="/apps/{{ Status.App.ID }}/manage/redis/{{ r.ID }}/delete" method="post" data-confirm-message="Delete this Redis connection?">
-                  <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
-                  <button class="btn btn-danger" type="submit">Delete</button>
-                </form>
-              </div>
-            </td>
-          </tr>
-          {{ end }}
-        </tbody>
-      </table>
+    <div class="space-y-3 mb-5">
+      {{ range _, r := RedisItems }}
+      <div class="db-card">
+        <div class="db-card-header">
+          <div class="db-card-info">
+            <span class="db-card-label">{{ r.Label }}</span>
+            <div class="db-card-meta">
+              <span class="db-card-badge">{{ r.Host }}:{{ r.Port }}</span>
+              <span class="db-card-badge">DB {{ r.DB }}</span>
+            </div>
+          </div>
+          <div class="db-card-actions">
+            <a class="btn btn-sm btn-ghost" href="/apps/{{ Status.App.ID }}/manage/redis/{{ r.ID }}/info"><i data-lucide="activity"></i> Info</a>
+            <form action="/apps/{{ Status.App.ID }}/manage/redis/{{ r.ID }}/delete" method="post" data-confirm-message="Delete this Redis connection?">
+              <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+              <button class="btn btn-sm btn-danger" type="submit" title="Delete"><i data-lucide="trash-2"></i></button>
+            </form>
+          </div>
+        </div>
+      </div>
+      {{ end }}
     </div>
     {{ else }}
-    <p class="text-sm opacity-70 mb-4">No Redis connections found.</p>
+    <div class="db-empty-state">
+      <i data-lucide="server"></i>
+      <p>No Redis connections yet. Add one below.</p>
+    </div>
     {{ end }}
-    <details class="pt-3 border-t border-[var(--border)]">
-      <summary class="cursor-pointer text-sm font-semibold hover:underline">Add Redis Connection</summary>
-      <form class="mt-4 space-y-3" action="/apps/{{ Status.App.ID }}/manage/redis" method="post" data-db-validate novalidate>
+    <details class="db-add-section" {{ if !RedisItems }}open{{ end }}>
+      <summary class="db-add-toggle"><i data-lucide="plus"></i> Add Redis Connection</summary>
+      <form class="db-add-form" action="/apps/{{ Status.App.ID }}/manage/redis" method="post" data-db-validate novalidate>
         <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
         <div class="form-grid">
           <label class="block text-sm font-medium">Label
@@ -488,7 +498,7 @@
           </label>
           <label class="block text-sm font-medium">DB Number
             <input class="field mt-2" type="number" name="db" value="0" min="0">
-            <span class="text-xs opacity-70 mt-1 block">If this number is already used on the same Redis host, DeployCP will pick the next free one.</span>
+            <span class="text-xs text-[var(--text-muted)] mt-1 block">Already-used numbers are auto-incremented.</span>
           </label>
           <label class="block text-sm font-medium">Password
             <div class="flex gap-2 mt-2">
@@ -497,8 +507,8 @@
             </div>
           </label>
         </div>
-        <div class="flex justify-end">
-          <button class="btn btn-primary" type="submit">Add Connection</button>
+        <div class="flex justify-end pt-3 mt-1 border-t border-[var(--border)]">
+          <button class="btn btn-primary" type="submit"><i data-lucide="plus"></i> Add Connection</button>
         </div>
       </form>
     </details>
@@ -733,17 +743,57 @@
 
 <!-- ═══════════ Logs ═══════════ -->
 <div class="manage-panel" data-panel="logs">
-  <div class="surface p-5">
-    <h3 class="text-sm font-semibold mb-4">Logs</h3>
-    <div class="grid gap-6 xl:grid-cols-2">
-      <div>
-        <h4 class="text-sm font-medium mb-2">Stdout</h4>
-        <pre class="log">{{ StdoutLog }}</pre>
+  <div class="log-panel" id="app-log-controls" data-app-id="{{ Status.App.ID }}">
+    <div class="log-header">
+      <div class="log-header-left">
+        <div>
+          <div class="log-header-title">Logs</div>
+          <div class="log-header-caption">Review stdout, stderr and process logs for this app without leaving the panel.</div>
+        </div>
       </div>
-      <div>
-        <h4 class="text-sm font-medium mb-2">Stderr</h4>
-        <pre class="log">{{ StderrLog }}</pre>
+      <div class="log-header-right">
+        <label class="log-toggle" title="Auto-scroll to bottom">
+          <input type="checkbox" id="app-log-autoscroll" checked>
+          <span>Auto-scroll</span>
+        </label>
+        <label class="log-toggle" title="Auto-refresh every 3s">
+          <input type="checkbox" id="app-log-live">
+          <span>Live tail</span>
+        </label>
       </div>
+    </div>
+    <div class="log-controls-bar">
+      <label class="log-field">
+        <span>Log file</span>
+        <select class="field log-ctl log-ctl-file" id="app-log-file">
+          <option value="">Loading...</option>
+        </select>
+      </label>
+      <label class="log-field">
+        <span>Lines</span>
+        <select class="field log-ctl log-ctl-sm" id="app-log-lines">
+          <option value="100">100</option>
+          <option value="250">250</option>
+          <option value="500" selected>500</option>
+          <option value="1000">1000</option>
+          <option value="2000">2000</option>
+        </select>
+      </label>
+      <div class="log-search-wrap">
+        <i data-lucide="search" class="log-search-icon"></i>
+        <input class="field log-search-input" id="app-log-search" placeholder="Filter lines or use a regex" spellcheck="false">
+      </div>
+      <button class="btn btn-primary log-refresh-btn" id="app-log-update"><i data-lucide="refresh-cw"></i> Refresh</button>
+    </div>
+    <div class="log-stats-bar">
+      <div class="log-stats-main">
+        <span id="app-log-summary-label">Select a log file and click Refresh</span>
+        <span class="log-header-file" id="app-log-meta">No file loaded</span>
+      </div>
+      <span id="app-log-summary-count"></span>
+    </div>
+    <div class="log-terminal" id="app-log-viewer">
+      <div class="log-empty">Select a log file and press Refresh to load the latest lines.</div>
     </div>
   </div>
 </div>
@@ -1408,77 +1458,83 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
 
   <!-- ── MariaDB / MySQL ── -->
   <div class="surface p-5 mb-5">
-    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
-      <div>
-        <h3 class="text-sm font-semibold">MariaDB / MySQL</h3>
-        <p class="text-xs opacity-70 mt-1">Host: 127.0.0.1 &nbsp; Port: 3306</p>
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
+      <div class="flex items-center gap-3">
+        <div class="db-engine-icon db-engine-mariadb"><i data-lucide="database"></i></div>
+        <div>
+          <h3 class="text-sm font-semibold">MariaDB / MySQL</h3>
+          <p class="text-xs text-[var(--text-muted)] mt-0.5 font-mono">127.0.0.1:3306</p>
+        </div>
       </div>
-      <a class="btn" href="{{ AdminerURL }}" target="_blank" rel="noreferrer">Open Adminer</a>
     </div>
     {{ if MariaDBItems }}
-    <div class="overflow-x-auto mb-4">
-      <table class="w-full text-sm text-left">
-        <thead>
-          <tr class="text-xs uppercase tracking-wide">
-            <th class="py-2 pr-4">Label</th>
-            <th class="py-2 pr-4">Database</th>
-            <th class="py-2 pr-4">Username</th>
-            <th class="py-2">Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {{ range _, db := MariaDBItems }}
-          <tr class="border-b">
-            <td class="py-2.5 pr-4 font-medium">{{ db.Label }}</td>
-            <td class="py-2.5 pr-4 font-mono text-xs ">{{ db.Database }}</td>
-            <td class="py-2.5 pr-4 ">{{ db.Username }}</td>
-            <td class="py-2.5">
-              <div class="db-actions">
-                <form action="/websites/{{ Item.ID }}/manage/database/{{ db.ID }}/delete" method="post" data-confirm-message="Delete this connection?">
-                  <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
-                  <button class="btn btn-danger" type="submit">Delete</button>
-                </form>
-              </div>
-            </td>
-          </tr>
-          {{ end }}
-        </tbody>
-      </table>
+    <div class="space-y-3 mb-5">
+      {{ range _, db := MariaDBItems }}
+      <div class="db-card">
+        <div class="db-card-header">
+          <div class="db-card-info">
+            <span class="db-card-label">{{ db.Label }}</span>
+            <div class="db-card-meta">
+              <span class="db-card-badge">DB: <code>{{ db.Database }}</code></span>
+              <span class="db-card-badge">User: <code>{{ db.Username }}</code></span>
+              <span class="db-card-badge">{{ db.Host }}:{{ db.Port }}</span>
+            </div>
+          </div>
+          <div class="db-card-actions">
+            <a class="btn btn-sm" href="/websites/{{ Item.ID }}/manage/database/{{ db.ID }}/adminer" target="_blank" rel="noreferrer" title="Open in Adminer with credentials pre-filled"><i data-lucide="table-2"></i> Adminer</a>
+            <form action="/websites/{{ Item.ID }}/manage/database/{{ db.ID }}/delete" method="post" data-confirm-message="Delete this database connection?">
+              <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+              <button class="btn btn-sm btn-danger" type="submit" title="Delete"><i data-lucide="trash-2"></i></button>
+            </form>
+          </div>
+        </div>
+        <details class="db-card-expand">
+          <summary class="db-expand-toggle"><i data-lucide="key"></i> Change Password</summary>
+          <form class="db-expand-form" action="/websites/{{ Item.ID }}/manage/database/{{ db.ID }}/password" method="post">
+            <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+            <div class="flex gap-2">
+              <input class="field flex-1" type="text" name="password" autocomplete="new-password" placeholder="New password" required>
+              <button type="button" class="btn" onclick="this.previousElementSibling.value=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>String.fromCharCode(33+b%93)).join('')">Generate</button>
+              <button class="btn btn-primary" type="submit">Update</button>
+            </div>
+          </form>
+        </details>
+      </div>
+      {{ end }}
     </div>
     {{ else }}
-    <p class="text-sm opacity-70 mb-4">No MariaDB databases found.</p>
+    <div class="db-empty-state">
+      <i data-lucide="database"></i>
+      <p>No MariaDB databases yet. Add one below.</p>
+    </div>
     {{ end }}
-    <details class="pt-3 border-t border-[var(--border)]">
-      <summary class="cursor-pointer text-sm font-semibold hover:underline">Add MariaDB Database</summary>
-      <form class="mt-4 space-y-3" action="/websites/{{ Item.ID }}/manage/database" method="post" data-db-validate novalidate>
+    <details class="db-add-section" {{ if !MariaDBItems }}open{{ end }}>
+      <summary class="db-add-toggle"><i data-lucide="plus"></i> Add MariaDB Database</summary>
+      <form class="db-add-form" action="/websites/{{ Item.ID }}/manage/database" method="post" data-db-validate novalidate>
         <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
         <input type="hidden" name="engine" value="mariadb">
         <div class="form-grid">
           <label class="block text-sm font-medium">Label
             <input class="field mt-2" name="label" value="{{ Item.Name }}-db">
           </label>
-          <label class="block text-sm font-medium">Host
-            <input class="field mt-2" name="host" value="127.0.0.1" readonly>
-          </label>
-          <label class="block text-sm font-medium">Port
-            <input class="field mt-2" name="port" value="3306" readonly>
-          </label>
-          <label class="block text-sm font-medium">Database
+          <label class="block text-sm font-medium">Database Name
             <input class="field mt-2" name="database" placeholder="app_db" required>
           </label>
           <label class="block text-sm font-medium">Username
             <input class="field mt-2" name="username" placeholder="app_user" required>
           </label>
-          <label class="block text-sm font-medium md:col-span-2">Password
+          <label class="block text-sm font-medium">Password
             <div class="flex gap-2 mt-2">
-              <input class="field flex-1" type="text" name="password" id="mariadb-pw" autocomplete="new-password" required>
+              <input class="field flex-1" type="text" name="password" autocomplete="new-password" required>
               <button type="button" class="btn" onclick="this.previousElementSibling.value=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>String.fromCharCode(33+b%93)).join('')">Generate</button>
             </div>
           </label>
-          <div class="md:col-span-2 flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-[var(--border)]">
-            <span class="text-xs opacity-70">Managed locally on `127.0.0.1:3306`. Username must be unique.</span>
-            <button class="btn btn-primary" type="submit">Add MariaDB Database</button>
-          </div>
+          <input type="hidden" name="host" value="127.0.0.1">
+          <input type="hidden" name="port" value="3306">
+        </div>
+        <div class="flex flex-wrap items-center justify-between gap-3 pt-3 mt-1 border-t border-[var(--border)]">
+          <span class="text-xs text-[var(--text-muted)]">Managed on 127.0.0.1:3306 &mdash; username must be unique.</span>
+          <button class="btn btn-primary" type="submit"><i data-lucide="plus"></i> Add Database</button>
         </div>
       </form>
     </details>
@@ -1486,77 +1542,83 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
 
   <!-- ── PostgreSQL ── -->
   <div class="surface p-5 mb-5">
-    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
-      <div>
-        <h3 class="text-sm font-semibold">PostgreSQL</h3>
-        <p class="text-xs opacity-70 mt-1">Host: 127.0.0.1 &nbsp; Port: 5432</p>
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
+      <div class="flex items-center gap-3">
+        <div class="db-engine-icon db-engine-postgres"><i data-lucide="database"></i></div>
+        <div>
+          <h3 class="text-sm font-semibold">PostgreSQL</h3>
+          <p class="text-xs text-[var(--text-muted)] mt-0.5 font-mono">127.0.0.1:5432</p>
+        </div>
       </div>
     </div>
     {{ if PostgresItems }}
-    <div class="overflow-x-auto mb-4">
-      <table class="w-full text-sm text-left">
-        <thead>
-          <tr class="text-xs uppercase tracking-wide">
-            <th class="py-2 pr-4">Label</th>
-            <th class="py-2 pr-4">Database</th>
-            <th class="py-2 pr-4">Username</th>
-            <th class="py-2">Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {{ range _, db := PostgresItems }}
-          <tr class="border-b">
-            <td class="py-2.5 pr-4 font-medium">{{ db.Label }}</td>
-            <td class="py-2.5 pr-4 font-mono text-xs ">{{ db.Database }}</td>
-            <td class="py-2.5 pr-4 ">{{ db.Username }}</td>
-            <td class="py-2.5">
-              <div class="db-actions">
-                <a class="btn btn-ghost" href="/websites/{{ Item.ID }}/manage/database/{{ db.ID }}/postgres-gui" target="_blank">Open Postgres UI</a>
-                <form action="/websites/{{ Item.ID }}/manage/database/{{ db.ID }}/delete" method="post" data-confirm-message="Delete this connection?">
-                  <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
-                  <button class="btn btn-danger" type="submit">Delete</button>
-                </form>
-              </div>
-            </td>
-          </tr>
-          {{ end }}
-        </tbody>
-      </table>
+    <div class="space-y-3 mb-5">
+      {{ range _, db := PostgresItems }}
+      <div class="db-card">
+        <div class="db-card-header">
+          <div class="db-card-info">
+            <span class="db-card-label">{{ db.Label }}</span>
+            <div class="db-card-meta">
+              <span class="db-card-badge">DB: <code>{{ db.Database }}</code></span>
+              <span class="db-card-badge">User: <code>{{ db.Username }}</code></span>
+              <span class="db-card-badge">{{ db.Host }}:{{ db.Port }}</span>
+            </div>
+          </div>
+          <div class="db-card-actions">
+            <a class="btn btn-sm btn-ghost" href="/websites/{{ Item.ID }}/manage/database/{{ db.ID }}/postgres-gui" target="_blank" title="Open in pgAdmin / Postgres GUI"><i data-lucide="layout-dashboard"></i> pgAdmin</a>
+            <form action="/websites/{{ Item.ID }}/manage/database/{{ db.ID }}/delete" method="post" data-confirm-message="Delete this database connection?">
+              <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+              <button class="btn btn-sm btn-danger" type="submit" title="Delete"><i data-lucide="trash-2"></i></button>
+            </form>
+          </div>
+        </div>
+        <details class="db-card-expand">
+          <summary class="db-expand-toggle"><i data-lucide="key"></i> Change Password</summary>
+          <form class="db-expand-form" action="/websites/{{ Item.ID }}/manage/database/{{ db.ID }}/password" method="post">
+            <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+            <div class="flex gap-2">
+              <input class="field flex-1" type="text" name="password" autocomplete="new-password" placeholder="New password" required>
+              <button type="button" class="btn" onclick="this.previousElementSibling.value=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>String.fromCharCode(33+b%93)).join('')">Generate</button>
+              <button class="btn btn-primary" type="submit">Update</button>
+            </div>
+          </form>
+        </details>
+      </div>
+      {{ end }}
     </div>
     {{ else }}
-    <p class="text-sm opacity-70 mb-4">No PostgreSQL databases found.</p>
+    <div class="db-empty-state">
+      <i data-lucide="database"></i>
+      <p>No PostgreSQL databases yet. Add one below.</p>
+    </div>
     {{ end }}
-    <details class="pt-3 border-t border-[var(--border)]">
-      <summary class="cursor-pointer text-sm font-semibold hover:underline">Add PostgreSQL Database</summary>
-      <form class="mt-4 space-y-3" action="/websites/{{ Item.ID }}/manage/database" method="post" data-db-validate novalidate>
+    <details class="db-add-section" {{ if !PostgresItems }}open{{ end }}>
+      <summary class="db-add-toggle"><i data-lucide="plus"></i> Add PostgreSQL Database</summary>
+      <form class="db-add-form" action="/websites/{{ Item.ID }}/manage/database" method="post" data-db-validate novalidate>
         <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
         <input type="hidden" name="engine" value="postgres">
         <div class="form-grid">
           <label class="block text-sm font-medium">Label
             <input class="field mt-2" name="label" value="{{ Item.Name }}-pg">
           </label>
-          <label class="block text-sm font-medium">Host
-            <input class="field mt-2" name="host" value="127.0.0.1" readonly>
-          </label>
-          <label class="block text-sm font-medium">Port
-            <input class="field mt-2" name="port" value="5432" readonly>
-          </label>
-          <label class="block text-sm font-medium">Database
+          <label class="block text-sm font-medium">Database Name
             <input class="field mt-2" name="database" placeholder="app_db" required>
           </label>
           <label class="block text-sm font-medium">Username
             <input class="field mt-2" name="username" placeholder="app_user" required>
           </label>
-          <label class="block text-sm font-medium md:col-span-2">Password
+          <label class="block text-sm font-medium">Password
             <div class="flex gap-2 mt-2">
               <input class="field flex-1" type="text" name="password" autocomplete="new-password" required>
               <button type="button" class="btn" onclick="this.previousElementSibling.value=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>String.fromCharCode(33+b%93)).join('')">Generate</button>
             </div>
           </label>
-          <div class="md:col-span-2 flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-[var(--border)]">
-            <span class="text-xs opacity-70">Managed locally on `127.0.0.1:5432`. Username must be unique.</span>
-            <button class="btn btn-primary" type="submit">Add PostgreSQL Database</button>
-          </div>
+          <input type="hidden" name="host" value="127.0.0.1">
+          <input type="hidden" name="port" value="5432">
+        </div>
+        <div class="flex flex-wrap items-center justify-between gap-3 pt-3 mt-1 border-t border-[var(--border)]">
+          <span class="text-xs text-[var(--text-muted)]">Managed on 127.0.0.1:5432 &mdash; POSTGRES_ADMIN_PASSWORD must be set in .env.</span>
+          <button class="btn btn-primary" type="submit"><i data-lucide="plus"></i> Add Database</button>
         </div>
       </form>
     </details>
@@ -1564,49 +1626,47 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
 
   <!-- ── Redis ── -->
   <div class="surface p-5">
-    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
-      <div>
-        <h3 class="text-sm font-semibold">Redis</h3>
-        <p class="text-xs opacity-70 mt-1">Host: 127.0.0.1 &nbsp; Port: 6379</p>
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
+      <div class="flex items-center gap-3">
+        <div class="db-engine-icon db-engine-redis"><i data-lucide="server"></i></div>
+        <div>
+          <h3 class="text-sm font-semibold">Redis</h3>
+          <p class="text-xs text-[var(--text-muted)] mt-0.5 font-mono">127.0.0.1:6379</p>
+        </div>
       </div>
     </div>
     {{ if RedisItems }}
-    <div class="overflow-x-auto mb-4">
-      <table class="w-full text-sm text-left">
-        <thead>
-          <tr class="text-xs uppercase tracking-wide">
-            <th class="py-2 pr-4">Label</th>
-            <th class="py-2 pr-4">Host</th>
-            <th class="py-2 pr-4">DB</th>
-            <th class="py-2">Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {{ range _, r := RedisItems }}
-          <tr class="border-b">
-            <td class="py-2.5 pr-4 font-medium">{{ r.Label }}</td>
-            <td class="py-2.5 pr-4 font-mono text-xs ">{{ r.Host }}:{{ r.Port }}</td>
-            <td class="py-2.5 pr-4 ">{{ r.DB }}</td>
-            <td class="py-2.5">
-              <div class="db-actions">
-                <a class="btn btn-ghost" href="/websites/{{ Item.ID }}/manage/redis/{{ r.ID }}/info">Info</a>
-                <form action="/websites/{{ Item.ID }}/manage/redis/{{ r.ID }}/delete" method="post" data-confirm-message="Delete this Redis connection?">
-                  <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
-                  <button class="btn btn-danger" type="submit">Delete</button>
-                </form>
-              </div>
-            </td>
-          </tr>
-          {{ end }}
-        </tbody>
-      </table>
+    <div class="space-y-3 mb-5">
+      {{ range _, r := RedisItems }}
+      <div class="db-card">
+        <div class="db-card-header">
+          <div class="db-card-info">
+            <span class="db-card-label">{{ r.Label }}</span>
+            <div class="db-card-meta">
+              <span class="db-card-badge">{{ r.Host }}:{{ r.Port }}</span>
+              <span class="db-card-badge">DB {{ r.DB }}</span>
+            </div>
+          </div>
+          <div class="db-card-actions">
+            <a class="btn btn-sm btn-ghost" href="/websites/{{ Item.ID }}/manage/redis/{{ r.ID }}/info"><i data-lucide="activity"></i> Info</a>
+            <form action="/websites/{{ Item.ID }}/manage/redis/{{ r.ID }}/delete" method="post" data-confirm-message="Delete this Redis connection?">
+              <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+              <button class="btn btn-sm btn-danger" type="submit" title="Delete"><i data-lucide="trash-2"></i></button>
+            </form>
+          </div>
+        </div>
+      </div>
+      {{ end }}
     </div>
     {{ else }}
-    <p class="text-sm opacity-70 mb-4">No Redis connections found.</p>
+    <div class="db-empty-state">
+      <i data-lucide="server"></i>
+      <p>No Redis connections yet. Add one below.</p>
+    </div>
     {{ end }}
-    <details class="pt-3 border-t border-[var(--border)]">
-      <summary class="cursor-pointer text-sm font-semibold hover:underline">Add Redis Connection</summary>
-      <form class="mt-4 space-y-3" action="/websites/{{ Item.ID }}/manage/redis" method="post" data-db-validate novalidate>
+    <details class="db-add-section" {{ if !RedisItems }}open{{ end }}>
+      <summary class="db-add-toggle"><i data-lucide="plus"></i> Add Redis Connection</summary>
+      <form class="db-add-form" action="/websites/{{ Item.ID }}/manage/redis" method="post" data-db-validate novalidate>
         <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
         <div class="form-grid">
           <label class="block text-sm font-medium">Label
@@ -1620,7 +1680,7 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
           </label>
           <label class="block text-sm font-medium">DB Number
             <input class="field mt-2" type="number" name="db" value="0" min="0">
-            <span class="text-xs opacity-70 mt-1 block">If this number is already used on the same Redis host, DeployCP will pick the next free one.</span>
+            <span class="text-xs text-[var(--text-muted)] mt-1 block">Already-used numbers are auto-incremented.</span>
           </label>
           <label class="block text-sm font-medium">Password
             <div class="flex gap-2 mt-2">
@@ -1629,8 +1689,8 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
             </div>
           </label>
         </div>
-        <div class="flex justify-end">
-          <button class="btn btn-primary" type="submit">Add Connection</button>
+        <div class="flex justify-end pt-3 mt-1 border-t border-[var(--border)]">
+          <button class="btn btn-primary" type="submit"><i data-lucide="plus"></i> Add Connection</button>
         </div>
       </form>
     </details>
@@ -1803,6 +1863,30 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
 
 <!-- ═══════════ Security ═══════════ -->
 <div class="manage-panel" data-panel="security">
+
+  <!-- Maintenance Access -->
+  <div class="surface p-5 mb-5">
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+      <div>
+        <h3 class="text-sm font-semibold">Maintenance Access</h3>
+        <p class="text-sm opacity-70 mt-1">When maintenance mode is enabled, only these IPs or CIDR ranges can still access the live platform.</p>
+      </div>
+    </div>
+    <form action="/websites/{{ Item.ID }}" method="post">
+      <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+      <input type="hidden" name="type" value="{{ Item.Type }}">
+      <input type="hidden" name="enabled" value="{{ Item.Enabled }}">
+      <input type="hidden" name="root_path" value="{{ Item.RootPath }}">
+      <input type="hidden" name="primary_domain" value="{{ if len(Item.Domains) > 0 }}{{ Item.Domains[0].Domain }}{{ end }}">
+      <label class="block text-sm font-medium">Allowed IPs / CIDRs
+        <textarea class="field mt-2 font-mono text-xs" name="maintenance_bypass_ips" rows="4" placeholder="203.0.113.10&#10;198.51.100.0/24">{{ Item.MaintenanceBypassIPs }}</textarea>
+      </label>
+      <p class="text-xs opacity-70 mt-2">Leave blank to show the maintenance page to everyone.</p>
+      <div class="mt-4 flex justify-end">
+        <button class="btn btn-primary" type="submit">Save Maintenance Access</button>
+      </div>
+    </form>
+  </div>
 
   <!-- IP Blocking -->
   <div class="surface p-5 mb-5">
@@ -2294,14 +2378,12 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
 <!-- ═══════════ Logs ═══════════ -->
 <div class="manage-panel" data-panel="logs">
   <div class="log-panel" id="log-controls" data-site-id="{{ Item.ID }}">
-    <div class="log-header">
-      <div class="log-header-left">
-        <div>
-          <div class="log-header-title">Logs</div>
-          <div class="log-header-caption">Review access and error output for this platform without leaving the panel.</div>
-        </div>
+    <div class="log-toolbar-top">
+      <div class="log-toolbar-copy">
+        <div class="log-toolbar-title">Logs</div>
+        <div class="log-toolbar-caption">{{ DefaultHomeDir }}/logs</div>
       </div>
-      <div class="log-header-right">
+      <div class="log-toolbar-side">
         <label class="log-toggle" id="log-autoscroll-toggle" title="Auto-scroll to bottom">
           <input type="checkbox" id="log-autoscroll" checked>
           <span>Auto-scroll</span>
@@ -2312,28 +2394,32 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
         </label>
       </div>
     </div>
-    <div class="log-controls-bar">
-      <label class="log-field">
-        <span>Log file</span>
-        <select class="field log-ctl log-ctl-file" id="log-file">
-          <option value="">Loading...</option>
-        </select>
-      </label>
-      <label class="log-field">
-        <span>Lines</span>
-        <select class="field log-ctl log-ctl-sm" id="log-lines">
-          <option value="100">100</option>
-          <option value="250">250</option>
-          <option value="500" selected>500</option>
-          <option value="1000">1000</option>
-          <option value="2000">2000</option>
-        </select>
-      </label>
-      <div class="log-search-wrap">
-        <i data-lucide="search" class="log-search-icon"></i>
-        <input class="field log-search-input" id="log-search" placeholder="Filter lines or use a regex" spellcheck="false">
+    <div class="log-toolbar">
+      <div class="log-toolbar-main">
+        <label class="log-field log-field-file">
+          <span>Log File</span>
+          <select class="field log-ctl log-ctl-file" id="log-file">
+            <option value="">Loading...</option>
+          </select>
+        </label>
+        <label class="log-field log-field-lines">
+          <span>Lines</span>
+          <select class="field log-ctl log-ctl-sm" id="log-lines">
+            <option value="100">100</option>
+            <option value="250">250</option>
+            <option value="500" selected>500</option>
+            <option value="1000">1000</option>
+            <option value="2000">2000</option>
+          </select>
+        </label>
+        <div class="log-search-wrap">
+          <i data-lucide="search" class="log-search-icon"></i>
+          <input class="field log-search-input" id="log-search" placeholder="Search lines or use a regex" spellcheck="false">
+        </div>
       </div>
-      <button class="btn btn-primary log-refresh-btn" id="log-update"><i data-lucide="refresh-cw"></i> Refresh</button>
+      <div class="log-toolbar-actions">
+        <button class="btn btn-primary log-refresh-btn" id="log-update"><i data-lucide="refresh-cw"></i> Refresh</button>
+      </div>
     </div>
     <div class="log-stats-bar">
       <div class="log-stats-main">
@@ -2342,8 +2428,16 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
       </div>
       <span id="log-summary-count"></span>
     </div>
-    <div class="log-terminal" id="log-viewer">
-      <div class="log-empty">Select a log file and press Refresh to load the latest lines.</div>
+    <div class="log-frame">
+      <div class="log-frame-head">
+        <span class="log-frame-dot"></span>
+        <span class="log-frame-dot"></span>
+        <span class="log-frame-dot"></span>
+        <span class="log-frame-title">Tail Output</span>
+      </div>
+      <div class="log-terminal" id="log-viewer">
+        <div class="log-empty">Select a log file and press Refresh to load the latest lines.</div>
+      </div>
     </div>
   </div>
 </div>
@@ -2471,18 +2565,21 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
   .ssl-progress-item::before { content: ''; position: absolute; left: 0; top: 4px; width: 14px; height: 14px; border-radius: 999px; border: 1px solid var(--border-strong); background: transparent; }
   .ssl-progress-item.is-active { color: var(--text); font-weight: 600; }
   .ssl-progress-item.is-active::before { background: var(--primary); border-color: var(--primary); box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 18%, transparent); }
-  .log-panel { border: 1px solid var(--border); border-radius: var(--radius-xl); overflow: hidden; display: flex; flex-direction: column; background: var(--bg-card); min-height: 700px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.03); }
-  .log-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 18px 20px 14px; background: color-mix(in srgb, var(--bg-elevated) 94%, var(--bg-card)); border-bottom: 1px solid var(--border); flex-shrink: 0; }
-  .log-header-left { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
-  .log-header-title { font-size: 1rem; font-weight: 700; color: var(--text); white-space: nowrap; }
-  .log-header-caption { margin-top: 4px; font-size: 0.82rem; line-height: 1.5; color: var(--text-sec); max-width: 620px; }
+  .log-panel { border: 1px solid var(--border); border-radius: var(--radius-xl); overflow: hidden; display: flex; flex-direction: column; background: var(--bg-card); min-height: 760px; }
+  .log-toolbar-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 22px 14px; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--bg-elevated) 92%, var(--bg-card)); }
+  .log-toolbar-copy { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  .log-toolbar-title { font-size: 0.98rem; font-weight: 700; color: var(--text); }
+  .log-toolbar-caption { font-size: 0.76rem; font-family: var(--mono); color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .log-header-file { font-size: 0.74rem; font-family: var(--mono); color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .log-header-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+  .log-toolbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; padding: 16px 22px; border-bottom: 1px solid var(--border); background: var(--bg-card); }
+  .log-toolbar-main { display: grid; grid-template-columns: minmax(240px, 1.1fr) 96px minmax(240px, 1fr); gap: 12px; flex: 1; min-width: 0; }
+  .log-toolbar-side { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+  .log-toolbar-actions { display: flex; align-items: flex-end; gap: 10px; flex-shrink: 0; }
   .log-toggle { display: inline-flex; align-items: center; gap: 6px; padding: 0.45rem 0.7rem; border-radius: 999px; background: var(--bg-elevated); border: 1px solid var(--border); font-size: 0.74rem; font-weight: 600; color: var(--text-sec); cursor: pointer; white-space: nowrap; user-select: none; }
   .log-toggle input { width: 14px; height: 14px; accent-color: var(--primary); cursor: pointer; }
   .log-toggle input:checked + span { color: var(--text); }
-  .log-controls-bar { display: grid; grid-template-columns: minmax(240px, 1.2fr) 90px minmax(220px, 1fr) auto; gap: 12px; padding: 14px 20px; background: var(--bg-card); border-bottom: 1px solid var(--border); flex-shrink: 0; }
   .log-field { display: flex; flex-direction: column; gap: 6px; font-size: 0.74rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); }
+  .log-field-file, .log-field-lines { min-width: 0; }
   .log-ctl { height: 2.5rem; font-size: 0.86rem; min-width: 0; }
   .log-ctl-file { width: 100%; }
   .log-ctl-sm { width: 100%; }
@@ -2491,9 +2588,16 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
   .log-search-input { height: 2.5rem; font-size: 0.86rem; padding-left: 34px; font-family: var(--mono); }
   .log-refresh-btn { height: 2.5rem; gap: 6px; white-space: nowrap; align-self: end; }
   .log-refresh-btn [data-lucide] { width: 14px; height: 14px; }
-  .log-stats-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 20px; font-size: 0.76rem; color: var(--text-muted); background: color-mix(in srgb, var(--bg-subtle) 90%, var(--bg-card)); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .log-stats-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 22px; font-size: 0.76rem; color: var(--text-muted); background: color-mix(in srgb, var(--bg-subtle) 88%, var(--bg-card)); border-bottom: 1px solid var(--border); flex-shrink: 0; }
   .log-stats-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-  .log-terminal { flex: 1; min-height: 0; overflow: auto; padding: 0; font-family: var(--mono); font-size: 0.8rem; line-height: 1.7; color: var(--text); background: linear-gradient(180deg, color-mix(in srgb, var(--bg-card) 98%, var(--bg-elevated)) 0%, color-mix(in srgb, var(--bg-subtle) 76%, var(--bg-card)) 100%); }
+  .log-frame { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 18px 22px 22px; gap: 0; background: color-mix(in srgb, var(--bg-elevated) 22%, transparent); }
+  .log-frame-head { display: flex; align-items: center; gap: 8px; padding: 11px 14px; border: 1px solid var(--border); border-bottom: none; border-radius: 16px 16px 0 0; background: color-mix(in srgb, var(--bg-elevated) 96%, var(--bg-card)); }
+  .log-frame-dot { width: 10px; height: 10px; border-radius: 999px; background: color-mix(in srgb, var(--text-muted) 45%, var(--border)); }
+  .log-frame-dot:nth-child(1) { background: #fb7185; }
+  .log-frame-dot:nth-child(2) { background: #fbbf24; }
+  .log-frame-dot:nth-child(3) { background: #34d399; }
+  .log-frame-title { margin-left: 6px; font-size: 0.74rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
+  .log-terminal { flex: 1; min-height: 0; overflow: auto; padding: 0; border: 1px solid var(--border); border-top: none; border-radius: 0 0 18px 18px; font-family: var(--mono); font-size: 0.82rem; line-height: 1.7; color: var(--text); background: color-mix(in srgb, var(--bg-card) 96%, var(--bg-elevated)); }
   .log-empty { padding: 64px 24px; text-align: center; color: var(--text-muted); font-family: var(--font); font-size: 0.92rem; }
   .log-error { color: var(--danger); }
   .log-line { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 14px; padding: 7px 20px; border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent); transition: background 0.12s; }
@@ -2541,7 +2645,49 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
     .fm-editor-head { flex-direction: column; }
     .fm-editor-actions, .fm-modal-actions { width: 100%; }
     .fm-editor-actions .btn, .fm-modal-actions .btn { flex: 1 1 auto; justify-content: center; }
+    .db-card-header { flex-direction: column; align-items: stretch; gap: 10px; }
+    .db-card-actions { justify-content: flex-start; flex-wrap: wrap; }
   }
+  /* ── DB Engine Icon ── */
+  .db-engine-icon { width: 2.4rem; height: 2.4rem; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .db-engine-icon [data-lucide] { width: 18px; height: 18px; stroke-width: 2; }
+  .db-engine-mariadb { background: color-mix(in srgb, #f59e0b 16%, var(--bg-elevated)); color: #f59e0b; border: 1px solid color-mix(in srgb, #f59e0b 30%, var(--border)); }
+  .db-engine-postgres { background: color-mix(in srgb, #3b82f6 16%, var(--bg-elevated)); color: #60a5fa; border: 1px solid color-mix(in srgb, #3b82f6 30%, var(--border)); }
+  .db-engine-redis { background: color-mix(in srgb, #ef4444 16%, var(--bg-elevated)); color: #f87171; border: 1px solid color-mix(in srgb, #ef4444 30%, var(--border)); }
+  body.light-theme .db-engine-postgres { color: #2563eb; }
+  body.light-theme .db-engine-redis { color: #dc2626; }
+  /* ── DB Card ── */
+  .db-card { border: 1px solid var(--border); border-radius: var(--radius-xl); background: color-mix(in srgb, var(--bg-elevated) 60%, var(--bg-card)); overflow: hidden; }
+  .db-card-header { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 16px; }
+  .db-card-info { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 1; }
+  .db-card-label { font-size: 0.88rem; font-weight: 700; color: var(--text); }
+  .db-card-meta { display: flex; flex-wrap: wrap; gap: 6px; }
+  .db-card-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 0.72rem; padding: 2px 8px; border-radius: 999px; background: color-mix(in srgb, var(--bg-subtle) 80%, var(--bg-card)); border: 1px solid var(--border); color: var(--text-sec); }
+  .db-card-badge code { font-family: var(--mono); font-size: 0.72rem; }
+  .db-card-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  /* ── DB Card Expand (change password) ── */
+  .db-card-expand { border-top: 1px solid var(--border); }
+  .db-card-expand[open] { background: color-mix(in srgb, var(--bg-subtle) 50%, var(--bg-card)); }
+  .db-expand-toggle { list-style: none; display: flex; align-items: center; gap: 7px; padding: 9px 16px; font-size: 0.78rem; font-weight: 600; color: var(--text-sec); cursor: pointer; user-select: none; }
+  .db-expand-toggle::-webkit-details-marker { display: none; }
+  .db-expand-toggle [data-lucide] { width: 13px; height: 13px; stroke-width: 2; }
+  .db-expand-toggle:hover { color: var(--text); background: var(--bg-hover); }
+  .db-expand-form { padding: 10px 16px 14px; }
+  /* ── DB Empty State ── */
+  .db-empty-state { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 32px 24px; color: var(--text-muted); text-align: center; }
+  .db-empty-state [data-lucide] { width: 32px; height: 32px; stroke-width: 1.4; opacity: 0.4; }
+  .db-empty-state p { font-size: 0.86rem; }
+  /* ── DB Add Section ── */
+  .db-add-section { border-top: 1px solid var(--border); margin-top: 4px; }
+  .db-add-toggle { list-style: none; display: flex; align-items: center; gap: 8px; padding: 11px 16px; font-size: 0.82rem; font-weight: 600; color: var(--text-sec); cursor: pointer; user-select: none; border-radius: 0 0 var(--radius-xl) var(--radius-xl); }
+  .db-add-toggle::-webkit-details-marker { display: none; }
+  .db-add-toggle [data-lucide] { width: 14px; height: 14px; stroke-width: 2.5; }
+  .db-add-toggle:hover { color: var(--text); background: var(--bg-hover); }
+  .db-add-section[open] .db-add-toggle { border-bottom: 1px solid var(--border); border-radius: 0; }
+  .db-add-form { padding: 16px; }
+  /* ── Small button variant ── */
+  .btn-sm { height: 2rem; padding: 0 0.65rem; font-size: 0.78rem; gap: 5px; }
+  .btn-sm [data-lucide] { width: 13px; height: 13px; }
 </style>
 
 <script>
@@ -3528,6 +3674,140 @@ $(function () {
     });
 
     loadLogFiles();
+  }
+
+  // ── App Log Viewer ──
+  var $appLogControls = $('#app-log-controls');
+  if ($appLogControls.length) {
+    var appLogId = $appLogControls.data('app-id');
+    var appLogBase = '/apps/' + appLogId + '/manage';
+    var appLogAllFiles = [];
+    var appLogRawLines = [];
+    var appLogLiveInterval = null;
+
+    function appLoadLogFiles() {
+      $.getJSON(appLogBase + '/log-files', function (data) {
+        appLogAllFiles = data.files || [];
+        appRenderLogFileOptions();
+        if (appLogAllFiles.length) appLoadLogContent();
+      });
+    }
+
+    function appRenderLogFileOptions() {
+      var $sel = $('#app-log-file').empty();
+      if (!appLogAllFiles.length) {
+        $sel.append('<option value="">No log files found</option>');
+        return;
+      }
+      for (var i = 0; i < appLogAllFiles.length; i++) {
+        var item = appLogAllFiles[i];
+        var label = (item.type ? item.type.charAt(0).toUpperCase() + item.type.slice(1) : 'Log') + ' · ' + item.name;
+        $sel.append('<option value="' + item.name + '">' + label + '</option>');
+      }
+    }
+
+    function appRenderLogContent() {
+      var query = $.trim($('#app-log-search').val());
+      var lines = appLogRawLines.slice();
+      var re = null;
+      if (query) {
+        try { re = new RegExp(query, 'i'); } catch(e) { re = null; }
+        lines = lines.filter(function(line) {
+          if (re) return re.test(line);
+          return line.toLowerCase().indexOf(query.toLowerCase()) !== -1;
+        });
+      }
+      $('#app-log-summary-count').text(lines.length + ' / ' + appLogRawLines.length + ' lines');
+      if (!lines.length) {
+        $('#app-log-viewer').html('<div class="log-empty">' + (appLogRawLines.length ? 'No lines match your filter' : 'Log file is empty') + '</div>');
+        return;
+      }
+      var html = '';
+      for (var i = 0; i < lines.length; i++) {
+        var colored = colorizeLog(lines[i]);
+        var highlighted = false;
+        if (query && re) {
+          var marked = colored.replace(re, function(m) { return '<mark>' + m + '</mark>'; });
+          if (marked !== colored) { highlighted = true; colored = marked; }
+        } else if (query) {
+          var ql = query.toLowerCase();
+          var idx = colored.toLowerCase().indexOf(ql);
+          if (idx >= 0) {
+            highlighted = true;
+            colored = colored.substring(0, idx) + '<mark>' + colored.substring(idx, idx + query.length) + '</mark>' + colored.substring(idx + query.length);
+          }
+        }
+        html += '<div class="log-line' + (highlighted ? ' log-line-highlight' : '') + '"><span class="log-line-no">' + (i + 1) + '</span><div class="log-line-text">' + colored + '</div></div>';
+      }
+      $('#app-log-viewer').html(html);
+      if ($('#app-log-autoscroll').is(':checked')) {
+        var viewer = document.getElementById('app-log-viewer');
+        viewer.scrollTop = viewer.scrollHeight;
+      }
+    }
+
+    function appLoadLogContent() {
+      var file = $('#app-log-file').val();
+      if (!file) {
+        appLogRawLines = [];
+        $('#app-log-meta').text('No file loaded');
+        $('#app-log-summary-label').text('Select a log file');
+        $('#app-log-summary-count').text('');
+        $('#app-log-viewer').html('<div class="log-empty">Select a log file and press Refresh to load the latest lines.</div>');
+        return;
+      }
+      var lines = $('#app-log-lines').val();
+      pageSetButtonLoading($('#app-log-update'), true, 'Loading...');
+      $('#app-log-meta').text(file);
+      $('#app-log-summary-label').text('Fetching...');
+      $.getJSON(appLogBase + '/log-content', { file: file, lines: lines }, function (data) {
+        var content = (data.content || '').trim();
+        if (!content) {
+          appLogRawLines = [];
+          $('#app-log-summary-label').text(file + ' is empty');
+          $('#app-log-summary-count').text('0 lines');
+          $('#app-log-viewer').html('<div class="log-empty">Log file is empty</div>');
+          return;
+        }
+        appLogRawLines = content.split('\n');
+        $('#app-log-summary-label').text(file + ' · last ' + lines);
+        appRenderLogContent();
+      }).fail(function () {
+        appLogRawLines = [];
+        $('#app-log-summary-label').text('Failed to load');
+        $('#app-log-summary-count').text('');
+        $('#app-log-viewer').html('<div class="log-empty">Failed to load log file</div>');
+      }).always(function () {
+        pageSetButtonLoading($('#app-log-update'), false);
+      });
+    }
+
+    $('#app-log-file').on('change', function() { appLoadLogContent(); });
+    $('#app-log-update').on('click', function() { appLoadLogContent(); });
+    var appLogSearchTimer = null;
+    $('#app-log-search').on('input', function() {
+      clearTimeout(appLogSearchTimer);
+      appLogSearchTimer = setTimeout(appRenderLogContent, 180);
+    });
+    $('#app-log-live').on('change', function() {
+      if (this.checked) {
+        appLoadLogContent();
+        appLogLiveInterval = setInterval(appLoadLogContent, 3000);
+      } else {
+        if (appLogLiveInterval) { clearInterval(appLogLiveInterval); appLogLiveInterval = null; }
+      }
+    });
+    $(document).on('keydown.applog', function(e) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+        var $search = $('#app-log-search');
+        if ($search.is(':visible') && $('[data-panel="logs"]').hasClass('manage-panel-active')) {
+          e.preventDefault();
+          $search.trigger('focus').trigger('select');
+        }
+      }
+    });
+
+    appLoadLogFiles();
   }
 
   // PM options allowed per runtime

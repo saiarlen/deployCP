@@ -272,6 +272,108 @@ func (s *DatabaseService) AdminerURL() string {
 	return s.cfg.Integrations.AdminerURL
 }
 
+// AdminerDBURL returns an Adminer URL with server/username/db pre-filled for
+// a specific MariaDB connection. The user still needs to enter the password in
+// Adminer's login form, but the fields are pre-populated for convenience.
+func (s *DatabaseService) AdminerDBURL(id uint) (string, error) {
+	item, err := s.dbRepo.Find(id)
+	if err != nil {
+		return "", err
+	}
+	if !strings.EqualFold(strings.TrimSpace(item.Engine), "mariadb") {
+		return "", fmt.Errorf("adminer is only for MariaDB connections")
+	}
+	base := strings.TrimSpace(s.cfg.Integrations.AdminerURL)
+	if base == "" {
+		return "", fmt.Errorf("ADMINER_URL is not configured")
+	}
+	u, err := url.Parse(base)
+	if err != nil {
+		return "", err
+	}
+	q := u.Query()
+	q.Set("server", item.Host)
+	q.Set("username", item.Username)
+	q.Set("db", item.Database)
+	u.RawQuery = q.Encode()
+	return u.String(), nil
+}
+
+// UpdateDatabasePassword changes the password for a managed database user and
+// updates the encrypted password stored in the panel database.
+func (s *DatabaseService) UpdateDatabasePassword(id uint, newPassword string, actor *uint, ip string) error {
+	if strings.TrimSpace(newPassword) == "" {
+		return fmt.Errorf("password cannot be empty")
+	}
+	item, err := s.dbRepo.Find(id)
+	if err != nil {
+		return err
+	}
+	if err := s.changeManagedDatabasePassword(item, newPassword); err != nil {
+		return err
+	}
+	encrypted, err := utils.EncryptString(s.cfg.Security.SessionSecret, newPassword)
+	if err != nil {
+		return err
+	}
+	item.PasswordEnc = encrypted
+	if err := s.dbRepo.Update(item); err != nil {
+		return err
+	}
+	s.audit.Record(actor, "database.password_update", "database_connection", fmt.Sprintf("%d", item.ID), ip, map[string]any{"engine": item.Engine})
+	return nil
+}
+
+func (s *DatabaseService) changeManagedDatabasePassword(item *models.DatabaseConnection, newPassword string) error {
+	if s.cfg.Features.PlatformMode == "dryrun" || item == nil || !isManagedLocalHost(item.Host) {
+		return nil
+	}
+	switch strings.ToLower(strings.TrimSpace(item.Engine)) {
+	case "mariadb":
+		return s.changeMariaDBPassword(item, newPassword)
+	case "postgres":
+		return s.changePostgresPassword(item, newPassword)
+	}
+	return nil
+}
+
+func (s *DatabaseService) changeMariaDBPassword(item *models.DatabaseConnection, newPassword string) error {
+	if strings.TrimSpace(s.cfg.Managed.MariaDBAdminUser) == "" {
+		return fmt.Errorf("managed MariaDB password update requires MARIADB_ADMIN_USER")
+	}
+	dsn := s.mariaDBDSN()
+	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	if err != nil {
+		return err
+	}
+	sqlDB, err := db.DB()
+	if err == nil {
+		defer sqlDB.Close()
+	}
+	escapedPass := escapeMariaDBString(newPassword)
+	for _, host := range []string{"localhost", "127.0.0.1"} {
+		stmt := fmt.Sprintf("ALTER USER '%s'@'%s' IDENTIFIED BY '%s'", item.Username, host, escapedPass)
+		_ = db.Exec(stmt).Error
+	}
+	return db.Exec("FLUSH PRIVILEGES").Error
+}
+
+func (s *DatabaseService) changePostgresPassword(item *models.DatabaseConnection, newPassword string) error {
+	if strings.TrimSpace(s.cfg.Managed.PostgresAdminUser) == "" {
+		return fmt.Errorf("managed PostgreSQL password update requires POSTGRES_ADMIN_USER")
+	}
+	dsn := s.postgresDSN()
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		return err
+	}
+	sqlDB, err := db.DB()
+	if err == nil {
+		defer sqlDB.Close()
+	}
+	return db.Exec(fmt.Sprintf("ALTER ROLE \"%s\" PASSWORD '%s'", item.Username, escapePostgresString(newPassword))).Error
+}
+
 func (s *DatabaseService) PostgresGUIURL(id uint) (string, error) {
 	item, err := s.dbRepo.Find(id)
 	if err != nil {
@@ -505,26 +607,18 @@ func (s *DatabaseService) dropPostgres(item *models.DatabaseConnection) error {
 	return nil
 }
 
-// postgresDSN builds a Go PostgreSQL DSN. When the password is empty and the
-// host is local, it tries unix socket directories for peer/ident auth (same
-// pattern as mariaDBDSN). Setting host= to a directory path is the standard
-// libpq way to force a unix socket connection.
+// postgresDSN builds a Go PostgreSQL DSN using TCP. We always use TCP (not
+// Unix socket) so the connection works regardless of which OS user runs the
+// panel process. Peer authentication only works when the OS user matches the
+// PostgreSQL role, which is rarely the case for a web service. When no
+// password is set the caller must ensure PostgreSQL pg_hba.conf allows
+// password-less connections from 127.0.0.1 (trust) or set POSTGRES_ADMIN_PASSWORD.
 func (s *DatabaseService) postgresDSN() string {
 	user := s.cfg.Managed.PostgresAdminUser
 	pass := s.cfg.Managed.PostgresAdminPass
 	host := s.cfg.Managed.PostgresAdminHost
 	port := s.cfg.Managed.PostgresAdminPort
 	dbname := s.cfg.Managed.PostgresAdminDB
-	if strings.TrimSpace(pass) == "" && isManagedLocalHost(host) {
-		for _, dir := range []string{
-			"/var/run/postgresql",
-			"/tmp",
-		} {
-			if _, err := os.Stat(dir); err == nil {
-				return fmt.Sprintf("host=%s port=%d user=%s dbname=%s sslmode=disable", dir, port, user, dbname)
-			}
-		}
-	}
 	if strings.TrimSpace(pass) == "" {
 		return fmt.Sprintf("host=%s port=%d user=%s dbname=%s sslmode=disable", host, port, user, dbname)
 	}

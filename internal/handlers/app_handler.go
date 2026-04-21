@@ -202,6 +202,7 @@ func (h *AppHandler) SitesAppsCreate(c *fiber.Ctx) error {
 			PHPVersion:       strings.TrimSpace(c.FormValue("php_version")),
 			Domains:          []string{domain},
 			CustomDirectives: "",
+			MaintenanceBypassIPs: "",
 			SiteUserID:       siteUserID,
 			Enabled:          true,
 		}
@@ -252,6 +253,7 @@ func (h *AppHandler) SitesAppsCreate(c *fiber.Ctx) error {
 			ProxyTarget:      fmt.Sprintf("http://127.0.0.1:%d", port),
 			Domains:          []string{domain},
 			CustomDirectives: "",
+			MaintenanceBypassIPs: "",
 			SiteUserID:       siteUserID,
 			Enabled:          true,
 		}
@@ -532,6 +534,82 @@ func (h *AppHandler) ManageDeleteDatabase(c *fiber.Ctx) error {
 	}
 	h.base.Sessions.SetFlash(c, "Database connection deleted")
 	return c.Redirect(platformURLWithTab("app", app.ID, "databases"))
+}
+
+func (h *AppHandler) ManageUpdateDatabasePassword(c *fiber.Ctx) error {
+	id, err := repositories.ParseID(c.Params("id"))
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	dbid, err := repositories.ParseID(c.Params("dbid"))
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	app, _, err := h.appDatabaseItem(id, dbid)
+	if err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect(platformURLWithTab("app", id, "databases"))
+	}
+	password := c.FormValue("password")
+	if err := h.databaseService.UpdateDatabasePassword(dbid, password, currentUserID(c), c.IP()); err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+	} else {
+		h.base.Sessions.SetFlash(c, "Database password updated")
+	}
+	return c.Redirect(platformURLWithTab("app", app.ID, "databases"))
+}
+
+func (h *AppHandler) ManageAdminerDB(c *fiber.Ctx) error {
+	id, err := repositories.ParseID(c.Params("id"))
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	dbid, err := repositories.ParseID(c.Params("dbid"))
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	if _, _, err := h.appDatabaseItem(id, dbid); err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect(platformURLWithTab("app", id, "databases"))
+	}
+	adminerURL, err := h.databaseService.AdminerDBURL(dbid)
+	if err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect(platformURLWithTab("app", id, "databases"))
+	}
+	return c.Redirect(adminerURL)
+}
+
+func (h *AppHandler) LogFiles(c *fiber.Ctx) error {
+	id, err := repositories.ParseID(c.Params("id"))
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
+	}
+	files, err := h.service.ListLogFiles(id)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"files": files})
+}
+
+func (h *AppHandler) LogContent(c *fiber.Ctx) error {
+	id, err := repositories.ParseID(c.Params("id"))
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
+	}
+	filename := c.Query("file")
+	if filename == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "file parameter required"})
+	}
+	lines, _ := strconv.Atoi(c.Query("lines", "100"))
+	if lines <= 0 || lines > 5000 {
+		lines = 100
+	}
+	content, err := h.service.ReadLogFile(id, filename, lines)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"content": content, "file": filename, "lines": lines})
 }
 
 func (h *AppHandler) ManageOpenPostgresGUI(c *fiber.Ctx) error {

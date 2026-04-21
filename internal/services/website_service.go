@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"sort"
@@ -30,6 +31,7 @@ type WebsiteInput struct {
 	ProxyTarget      string
 	Domains          []string
 	CustomDirectives string
+	MaintenanceBypassIPs string
 	SiteUserID       *uint
 	Enabled          bool
 }
@@ -45,29 +47,29 @@ type PhpSettingsData struct {
 }
 
 type WebsiteService struct {
-	cfg       *config.Config
-	repo      *repositories.WebsiteRepository
-	nginxRepo *repositories.NginxSiteRepository
-	appRepo   *repositories.GoAppRepository
-	services  *repositories.ManagedServiceRepository
-	siteUsers *repositories.SiteUserRepository
-	ftpUsers  *repositories.FTPUserRepository
-	dbRepo    *repositories.DatabaseConnectionRepository
-	redisRepo *repositories.RedisConnectionRepository
-	sslRepo   *repositories.SSLCertificateRepository
-	varnish   *repositories.VarnishConfigRepository
+	cfg        *config.Config
+	repo       *repositories.WebsiteRepository
+	nginxRepo  *repositories.NginxSiteRepository
+	appRepo    *repositories.GoAppRepository
+	services   *repositories.ManagedServiceRepository
+	siteUsers  *repositories.SiteUserRepository
+	ftpUsers   *repositories.FTPUserRepository
+	dbRepo     *repositories.DatabaseConnectionRepository
+	redisRepo  *repositories.RedisConnectionRepository
+	sslRepo    *repositories.SSLCertificateRepository
+	varnish    *repositories.VarnishConfigRepository
 	ipBlocks   *repositories.IPBlockRepository
 	botBlocks  *repositories.BotBlockRepository
 	basicAuth  *repositories.BasicAuthRepository
 	cloudflare *repositories.CloudflareConfigRepository
 	adapter    platform.Adapter
-	audit     *AuditService
-	ssl       *SSLService
-	runtime   *RuntimeService
-	cron      *CronService
-	database  *DatabaseService
-	ftp       *FTPService
-	varnishOS *VarnishService
+	audit      *AuditService
+	ssl        *SSLService
+	runtime    *RuntimeService
+	cron       *CronService
+	database   *DatabaseService
+	ftp        *FTPService
+	varnishOS  *VarnishService
 }
 
 func NewWebsiteService(
@@ -96,29 +98,29 @@ func NewWebsiteService(
 	varnishOS *VarnishService,
 ) *WebsiteService {
 	return &WebsiteService{
-		cfg:       cfg,
-		repo:      repo,
-		nginxRepo: nginxRepo,
-		appRepo:   appRepo,
-		services:  servicesRepo,
-		siteUsers: siteUsers,
-		ftpUsers:  ftpUsers,
-		dbRepo:    dbRepo,
-		redisRepo: redisRepo,
-		sslRepo:   sslRepo,
-		varnish:   varnish,
+		cfg:        cfg,
+		repo:       repo,
+		nginxRepo:  nginxRepo,
+		appRepo:    appRepo,
+		services:   servicesRepo,
+		siteUsers:  siteUsers,
+		ftpUsers:   ftpUsers,
+		dbRepo:     dbRepo,
+		redisRepo:  redisRepo,
+		sslRepo:    sslRepo,
+		varnish:    varnish,
 		ipBlocks:   ipBlocks,
 		botBlocks:  botBlocks,
 		basicAuth:  basicAuth,
 		cloudflare: cloudflare,
 		adapter:    adapter,
-		audit:     audit,
-		ssl:       ssl,
-		runtime:   runtime,
-		cron:      cron,
-		database:  database,
-		ftp:       ftp,
-		varnishOS: varnishOS,
+		audit:      audit,
+		ssl:        ssl,
+		runtime:    runtime,
+		cron:       cron,
+		database:   database,
+		ftp:        ftp,
+		varnishOS:  varnishOS,
 	}
 }
 
@@ -131,6 +133,11 @@ func (s *WebsiteService) Find(id uint) (*models.Website, error) {
 }
 
 func (s *WebsiteService) Create(ctx context.Context, in WebsiteInput, actor *uint, ip string) (*models.Website, error) {
+	normalizedBypass, err := normalizeMaintenanceBypassIPs(in.MaintenanceBypassIPs)
+	if err != nil {
+		return nil, err
+	}
+	in.MaintenanceBypassIPs = normalizedBypass
 	if err := s.validate(in); err != nil {
 		return nil, err
 	}
@@ -143,6 +150,7 @@ func (s *WebsiteService) Create(ctx context.Context, in WebsiteInput, actor *uin
 		PHPVersion:       in.PHPVersion,
 		ProxyTarget:      in.ProxyTarget,
 		CustomDirectives: in.CustomDirectives,
+		MaintenanceBypassIPs: in.MaintenanceBypassIPs,
 		SiteUserID:       in.SiteUserID,
 		Enabled:          in.Enabled,
 		AccessLogPath:    filepath.Join(platformHome, "logs", "access.log"),
@@ -169,6 +177,11 @@ func (s *WebsiteService) Create(ctx context.Context, in WebsiteInput, actor *uin
 }
 
 func (s *WebsiteService) Update(ctx context.Context, id uint, in WebsiteInput, actor *uint, ip string) error {
+	normalizedBypass, err := normalizeMaintenanceBypassIPs(in.MaintenanceBypassIPs)
+	if err != nil {
+		return err
+	}
+	in.MaintenanceBypassIPs = normalizedBypass
 	if err := s.validate(in); err != nil {
 		return err
 	}
@@ -182,6 +195,7 @@ func (s *WebsiteService) Update(ctx context.Context, id uint, in WebsiteInput, a
 	site.PHPVersion = in.PHPVersion
 	site.ProxyTarget = in.ProxyTarget
 	site.CustomDirectives = in.CustomDirectives
+	site.MaintenanceBypassIPs = in.MaintenanceBypassIPs
 	site.SiteUserID = in.SiteUserID
 	site.Enabled = in.Enabled
 	if err := s.repo.Update(site, in.Domains); err != nil {
@@ -545,17 +559,11 @@ func (s *WebsiteService) writeNginxConfig(ctx context.Context, site *models.Webs
 	if err := utils.WriteFileAtomic(cfg.ConfigPath, []byte(cfg.Content), 0o644); err != nil {
 		return err
 	}
-	if site.Enabled {
-		if err := s.enableConfig(cfg.ConfigPath, cfg.EnabledPath); err != nil {
-			return err
-		}
-	} else {
-		if err := os.Remove(cfg.EnabledPath); err != nil && !os.IsNotExist(err) {
-			return err
-		}
+	if err := s.enableConfig(cfg.ConfigPath, cfg.EnabledPath); err != nil {
+		return err
 	}
 	now := time.Now()
-	_ = s.nginxRepo.Upsert(&models.NginxSiteConfig{WebsiteID: site.ID, ConfigPath: cfg.ConfigPath, EnabledPath: cfg.EnabledPath, Checksum: cfg.Checksum, Enabled: site.Enabled, LastValidatedAt: &now})
+	_ = s.nginxRepo.Upsert(&models.NginxSiteConfig{WebsiteID: site.ID, ConfigPath: cfg.ConfigPath, EnabledPath: cfg.EnabledPath, Checksum: cfg.Checksum, Enabled: true, LastValidatedAt: &now})
 	if err := s.adapter.Nginx().Validate(ctx, s.cfg.Paths.NginxBinary); err != nil {
 		return err
 	}
@@ -630,6 +638,24 @@ p{margin:0;color:#94a3b8;line-height:1.7}
 `
 		_ = os.WriteFile(notFoundPath, []byte(page), 0o664)
 	}
+	maintenancePath := filepath.Join(root, "_deploycp_maintenance.html")
+	if _, err := os.Stat(maintenancePath); os.IsNotExist(err) {
+		page := `<!doctype html>
+<html><head><meta charset="utf-8"><title>Scheduled Maintenance</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{color-scheme:dark light}
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:#0f172a;color:#e2e8f0;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.card{max-width:620px;width:100%;border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.9);backdrop-filter:blur(10px);border-radius:24px;padding:32px;box-shadow:0 20px 50px rgba(2,6,23,.35)}
+.eyebrow{display:inline-flex;padding:6px 10px;border-radius:999px;background:rgba(59,130,246,.14);color:#93c5fd;font-size:.75rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+h1{margin:18px 0 10px;font-size:2rem;line-height:1.1}
+p{margin:0;color:#94a3b8;line-height:1.7}
+.code{margin-top:18px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.82rem;color:#cbd5e1;background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.14);padding:10px 12px;border-radius:14px}
+</style></head>
+<body><div class="card"><span class="eyebrow">DeployCP</span><h1>Scheduled maintenance</h1><p>This platform is temporarily unavailable while maintenance is in progress. Please try again in a few minutes.</p><div class="code">HTTP 503 · Generated by DeployCP</div></div></body></html>
+`
+		_ = os.WriteFile(maintenancePath, []byte(page), 0o664)
+	}
 	strayAllowed := filepath.Join(root, ".deploycp_allowed_root")
 	if _, err := os.Stat(strayAllowed); err == nil {
 		_ = os.Remove(strayAllowed)
@@ -654,16 +680,20 @@ p{margin:0;color:#94a3b8;line-height:1.7}
 
 func (s *WebsiteService) ensureBasicAuthFile(site *models.Website, auth *models.BasicAuth) (string, error) {
 	path := filepath.Join(s.cfg.Paths.HTPasswdRoot, site.Name+".htpasswd")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return "", err
+	}
+	ensurePathTraversable(path)
 	password, err := utils.DecryptString(s.cfg.Security.SessionSecret, auth.PasswordEnc)
 	if err != nil {
 		return "", err
 	}
-	hash, err := utils.HashPassword(password)
+	hash, err := utils.HashHTPasswdPassword(password)
 	if err != nil {
 		return "", err
 	}
 	content := fmt.Sprintf("%s:%s\n", auth.Username, hash)
-	if err := utils.WriteFileAtomic(path, []byte(content), 0o640); err != nil {
+	if err := utils.WriteFileAtomic(path, []byte(content), 0o644); err != nil {
 		return "", err
 	}
 	return path, nil
@@ -953,7 +983,36 @@ func (s *WebsiteService) validate(in WebsiteInput) error {
 	if in.Type == "proxy" && strings.TrimSpace(in.ProxyTarget) == "" {
 		return fmt.Errorf("proxy target is required for proxy websites")
 	}
+	normalizedBypass, err := normalizeMaintenanceBypassIPs(in.MaintenanceBypassIPs)
+	if err != nil {
+		return err
+	}
+	in.MaintenanceBypassIPs = normalizedBypass
 	return nil
+}
+
+func normalizeMaintenanceBypassIPs(raw string) (string, error) {
+	values := []string{}
+	seen := map[string]struct{}{}
+	for _, part := range strings.FieldsFunc(raw, func(r rune) bool { return r == ',' || r == '\n' || r == '\r' || r == '\t' }) {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if ip := net.ParseIP(part); ip != nil {
+			part = ip.String()
+		} else if _, block, err := net.ParseCIDR(part); err == nil {
+			part = block.String()
+		} else {
+			return "", fmt.Errorf("invalid maintenance bypass IP or CIDR: %s", part)
+		}
+		if _, ok := seen[part]; ok {
+			continue
+		}
+		seen[part] = struct{}{}
+		values = append(values, part)
+	}
+	return strings.Join(values, "\n"), nil
 }
 
 func domainsFromModel(items []models.WebsiteDomain) []string {

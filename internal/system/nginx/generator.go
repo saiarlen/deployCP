@@ -132,6 +132,16 @@ func renderServerContent(body *strings.Builder, site *models.Website, opts Websi
 		}
 		body.WriteString(fmt.Sprintf("    if ($http_user_agent ~* \"%s\") { return 403; }\n", escapeNginxString(bot.BotName)))
 	}
+	if !site.Enabled {
+		body.WriteString(fmt.Sprintf("    root %s;\n", site.RootPath))
+		body.WriteString("    error_page 403 =503 /_deploycp_maintenance.html;\n")
+		body.WriteString("    error_page 503 /_deploycp_maintenance.html;\n")
+		body.WriteString("    location = /_deploycp_maintenance.html {\n")
+		body.WriteString("        internal;\n")
+		body.WriteString("    }\n")
+		renderMaintenanceProtectedContent(body, site)
+		return
+	}
 	if opts.BasicAuth != nil && opts.BasicAuth.Enabled && strings.TrimSpace(opts.BasicAuthPath) != "" {
 		body.WriteString("    satisfy any;\n")
 		for _, ip := range strings.FieldsFunc(opts.BasicAuth.WhitelistedIPs, func(r rune) bool { return r == ',' || r == '\n' || r == '\r' }) {
@@ -190,6 +200,62 @@ func renderServerContent(body *strings.Builder, site *models.Website, opts Websi
 			body.WriteString("    " + line + "\n")
 		}
 	}
+}
+
+func renderMaintenanceProtectedContent(body *strings.Builder, site *models.Website) {
+	bypass := strings.FieldsFunc(site.MaintenanceBypassIPs, func(r rune) bool { return r == ',' || r == '\n' || r == '\r' || r == '\t' })
+	writeAllowDeny := func() {
+		for _, ip := range bypass {
+			ip = strings.TrimSpace(ip)
+			if ip == "" {
+				continue
+			}
+			body.WriteString(fmt.Sprintf("        allow %s;\n", ip))
+		}
+		body.WriteString("        deny all;\n")
+	}
+	if site.Type == "proxy" && site.ProxyTarget != "" {
+		body.WriteString("    location / {\n")
+		writeAllowDeny()
+		body.WriteString(fmt.Sprintf("        proxy_pass %s;\n", site.ProxyTarget))
+		body.WriteString("        proxy_http_version 1.1;\n")
+		body.WriteString("        proxy_set_header Host $host;\n")
+		body.WriteString("        proxy_set_header X-Real-IP $remote_addr;\n")
+		body.WriteString("        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n")
+		body.WriteString("        proxy_set_header X-Forwarded-Proto $scheme;\n")
+		body.WriteString("    }\n")
+		return
+	}
+	if site.Type == "php" {
+		phpVersion := strings.TrimSpace(site.PHPVersion)
+		if phpVersion == "" {
+			phpVersion = "8.2"
+		}
+		body.WriteString(fmt.Sprintf("    root %s;\n", site.RootPath))
+		body.WriteString("    index index.php index.html index.htm;\n")
+		body.WriteString("    location / {\n")
+		writeAllowDeny()
+		body.WriteString("        try_files $uri $uri/ /index.php?$query_string;\n")
+		body.WriteString("    }\n")
+		body.WriteString("    location ~ \\.php$ {\n")
+		writeAllowDeny()
+		body.WriteString("        include fastcgi_params;\n")
+		body.WriteString("        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;\n")
+		body.WriteString("        fastcgi_index index.php;\n")
+		body.WriteString(fmt.Sprintf("        fastcgi_pass unix:%s;\n", phpFPMSocketPath(phpVersion)))
+		body.WriteString("    }\n")
+		return
+	}
+	body.WriteString(fmt.Sprintf("    root %s;\n", site.RootPath))
+	body.WriteString("    index index.html index.htm;\n")
+	body.WriteString("    error_page 404 /_deploycp_404.html;\n")
+	body.WriteString("    location = /_deploycp_404.html {\n")
+	body.WriteString("        internal;\n")
+	body.WriteString("    }\n")
+	body.WriteString("    location / {\n")
+	writeAllowDeny()
+	body.WriteString("        try_files $uri $uri/ =404;\n")
+	body.WriteString("    }\n")
 }
 
 func escapeNginxString(value string) string {
