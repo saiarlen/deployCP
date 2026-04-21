@@ -198,9 +198,19 @@ func (s *FTPService) ensureSystemUser(ctx context.Context, username, password, h
 			AuditAction: "ftp.user.create",
 			ActorUserID: actor,
 			IP:          ip,
-		}); createErr != nil {
+		}); createErr != nil && !strings.Contains(strings.ToLower(createErr.Error()), "already exists") {
 			return createErr
 		}
+	}
+	if _, err := s.runner.Run(ctx, system.CommandRequest{
+		Binary:      "/usr/sbin/usermod",
+		Args:        []string{"-d", homeDir, "-s", s.cfg.Managed.FTPNoLoginShell, username},
+		Timeout:     15 * time.Second,
+		AuditAction: "ftp.user.sync",
+		ActorUserID: actor,
+		IP:          ip,
+	}); err != nil {
+		return err
 	}
 	if _, err := s.runner.Run(ctx, system.CommandRequest{
 		Binary:      "/usr/sbin/chpasswd",

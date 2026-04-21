@@ -320,8 +320,23 @@ func (u *userManager) Create(ctx context.Context, spec platform.SiteUserSpec) (i
 	// Ensure every parent directory up to the home is world-traversable (o+x)
 	// so SSH and the login shell can reach the home directory.
 	ensureParentTraversable(spec.HomeDir)
-	_, err := u.runner.Run(ctx, system.CommandRequest{Binary: "/usr/sbin/useradd", Args: []string{"-M", "-d", spec.HomeDir, "-s", spec.ShellPath, spec.Username}, Timeout: 20 * time.Second, AuditAction: "site_user.create"})
-	if err != nil {
+	_, lookupErr := u.runner.Run(ctx, system.CommandRequest{
+		Binary:      "/usr/sbin/id",
+		Args:        []string{"-u", spec.Username},
+		Timeout:     5 * time.Second,
+		AuditAction: "site_user.lookup",
+	})
+	if lookupErr != nil {
+		if _, err := u.runner.Run(ctx, system.CommandRequest{
+			Binary:      "/usr/sbin/useradd",
+			Args:        []string{"-M", "-d", spec.HomeDir, "-s", spec.ShellPath, spec.Username},
+			Timeout:     20 * time.Second,
+			AuditAction: "site_user.create",
+		}); err != nil && !strings.Contains(strings.ToLower(err.Error()), "already exists") {
+			return 0, 0, err
+		}
+	}
+	if err := u.SyncHome(ctx, spec.Username, spec.HomeDir, spec.AllowedRoot, spec.ShellPath); err != nil {
 		return 0, 0, err
 	}
 	if err := u.SetPassword(ctx, spec.Username, spec.Password); err != nil {

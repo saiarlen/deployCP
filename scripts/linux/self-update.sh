@@ -60,9 +60,9 @@ if /bin/bash "${CORE_DIR}/scripts/linux/install-remote.sh" --update >>"$LOG_PATH
   write_status "success" "Update completed"
   log "DeployCP update completed successfully"
   exit 0
+else
+  rc=$?
 fi
-
-rc=$?
 FINISHED_AT="$(timestamp)"
 write_status "failed" "Update failed"
 log "DeployCP update failed with exit code ${rc}"
