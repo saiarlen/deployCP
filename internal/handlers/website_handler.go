@@ -721,7 +721,12 @@ func (h *WebsiteHandler) ManageAdminerDB(c *fiber.Ctx) error {
 		h.base.Sessions.SetFlash(c, err.Error())
 		return c.Redirect(platformURLWithTab("website", id, "databases"))
 	}
-	return c.Redirect(adminerURL)
+	target, parseErr := url.Parse(adminerURL)
+	if parseErr != nil {
+		h.base.Sessions.SetFlash(c, parseErr.Error())
+		return c.Redirect(platformURLWithTab("website", id, "databases"))
+	}
+	return proxyToolRequest(c, h.databaseService.AdminerURL(), target.Query())
 }
 
 func (h *WebsiteHandler) ManageOpenPostgresGUI(c *fiber.Ctx) error {
@@ -738,12 +743,17 @@ func (h *WebsiteHandler) ManageOpenPostgresGUI(c *fiber.Ctx) error {
 		h.base.Sessions.SetFlash(c, err.Error())
 		return c.Redirect(platformURLWithTab("website", id, "databases"))
 	}
-	url, err := h.databaseService.PostgresGUIURL(item.ID)
+	guiURL, err := h.databaseService.PostgresGUIURL(item.ID)
 	if err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
 		return c.Redirect(platformURLWithTab("website", id, "databases"))
 	}
-	return c.Redirect(url)
+	target, parseErr := url.Parse(guiURL)
+	if parseErr != nil {
+		h.base.Sessions.SetFlash(c, parseErr.Error())
+		return c.Redirect(platformURLWithTab("website", id, "databases"))
+	}
+	return proxyToolRequest(c, h.databaseService.PostgresGUIBaseURL(), target.Query())
 }
 
 func (h *WebsiteHandler) ManageRedisInfo(c *fiber.Ctx) error {
@@ -791,6 +801,29 @@ func (h *WebsiteHandler) ManageDeleteRedis(c *fiber.Ctx) error {
 		return c.Redirect(platformURLWithTab("website", site.ID, "databases"))
 	}
 	h.base.Sessions.SetFlash(c, "Redis connection deleted")
+	return c.Redirect(platformURLWithTab("website", site.ID, "databases"))
+}
+
+func (h *WebsiteHandler) ManageUpdateRedisPassword(c *fiber.Ctx) error {
+	id, err := repositories.ParseID(c.Params("id"))
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	rid, err := repositories.ParseID(c.Params("rid"))
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	site, _, err := h.websiteRedisItem(id, rid)
+	if err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect(platformURLWithTab("website", id, "databases"))
+	}
+	password := c.FormValue("password")
+	if err := h.databaseService.UpdateRedisPassword(rid, password, currentUserID(c), c.IP()); err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+	} else {
+		h.base.Sessions.SetFlash(c, "Redis password updated")
+	}
 	return c.Redirect(platformURLWithTab("website", site.ID, "databases"))
 }
 

@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -272,6 +273,10 @@ func (s *DatabaseService) AdminerURL() string {
 	return s.cfg.Integrations.AdminerURL
 }
 
+func (s *DatabaseService) PostgresGUIBaseURL() string {
+	return s.cfg.Integrations.PostgresGUIURL
+}
+
 // AdminerDBURL returns an Adminer URL with server/username/db pre-filled for
 // a specific MariaDB connection. The user still needs to enter the password in
 // Adminer's login form, but the fields are pre-populated for convenience.
@@ -361,6 +366,10 @@ func (s *DatabaseService) changeMariaDBPassword(item *models.DatabaseConnection,
 func (s *DatabaseService) changePostgresPassword(item *models.DatabaseConnection, newPassword string) error {
 	if strings.TrimSpace(s.cfg.Managed.PostgresAdminUser) == "" {
 		return fmt.Errorf("managed PostgreSQL password update requires POSTGRES_ADMIN_USER")
+	}
+	if s.useLocalPostgresCLI() {
+		_, err := s.runPostgresCLI(context.Background(), fmt.Sprintf("ALTER ROLE \"%s\" PASSWORD '%s'", item.Username, escapePostgresString(newPassword)))
+		return err
 	}
 	dsn := s.postgresDSN()
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
@@ -537,6 +546,9 @@ func (s *DatabaseService) provisionPostgres(in DBConnectionInput) error {
 	if strings.TrimSpace(s.cfg.Managed.PostgresAdminUser) == "" {
 		return fmt.Errorf("managed postgres provisioning requires POSTGRES_ADMIN_USER")
 	}
+	if s.useLocalPostgresCLI() {
+		return s.provisionPostgresCLI(in)
+	}
 	dsn := s.postgresDSN()
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
@@ -592,6 +604,9 @@ func (s *DatabaseService) dropPostgres(item *models.DatabaseConnection) error {
 	if strings.TrimSpace(s.cfg.Managed.PostgresAdminUser) == "" {
 		return nil
 	}
+	if s.useLocalPostgresCLI() {
+		return s.dropPostgresCLI(item)
+	}
 	dsn := s.postgresDSN()
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
@@ -607,12 +622,9 @@ func (s *DatabaseService) dropPostgres(item *models.DatabaseConnection) error {
 	return nil
 }
 
-// postgresDSN builds a Go PostgreSQL DSN using TCP. We always use TCP (not
-// Unix socket) so the connection works regardless of which OS user runs the
-// panel process. Peer authentication only works when the OS user matches the
-// PostgreSQL role, which is rarely the case for a web service. When no
-// password is set the caller must ensure PostgreSQL pg_hba.conf allows
-// password-less connections from 127.0.0.1 (trust) or set POSTGRES_ADMIN_PASSWORD.
+// postgresDSN builds a Go PostgreSQL DSN using TCP. When POSTGRES_ADMIN_PASSWORD
+// is empty on a local host, managed PostgreSQL operations fall back to
+// runuser+psql instead of using this DSN.
 func (s *DatabaseService) postgresDSN() string {
 	user := s.cfg.Managed.PostgresAdminUser
 	pass := s.cfg.Managed.PostgresAdminPass
@@ -623,6 +635,67 @@ func (s *DatabaseService) postgresDSN() string {
 		return fmt.Sprintf("host=%s port=%d user=%s dbname=%s sslmode=disable", host, port, user, dbname)
 	}
 	return fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", host, port, user, pass, dbname)
+}
+
+func (s *DatabaseService) useLocalPostgresCLI() bool {
+	return strings.TrimSpace(s.cfg.Managed.PostgresAdminPass) == "" && isManagedLocalHost(s.cfg.Managed.PostgresAdminHost)
+}
+
+func (s *DatabaseService) runPostgresCLI(ctx context.Context, sql string) (string, error) {
+	runuser := strings.TrimSpace(s.cfg.Paths.RunuserBinary)
+	if runuser == "" {
+		runuser = "/usr/sbin/runuser"
+	}
+	adminUser := strings.TrimSpace(s.cfg.Managed.PostgresAdminUser)
+	adminDB := strings.TrimSpace(s.cfg.Managed.PostgresAdminDB)
+	if adminDB == "" {
+		adminDB = "postgres"
+	}
+	cmd := exec.CommandContext(ctx, runuser, "-u", adminUser, "--", "psql", "-d", adminDB, "-v", "ON_ERROR_STOP=1", "-Atqc", sql)
+	out, err := cmd.CombinedOutput()
+	text := strings.TrimSpace(string(out))
+	if err != nil {
+		if text != "" {
+			return "", fmt.Errorf("postgres admin command failed: %w; stderr=%s", err, text)
+		}
+		return "", fmt.Errorf("postgres admin command failed: %w", err)
+	}
+	return text, nil
+}
+
+func (s *DatabaseService) provisionPostgresCLI(in DBConnectionInput) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	roleSQL := fmt.Sprintf(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '%s') THEN CREATE ROLE "%s" LOGIN PASSWORD '%s'; ELSE ALTER ROLE "%s" PASSWORD '%s'; END IF; END $$;`,
+		escapePostgresString(in.Username), in.Username, escapePostgresString(in.Password), in.Username, escapePostgresString(in.Password))
+	if _, err := s.runPostgresCLI(ctx, roleSQL); err != nil {
+		return err
+	}
+	exists, err := s.runPostgresCLI(ctx, fmt.Sprintf(`SELECT 1 FROM pg_database WHERE datname = '%s' LIMIT 1;`, escapePostgresString(in.Database)))
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(exists) == "" {
+		if _, err := s.runPostgresCLI(ctx, fmt.Sprintf(`CREATE DATABASE "%s" OWNER "%s";`, in.Database, in.Username)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *DatabaseService) dropPostgresCLI(item *models.DatabaseConnection) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	_, _ = s.runPostgresCLI(ctx, fmt.Sprintf(`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '%s' AND pid <> pg_backend_pid();`, escapePostgresString(item.Database)))
+	if _, err := s.runPostgresCLI(ctx, fmt.Sprintf(`DROP DATABASE IF EXISTS "%s";`, item.Database)); err != nil {
+		return err
+	}
+	if s.canDropDatabaseUser(item) {
+		if _, err := s.runPostgresCLI(ctx, fmt.Sprintf(`DROP ROLE IF EXISTS "%s";`, item.Username)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *DatabaseService) canDropDatabaseUser(item *models.DatabaseConnection) bool {
@@ -700,6 +773,29 @@ func (s *DatabaseService) provisionManagedRedis(item *models.RedisConnection, pa
 		return err
 	}
 	s.audit.Record(actor, "redis.provision", "redis_connection", fmt.Sprintf("%d", item.ID), ip, map[string]any{"service": serviceName, "port": item.Port})
+	return nil
+}
+
+func (s *DatabaseService) UpdateRedisPassword(id uint, newPassword string, actor *uint, ip string) error {
+	if strings.TrimSpace(newPassword) == "" {
+		return fmt.Errorf("password cannot be empty")
+	}
+	item, err := s.redisRepo.Find(id)
+	if err != nil {
+		return err
+	}
+	enc, err := utils.EncryptString(s.cfg.Security.SessionSecret, newPassword)
+	if err != nil {
+		return err
+	}
+	item.PasswordEnc = enc
+	if err := s.redisRepo.Update(item); err != nil {
+		return err
+	}
+	if err := s.provisionManagedRedis(item, newPassword, actor, ip); err != nil {
+		return err
+	}
+	s.audit.Record(actor, "redis.password_update", "redis_connection", fmt.Sprintf("%d", item.ID), ip, nil)
 	return nil
 }
 

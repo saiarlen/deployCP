@@ -231,7 +231,6 @@ func renderMaintenanceProtectedContent(body *strings.Builder, site *models.Websi
 		if phpVersion == "" {
 			phpVersion = "8.2"
 		}
-		body.WriteString(fmt.Sprintf("    root %s;\n", site.RootPath))
 		body.WriteString("    index index.php index.html index.htm;\n")
 		body.WriteString("    location / {\n")
 		writeAllowDeny()
@@ -246,7 +245,6 @@ func renderMaintenanceProtectedContent(body *strings.Builder, site *models.Websi
 		body.WriteString("    }\n")
 		return
 	}
-	body.WriteString(fmt.Sprintf("    root %s;\n", site.RootPath))
 	body.WriteString("    index index.html index.htm;\n")
 	body.WriteString("    error_page 404 /_deploycp_404.html;\n")
 	body.WriteString("    location = /_deploycp_404.html {\n")
