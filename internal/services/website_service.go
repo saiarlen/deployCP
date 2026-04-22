@@ -23,17 +23,17 @@ import (
 )
 
 type WebsiteInput struct {
-	Name             string
-	RootPath         string
-	Type             string
-	AppRuntime       string
-	PHPVersion       string
-	ProxyTarget      string
-	Domains          []string
-	CustomDirectives string
+	Name                 string
+	RootPath             string
+	Type                 string
+	AppRuntime           string
+	PHPVersion           string
+	ProxyTarget          string
+	Domains              []string
+	CustomDirectives     string
 	MaintenanceBypassIPs string
-	SiteUserID       *uint
-	Enabled          bool
+	SiteUserID           *uint
+	Enabled              bool
 }
 
 type PhpSettingsData struct {
@@ -143,18 +143,18 @@ func (s *WebsiteService) Create(ctx context.Context, in WebsiteInput, actor *uin
 	}
 	platformHome := platformHomeFromWebRoot(in.RootPath)
 	site := &models.Website{
-		Name:             in.Name,
-		RootPath:         in.RootPath,
-		Type:             in.Type,
-		AppRuntime:       in.AppRuntime,
-		PHPVersion:       in.PHPVersion,
-		ProxyTarget:      in.ProxyTarget,
-		CustomDirectives: in.CustomDirectives,
+		Name:                 in.Name,
+		RootPath:             in.RootPath,
+		Type:                 in.Type,
+		AppRuntime:           in.AppRuntime,
+		PHPVersion:           in.PHPVersion,
+		ProxyTarget:          in.ProxyTarget,
+		CustomDirectives:     in.CustomDirectives,
 		MaintenanceBypassIPs: in.MaintenanceBypassIPs,
-		SiteUserID:       in.SiteUserID,
-		Enabled:          in.Enabled,
-		AccessLogPath:    filepath.Join(platformHome, "logs", "access.log"),
-		ErrorLogPath:     filepath.Join(platformHome, "logs", "error.log"),
+		SiteUserID:           in.SiteUserID,
+		Enabled:              in.Enabled,
+		AccessLogPath:        filepath.Join(platformHome, "logs", "access.log"),
+		ErrorLogPath:         filepath.Join(platformHome, "logs", "error.log"),
 	}
 	if err := s.repo.Create(site, in.Domains); err != nil {
 		return nil, err
@@ -890,7 +890,7 @@ func (s *WebsiteService) deleteWebsiteLegacyData(site *models.Website, actor *ui
 		s.audit.Record(actor, "ssl.delete", "ssl_certificate", fmt.Sprintf("%d", cert.ID), ip, map[string]any{"source": "website-delete", "domain": cert.Domain})
 	}
 	if s.varnishOS != nil {
-		if err := s.varnishOS.DeleteWebsiteConfig(context.Background(), site.ID, actor, ip); err != nil {
+		if err := s.varnishOS.DeleteWebsiteConfig(context.Background(), site, actor, ip); err != nil {
 			return err
 		}
 	}

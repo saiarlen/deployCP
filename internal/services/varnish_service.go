@@ -32,6 +32,9 @@ func (s *VarnishService) ApplyWebsiteConfig(ctx context.Context, site *models.We
 	}
 	path := s.configPath(site.ID)
 	if !cfgItem.Enabled {
+		if err := s.purgeWebsiteCache(ctx, site, actor, ip); err != nil {
+			return err
+		}
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			return err
 		}
@@ -50,14 +53,20 @@ func (s *VarnishService) ApplyWebsiteConfig(ctx context.Context, site *models.We
 	return s.reload(ctx, actor, ip)
 }
 
-func (s *VarnishService) DeleteWebsiteConfig(ctx context.Context, websiteID uint, actor *uint, ip string) error {
-	if err := os.Remove(s.configPath(websiteID)); err != nil && !os.IsNotExist(err) {
+func (s *VarnishService) DeleteWebsiteConfig(ctx context.Context, site *models.Website, actor *uint, ip string) error {
+	if site == nil {
+		return fmt.Errorf("website is required")
+	}
+	if err := s.purgeWebsiteCache(ctx, site, actor, ip); err != nil {
+		return err
+	}
+	if err := os.Remove(s.configPath(site.ID)); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	if err := s.syncAggregateVCL(); err != nil {
 		return err
 	}
-	s.audit.Record(actor, "varnish.delete", "website", fmt.Sprintf("%d", websiteID), ip, nil)
+	s.audit.Record(actor, "varnish.delete", "website", fmt.Sprintf("%d", site.ID), ip, nil)
 	return s.reload(ctx, actor, ip)
 }
 
@@ -139,13 +148,47 @@ func (s *VarnishService) validate(ctx context.Context, actor *uint, ip string) e
 	return err
 }
 
+func (s *VarnishService) purgeWebsiteCache(ctx context.Context, site *models.Website, actor *uint, ip string) error {
+	if site == nil || s.cfg.Features.PlatformMode == "dryrun" {
+		return nil
+	}
+	binary := strings.TrimSpace(s.cfg.Managed.VarnishadmBinary)
+	addr := strings.TrimSpace(s.cfg.Managed.VarnishAdminAddr)
+	secret := strings.TrimSpace(s.cfg.Managed.VarnishSecretFile)
+	if binary == "" || addr == "" || secret == "" {
+		return nil
+	}
+	if _, err := os.Stat(binary); err != nil {
+		return nil
+	}
+	hostExpr := renderVarnishHostPattern(site)
+	if hostExpr == "" {
+		return nil
+	}
+	_, err := s.runner.Run(ctx, system.CommandRequest{
+		Binary:      binary,
+		Args:        []string{"-T", addr, "-S", secret, "ban", fmt.Sprintf("req.http.host ~ %q", hostExpr)},
+		Timeout:     20 * time.Second,
+		AuditAction: "varnish.ban",
+		ActorUserID: actor,
+		IP:          ip,
+	})
+	if err == nil {
+		s.audit.Record(actor, "varnish.ban", "website", fmt.Sprintf("%d", site.ID), ip, map[string]any{"host_pattern": hostExpr})
+	}
+	return err
+}
+
 func snippetIDFromPath(path string) string {
 	base := filepath.Base(path)
 	base = strings.TrimSuffix(base, filepath.Ext(base))
 	return strings.ReplaceAll(base, "-", "_")
 }
 
-func renderVarnishSiteConfig(site *models.Website, cfgItem *models.VarnishConfig) string {
+func renderVarnishHostPattern(site *models.Website) string {
+	if site == nil {
+		return ""
+	}
 	hosts := make([]string, 0, len(site.Domains))
 	for _, d := range site.Domains {
 		if strings.TrimSpace(d.Domain) == "" {
@@ -156,7 +199,11 @@ func renderVarnishSiteConfig(site *models.Website, cfgItem *models.VarnishConfig
 	if len(hosts) == 0 {
 		hosts = append(hosts, regexp.QuoteMeta(site.Name))
 	}
-	hostPattern := "(?i)^(" + strings.Join(hosts, "|") + ")$"
+	return "(?i)^(" + strings.Join(hosts, "|") + ")$"
+}
+
+func renderVarnishSiteConfig(site *models.Website, cfgItem *models.VarnishConfig) string {
+	hostPattern := renderVarnishHostPattern(site)
 
 	excludes := []string{}
 	for _, line := range strings.FieldsFunc(cfgItem.Excludes, func(r rune) bool { return r == '\n' || r == '\r' }) {

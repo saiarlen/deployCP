@@ -33,11 +33,11 @@ type WebsiteHandler struct {
 	nginxSites      *repositories.NginxSiteRepository
 	cronJobs        *repositories.CronJobRepository
 	varnish         *repositories.VarnishConfigRepository
-	ipBlocks          *repositories.IPBlockRepository
-	botBlocks         *repositories.BotBlockRepository
-	basicAuths        *repositories.BasicAuthRepository
-	cloudflareCfgs    *repositories.CloudflareConfigRepository
-	ftpUsers          *repositories.FTPUserRepository
+	ipBlocks        *repositories.IPBlockRepository
+	botBlocks       *repositories.BotBlockRepository
+	basicAuths      *repositories.BasicAuthRepository
+	cloudflareCfgs  *repositories.CloudflareConfigRepository
+	ftpUsers        *repositories.FTPUserRepository
 	appService      *services.AppService
 	cronService     *services.CronService
 	ftpService      *services.FTPService
@@ -87,11 +87,11 @@ func NewWebsiteHandler(
 		nginxSites:      nginxSites,
 		cronJobs:        cronJobs,
 		varnish:         varnish,
-		ipBlocks:       ipBlocks,
-		botBlocks:      botBlocks,
-		basicAuths:     basicAuths,
-		cloudflareCfgs: cloudflareCfgs,
-		ftpUsers:       ftpUsers,
+		ipBlocks:        ipBlocks,
+		botBlocks:       botBlocks,
+		basicAuths:      basicAuths,
+		cloudflareCfgs:  cloudflareCfgs,
+		ftpUsers:        ftpUsers,
 		appService:      appService,
 		cronService:     cronService,
 		ftpService:      ftpService,
@@ -100,7 +100,7 @@ func NewWebsiteHandler(
 }
 
 func (h *WebsiteHandler) Create(c *fiber.Ctx) error {
-	form, err := h.payload(c)
+	form, err := h.payload(c, nil)
 	if err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
 		return c.Redirect("/platforms/new")
@@ -200,6 +200,7 @@ func (h *WebsiteHandler) ShowByID(c *fiber.Ctx, id uint) error {
 		}
 	}
 	primaryDomain := primaryWebsiteDomain(item.Domains)
+	scopedSSL := websiteSSLItems(item, sslItems)
 	serverAddress := displayServerAddress(h.base.Config, c.Hostname())
 	if linkedApp != nil {
 		host := strings.TrimSpace(linkedApp.Host)
@@ -214,6 +215,7 @@ func (h *WebsiteHandler) ShowByID(c *fiber.Ctx, id uint) error {
 		"Title":                item.Name,
 		"PlatformKind":         "website",
 		"PrimaryDomain":        primaryDomain,
+		"DomainScheme":         websiteDomainScheme(scopedSSL),
 		"ServerAddress":        serverAddress,
 		"Item":                 item,
 		"PhpCfg":               phpCfg,
@@ -226,7 +228,7 @@ func (h *WebsiteHandler) ShowByID(c *fiber.Ctx, id uint) error {
 		"MariaDBItems":         filterDBByEngine(scopedDB, "mariadb"),
 		"PostgresItems":        filterDBByEngine(scopedDB, "postgres"),
 		"RedisItems":           scopedRedis,
-		"SSLItems":             websiteSSLItems(item, sslItems),
+		"SSLItems":             scopedSSL,
 		"AdminerURL":           h.databaseService.AdminerURL(),
 		"VhostContent":         vhostContent,
 		"CronJobs":             cronJobs,
@@ -239,6 +241,8 @@ func (h *WebsiteHandler) ShowByID(c *fiber.Ctx, id uint) error {
 		"PHPVersions":          phpVersions,
 		"DefaultHomeDir":       platformHomeFromRoot(item.RootPath),
 		"FileManagerRoot":      platformHomeFromRoot(item.RootPath),
+		"RootPathBase":         filepath.Join(platformHomeFromRoot(item.RootPath), "htdocs"),
+		"RootPathSuffix":       rootPathSuffix(item.RootPath),
 		"SSHUsers":             sshUsers,
 		"PrimarySSHUserID":     primarySSHUserID,
 	})
@@ -249,7 +253,11 @@ func (h *WebsiteHandler) Update(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(400).SendString(err.Error())
 	}
-	form, err := h.payload(c)
+	current, err := h.service.Find(id)
+	if err != nil {
+		return c.Status(404).SendString("website not found")
+	}
+	form, err := h.payload(c, current)
 	if err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
 		return c.Redirect(platformURL("website", id))
@@ -505,16 +513,16 @@ func (h *WebsiteHandler) ManageAddDomain(c *fiber.Ctx) error {
 	domains := domainsFromWebsite(site.Domains)
 	domains = append(domains, newDomain)
 	if err := h.service.Update(c.Context(), id, services.WebsiteInput{
-		Name:             site.Name,
-		RootPath:         site.RootPath,
-		Type:             site.Type,
-		PHPVersion:       site.PHPVersion,
-		ProxyTarget:      site.ProxyTarget,
-		Domains:          domains,
-		CustomDirectives: site.CustomDirectives,
+		Name:                 site.Name,
+		RootPath:             site.RootPath,
+		Type:                 site.Type,
+		PHPVersion:           site.PHPVersion,
+		ProxyTarget:          site.ProxyTarget,
+		Domains:              domains,
+		CustomDirectives:     site.CustomDirectives,
 		MaintenanceBypassIPs: site.MaintenanceBypassIPs,
-		SiteUserID:       site.SiteUserID,
-		Enabled:          site.Enabled,
+		SiteUserID:           site.SiteUserID,
+		Enabled:              site.Enabled,
 	}, currentUserID(c), c.IP()); err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
 	} else {
@@ -721,6 +729,10 @@ func (h *WebsiteHandler) ManageAdminerDB(c *fiber.Ctx) error {
 		h.base.Sessions.SetFlash(c, err.Error())
 		return c.Redirect(platformURLWithTab("website", id, "databases"))
 	}
+	if err := ensureToolReachable(h.databaseService.AdminerURL()); err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect(platformURLWithTab("website", id, "databases"))
+	}
 	target, parseErr := url.Parse(adminerURL)
 	if parseErr != nil {
 		h.base.Sessions.SetFlash(c, parseErr.Error())
@@ -745,6 +757,10 @@ func (h *WebsiteHandler) ManageOpenPostgresGUI(c *fiber.Ctx) error {
 	}
 	guiURL, err := h.databaseService.PostgresGUIURL(item.ID)
 	if err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect(platformURLWithTab("website", id, "databases"))
+	}
+	if err := ensureToolReachable(h.databaseService.PostgresGUIBaseURL()); err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
 		return c.Redirect(platformURLWithTab("website", id, "databases"))
 	}
@@ -866,6 +882,7 @@ func (h *WebsiteHandler) ManageDeleteSSL(c *fiber.Ctx) error {
 	if err := h.sslService.Delete(cert.ID, currentUserID(c), c.IP()); err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
 	} else {
+		_ = h.service.RefreshConfig(c.Context(), id)
 		h.base.Sessions.SetFlash(c, "Certificate deleted")
 	}
 	return c.Redirect(platformURLWithTab("website", id, "ssl"))
@@ -1251,6 +1268,17 @@ func websiteSSLItems(item *models.Website, all []models.SSLCertificate) []models
 	return out
 }
 
+func websiteDomainScheme(items []models.SSLCertificate) string {
+	for _, cert := range items {
+		if strings.EqualFold(strings.TrimSpace(cert.Status), "active") &&
+			strings.TrimSpace(cert.CertPath) != "" &&
+			strings.TrimSpace(cert.KeyPath) != "" {
+			return "https"
+		}
+	}
+	return "http"
+}
+
 func (h *WebsiteHandler) websiteDatabaseItem(websiteID, dbID uint) (*models.Website, *models.DatabaseConnection, error) {
 	site, err := h.service.Find(websiteID)
 	if err != nil {
@@ -1340,13 +1368,16 @@ func websiteRuntimeApp(item *models.Website) *models.GoApp {
 	}
 }
 
-func (h *WebsiteHandler) payload(c *fiber.Ctx) (websiteFormInput, error) {
+func (h *WebsiteHandler) payload(c *fiber.Ctx, existing *models.Website) (websiteFormInput, error) {
 	siteType := strings.TrimSpace(c.FormValue("type"))
 	if siteType == "" {
 		siteType = "static"
 	}
 
 	domains := utils.SplitLinesComma(c.FormValue("domains"))
+	if existing != nil {
+		domains = domainsFromWebsite(existing.Domains)
+	}
 	if len(domains) == 0 {
 		applicationDomain := strings.TrimSpace(strings.ToLower(c.FormValue("application_domain")))
 		if applicationDomain != "" {
@@ -1369,6 +1400,14 @@ func (h *WebsiteHandler) payload(c *fiber.Ctx) (websiteFormInput, error) {
 	}
 
 	root := strings.TrimSpace(c.FormValue("root_path"))
+	if existing != nil {
+		if submittedSuffix, ok, suffixErr := websiteRootSubpathValue(c.FormValue("root_subpath")); ok {
+			if suffixErr != nil {
+				return websiteFormInput{}, suffixErr
+			}
+			root = buildWebsiteRootFromSubpath(platformHomeFromRoot(existing.RootPath), submittedSuffix)
+		}
+	}
 	if root == "" {
 		folder := name
 		if len(domains) > 0 {
@@ -1405,16 +1444,16 @@ func (h *WebsiteHandler) payload(c *fiber.Ctx) (websiteFormInput, error) {
 
 	return websiteFormInput{
 		Website: services.WebsiteInput{
-			Name:             name,
-			RootPath:         root,
-			Type:             siteType,
-			PHPVersion:       phpVersion,
-			ProxyTarget:      proxyTarget,
-			Domains:          domains,
-			CustomDirectives: c.FormValue("custom_directives"),
+			Name:                 name,
+			RootPath:             root,
+			Type:                 siteType,
+			PHPVersion:           phpVersion,
+			ProxyTarget:          proxyTarget,
+			Domains:              domains,
+			CustomDirectives:     c.FormValue("custom_directives"),
 			MaintenanceBypassIPs: c.FormValue("maintenance_bypass_ips"),
-			SiteUserID:       siteUserID,
-			Enabled:          enabled,
+			SiteUserID:           siteUserID,
+			Enabled:              enabled,
 		},
 		SiteUsername: strings.TrimSpace(c.FormValue("site_username")),
 		SitePassword: c.FormValue("site_password"),
@@ -1463,7 +1502,40 @@ func platformHomeFromRoot(webRoot string) string {
 	if filepath.Base(clean) == "htdocs" {
 		return filepath.Dir(clean)
 	}
+	if strings.Contains(clean, string(filepath.Separator)+"htdocs"+string(filepath.Separator)) {
+		return strings.Split(clean, string(filepath.Separator)+"htdocs"+string(filepath.Separator))[0]
+	}
 	return clean
+}
+
+func rootPathSuffix(webRoot string) string {
+	clean := filepath.Clean(strings.TrimSpace(webRoot))
+	marker := string(filepath.Separator) + "htdocs"
+	if idx := strings.Index(clean, marker); idx >= 0 {
+		suffix := strings.TrimPrefix(clean[idx+len(marker):], string(filepath.Separator))
+		return suffix
+	}
+	return ""
+}
+
+func websiteRootSubpathValue(raw string) (string, bool, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", true, nil
+	}
+	clean := filepath.Clean("/" + trimmed)
+	if clean == "." || clean == "/" {
+		return "", true, nil
+	}
+	return strings.TrimPrefix(clean, "/"), true, nil
+}
+
+func buildWebsiteRootFromSubpath(platformHome, subpath string) string {
+	base := filepath.Join(platformHome, "htdocs")
+	if strings.TrimSpace(subpath) == "" {
+		return base
+	}
+	return filepath.Join(base, subpath)
 }
 
 func websiteNameFromDomain(domain string) string {

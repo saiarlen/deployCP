@@ -100,6 +100,9 @@ type ManagedConfig struct {
 	VarnishMainVCL     string
 	VarnishIncludeVCL  string
 	VarnishdBinary     string
+	VarnishadmBinary   string
+	VarnishAdminAddr   string
+	VarnishSecretFile  string
 }
 
 func Load() (*Config, error) {
@@ -158,6 +161,9 @@ func Load() (*Config, error) {
 			VarnishMainVCL:     getEnv("VARNISH_MAIN_VCL", "/etc/varnish/default.vcl"),
 			VarnishIncludeVCL:  getEnv("VARNISH_INCLUDE_VCL", "/etc/varnish/deploycp.d/deploycp.vcl"),
 			VarnishdBinary:     getEnv("VARNISHD_BINARY", "/usr/sbin/varnishd"),
+			VarnishadmBinary:   getEnv("VARNISHADM_BINARY", "/usr/bin/varnishadm"),
+			VarnishAdminAddr:   getEnv("VARNISH_ADMIN_ADDR", "127.0.0.1:6082"),
+			VarnishSecretFile:  getEnv("VARNISH_SECRET_FILE", "/etc/varnish/secret"),
 		},
 	}
 
@@ -251,6 +257,9 @@ func (c *Config) applyDryrunPaths() {
 	c.Managed.VarnishMainVCL = filepath.Join(root, "dryrun", "varnish", "default.vcl")
 	c.Managed.VarnishIncludeVCL = filepath.Join(root, "dryrun", "varnish", "deploycp.vcl")
 	c.Managed.VarnishdBinary = "/bin/echo"
+	c.Managed.VarnishadmBinary = "/bin/echo"
+	c.Managed.VarnishAdminAddr = "127.0.0.1:6082"
+	c.Managed.VarnishSecretFile = filepath.Join(root, "dryrun", "varnish", "secret")
 	c.Managed.RedisServerBinary = "/bin/echo"
 }
 

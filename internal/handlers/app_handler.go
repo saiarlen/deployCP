@@ -372,12 +372,16 @@ func (h *AppHandler) ShowByID(c *fiber.Ctx, id uint) error {
 	primarySSHUserID := uint(0)
 	defaultHomeDir := ""
 	primaryDomain := ""
+	domainScheme := "http"
 	if status.App.WebsiteID != nil {
 		ws, _ := h.websiteService.Find(*status.App.WebsiteID)
 		if ws != nil {
 			ftpUsers, _ = h.ftpUsers.ListByWebsite(ws.ID)
 			defaultHomeDir = ws.RootPath
 			primaryDomain = primaryWebsiteDomain(ws.Domains)
+			if ws.SSLReady {
+				domainScheme = "https"
+			}
 			if ws.SiteUser != nil {
 				sshUsers = append(sshUsers, *ws.SiteUser)
 				primarySSHUserID = ws.SiteUser.ID
@@ -409,6 +413,7 @@ func (h *AppHandler) ShowByID(c *fiber.Ctx, id uint) error {
 		"PythonVersions":   h.runtimeVersions("python"),
 		"PHPVersions":      h.runtimeVersions("php"),
 		"PrimaryDomain":    primaryDomain,
+		"DomainScheme":     domainScheme,
 		"ServerAddress":    serverAddress,
 		"StdoutLog":        stdout,
 		"StderrLog":        stderr,
@@ -578,6 +583,10 @@ func (h *AppHandler) ManageAdminerDB(c *fiber.Ctx) error {
 		h.base.Sessions.SetFlash(c, err.Error())
 		return c.Redirect(platformURLWithTab("app", id, "databases"))
 	}
+	if err := ensureToolReachable(h.databaseService.AdminerURL()); err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect(platformURLWithTab("app", id, "databases"))
+	}
 	target, parseErr := url.Parse(adminerURL)
 	if parseErr != nil {
 		h.base.Sessions.SetFlash(c, parseErr.Error())
@@ -634,6 +643,10 @@ func (h *AppHandler) ManageOpenPostgresGUI(c *fiber.Ctx) error {
 	}
 	guiURL, err := h.databaseService.PostgresGUIURL(item.ID)
 	if err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect(platformURLWithTab("app", id, "databases"))
+	}
+	if err := ensureToolReachable(h.databaseService.PostgresGUIBaseURL()); err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
 		return c.Redirect(platformURLWithTab("app", id, "databases"))
 	}

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strconv"
+	"strings"
 	"time"
 
 	jet "github.com/gofiber/template/jet/v2"
@@ -43,6 +44,7 @@ func NewEngine(cfg *config.Config) *jet.Engine {
 		}
 		return utils.PlatformShowURL(kind, v)
 	})
+	engine.AddFunc("authUserLabel", authUserLabel)
 	return engine
 }
 
@@ -102,6 +104,40 @@ func anyToUint(v any) (uint, bool) {
 		return anyToUint(rv.Elem().Interface())
 	}
 	return 0, false
+}
+
+func authUserLabel(v any) string {
+	fields := []string{"Username", "Name", "Email"}
+	for _, field := range fields {
+		if value := stringField(v, field); value != "" {
+			lower := strings.ToLower(strings.TrimSpace(value))
+			if lower != "null" && lower != "<nil>" {
+				return value
+			}
+		}
+	}
+	return "Account"
+}
+
+func stringField(v any, field string) string {
+	rv := reflect.ValueOf(v)
+	if !rv.IsValid() {
+		return ""
+	}
+	if rv.Kind() == reflect.Pointer {
+		if rv.IsNil() {
+			return ""
+		}
+		rv = rv.Elem()
+	}
+	if rv.Kind() != reflect.Struct {
+		return ""
+	}
+	fv := rv.FieldByName(field)
+	if !fv.IsValid() || fv.Kind() != reflect.String {
+		return ""
+	}
+	return strings.TrimSpace(fv.String())
 }
 
 func resolveTemplateDir() string {

@@ -125,6 +125,8 @@ Important:
 - SSH user home points to `/home/deploycp/platforms/sites/<domain>`
 - file manager root points to `/home/deploycp/platforms/sites/<domain>`
 - nginx serves `/home/deploycp/platforms/sites/<domain>/htdocs`
+- the primary platform domain is treated as fixed after creation
+- platform settings only allow editing the subpath inside `htdocs`, not the full absolute root path
 
 ## Documentation
 
@@ -250,6 +252,41 @@ Manual backup:
 ```bash
 sudo /home/deploycp/core/scripts/linux/backup.sh
 ```
+
+## Platform Update Rules
+
+DeployCP intentionally does not treat a saved platform edit as a full domain rename/migration workflow.
+
+- the primary domain is locked after platform creation
+- adding or managing extra domains is separate from changing the platform identity
+- the platform settings screen only lets you change the path inside `htdocs`
+- SSH/file manager root remains the platform root
+- nginx web root remains under `htdocs`
+
+This avoids unsafe partial renames where DB rows and nginx move but filesystem paths, users, SSL assets, or cache identity do not.
+
+If the main domain was created incorrectly, the recommended operational flow is:
+
+1. create a new platform with the correct domain
+2. move the site content/data
+3. verify DNS, SSL, runtime, and users
+4. delete the old platform
+
+## Varnish Behavior
+
+DeployCP uses one shared host Varnish service with per-platform rules.
+
+- per-platform VCL fragments are written under `/etc/varnish/deploycp.d/website-<id>.vcl`
+- enabling cache writes or updates that platform fragment and reloads Varnish
+- disabling cache removes that platform fragment and reloads Varnish
+- deleting a platform also removes its Varnish fragment
+- disable/delete now also sends a Varnish `ban` for that platform host pattern so cached objects are purged instead of only waiting for TTL expiry
+
+Important:
+
+- cache storage itself is daemon-level, not per-platform filesystem storage
+- most Linux installs use shared Varnish memory storage such as `malloc,256m`
+- platform-level caching is achieved through per-platform host matching and cache rules, not separate Varnish instances per platform
 
 ## Database UI Helpers
 

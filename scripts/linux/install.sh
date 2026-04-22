@@ -35,6 +35,9 @@ VARNISH_CONFIG_DIR=""
 VARNISH_MAIN_VCL=""
 VARNISH_INCLUDE_VCL=""
 VARNISHD_BINARY=""
+VARNISHADM_BINARY=""
+VARNISH_ADMIN_ADDR=""
+VARNISH_SECRET_FILE=""
 
 resolved_release_version() {
   local candidate="${DEPLOYCP_VERSION:-}"
@@ -307,6 +310,7 @@ configure_platform_defaults() {
   IPTABLES_BINARY="$(command_path /usr/sbin/iptables iptables /usr/sbin/iptables /bin/iptables)"
   REDIS_SERVER_BINARY="$(command_path /usr/bin/redis-server redis-server /usr/bin/redis-server /usr/sbin/redis-server)"
   VARNISHD_BINARY="$(command_path /usr/sbin/varnishd varnishd /usr/sbin/varnishd /usr/bin/varnishd)"
+  VARNISHADM_BINARY="$(command_path /usr/bin/varnishadm varnishadm /usr/bin/varnishadm /usr/sbin/varnishadm)"
 
   PROFTPD_SERVICE_NAME="$(first_service_name proftpd proftpd proftpd-basic)"
   REDIS_SERVICE_NAME="$(first_service_name redis-server redis-server redis)"
@@ -318,6 +322,8 @@ configure_platform_defaults() {
   VARNISH_CONFIG_DIR="/etc/varnish/deploycp.d"
   VARNISH_MAIN_VCL="/etc/varnish/default.vcl"
   VARNISH_INCLUDE_VCL="${VARNISH_CONFIG_DIR}/deploycp.vcl"
+  VARNISH_ADMIN_ADDR="127.0.0.1:6082"
+  VARNISH_SECRET_FILE="/etc/varnish/secret"
 }
 
 validate_nginx_config() {
@@ -653,6 +659,9 @@ VARNISH_SERVICE_NAME=${VARNISH_SERVICE_NAME}
 VARNISH_MAIN_VCL=${VARNISH_MAIN_VCL}
 VARNISH_INCLUDE_VCL=${VARNISH_INCLUDE_VCL}
 VARNISHD_BINARY=${VARNISHD_BINARY}
+VARNISHADM_BINARY=${VARNISHADM_BINARY}
+VARNISH_ADMIN_ADDR=${VARNISH_ADMIN_ADDR}
+VARNISH_SECRET_FILE=${VARNISH_SECRET_FILE}
 BACKUP_TARGET_DIR=${DATA_DIR}/backups
 BACKUP_RETENTION_DAYS=14
 BACKUP_INCLUDE_SITE_CONTENT=true

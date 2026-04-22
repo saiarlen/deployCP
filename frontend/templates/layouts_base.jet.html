@@ -78,7 +78,7 @@
               <span class="nav-user-avatar">
                 <i data-lucide="user"></i>
               </span>
-              <span class="hidden sm:inline">{{ AuthUser.Username }}</span>
+              <span>{{ if AuthUser }}{{ authUserLabel(AuthUser) }}{{ else }}Account{{ end }}</span>
             </button>
             <div id="user-dropdown" class="nav-dropdown hidden">
               <a href="/profile" class="dropdown-item">
