@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -19,6 +20,20 @@ type RuntimeService struct {
 	runner *system.Runner
 	audit  *AuditService
 }
+
+type RuntimeDefaultStatus struct {
+	Runtime string
+	Version string
+	Binary  string
+	Managed bool
+}
+
+var (
+	goVersionOutRe     = regexp.MustCompile(`go([0-9]+\.[0-9]+(?:\.[0-9]+)?)`)
+	nodeVersionOutRe   = regexp.MustCompile(`v([0-9]+(?:\.[0-9]+){0,2})`)
+	pythonVersionOutRe = regexp.MustCompile(`Python\s+([0-9]+\.[0-9]+(?:\.[0-9]+)?)`)
+	phpVersionOutRe    = regexp.MustCompile(`PHP\s+([0-9]+\.[0-9]+(?:\.[0-9]+)?)`)
+)
 
 func NewRuntimeService(cfg *config.Config, runner *system.Runner, audit *AuditService) *RuntimeService {
 	return &RuntimeService{cfg: cfg, runner: runner, audit: audit}
@@ -76,6 +91,56 @@ func (s *RuntimeService) RemoveVersion(ctx context.Context, runtime, version str
 	}
 	s.audit.Record(actor, "runtime.remove", "runtime_version", runtime+":"+version, ip, nil)
 	return nil
+}
+
+func (s *RuntimeService) SetSystemDefaultVersion(ctx context.Context, runtime, version string, actor *uint, ip string) error {
+	runtime = strings.ToLower(strings.TrimSpace(runtime))
+	version = strings.TrimSpace(version)
+	if runtime == "" || version == "" {
+		return fmt.Errorf("runtime and version are required")
+	}
+	if s.cfg.Features.PlatformMode == "dryrun" {
+		return nil
+	}
+	script, err := s.helperScriptPath()
+	if err != nil {
+		return err
+	}
+	if _, err := s.runner.Run(ctx, system.CommandRequest{
+		Binary:      "/bin/bash",
+		Args:        []string{script, "set-default", runtime, version, s.cfg.Paths.RuntimeRoot},
+		Timeout:     2 * time.Minute,
+		AuditAction: "runtime.default.set",
+		ActorUserID: actor,
+		IP:          ip,
+	}); err != nil {
+		return err
+	}
+	s.audit.Record(actor, "runtime.default.set", "runtime_default", runtime+":"+version, ip, nil)
+	return nil
+}
+
+func (s *RuntimeService) SystemDefaultVersion(runtime string) RuntimeDefaultStatus {
+	runtime = strings.ToLower(strings.TrimSpace(runtime))
+	command := defaultRuntimeCommand(runtime)
+	if command == "" {
+		return RuntimeDefaultStatus{Runtime: runtime}
+	}
+	binary, err := exec.LookPath(command)
+	if err != nil {
+		return RuntimeDefaultStatus{Runtime: runtime}
+	}
+	version := detectRuntimeVersion(runtime, binary)
+	status := RuntimeDefaultStatus{
+		Runtime: runtime,
+		Version: version,
+		Binary:  binary,
+	}
+	runtimeRoot := filepath.Clean(strings.TrimSpace(s.cfg.Paths.RuntimeRoot))
+	if runtimeRoot != "" && strings.HasPrefix(filepath.Clean(binary), runtimeRoot+string(filepath.Separator)) {
+		status.Managed = true
+	}
+	return status
 }
 
 func (s *RuntimeService) ApplyPlatformRuntime(rootPath, runtime, version string, actor *uint, ip string) error {
@@ -201,4 +266,70 @@ func (s *RuntimeService) ensureRuntimeBinDir(runtime, version string) error {
 
 func (s *RuntimeService) runtimeVersionDir(runtime, version string) string {
 	return filepath.Join(s.cfg.Paths.RuntimeRoot, strings.ToLower(strings.TrimSpace(runtime)), strings.TrimSpace(version))
+}
+
+func defaultRuntimeCommand(runtime string) string {
+	switch runtime {
+	case "go":
+		return "go"
+	case "node":
+		return "node"
+	case "python":
+		return "python3"
+	case "php":
+		return "php"
+	default:
+		return ""
+	}
+}
+
+func detectRuntimeVersion(runtime, binary string) string {
+	binary = strings.TrimSpace(binary)
+	if binary == "" {
+		return ""
+	}
+	var cmd *exec.Cmd
+	switch runtime {
+	case "go":
+		cmd = exec.Command(binary, "version")
+	case "node":
+		cmd = exec.Command(binary, "--version")
+	case "python":
+		cmd = exec.Command(binary, "--version")
+	case "php":
+		cmd = exec.Command(binary, "-v")
+	default:
+		return ""
+	}
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return ""
+	}
+	text := strings.TrimSpace(string(output))
+	switch runtime {
+	case "go":
+		if m := goVersionOutRe.FindStringSubmatch(text); len(m) == 2 {
+			return "go" + m[1]
+		}
+	case "node":
+		if m := nodeVersionOutRe.FindStringSubmatch(text); len(m) == 2 {
+			major := strings.SplitN(m[1], ".", 2)[0]
+			return "node" + major
+		}
+	case "python":
+		if m := pythonVersionOutRe.FindStringSubmatch(text); len(m) == 2 {
+			parts := strings.Split(m[1], ".")
+			if len(parts) >= 2 {
+				return "python" + parts[0] + "." + parts[1]
+			}
+		}
+	case "php":
+		if m := phpVersionOutRe.FindStringSubmatch(text); len(m) == 2 {
+			parts := strings.Split(m[1], ".")
+			if len(parts) >= 2 {
+				return parts[0] + "." + parts[1]
+			}
+		}
+	}
+	return ""
 }

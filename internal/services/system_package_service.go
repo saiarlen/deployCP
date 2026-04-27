@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -149,6 +150,44 @@ func (s *SystemPackageService) ResolveServiceUnit(ctx context.Context, serviceNa
 		}
 	}
 	return serviceName
+}
+
+func (s *SystemPackageService) UnitExists(ctx context.Context, serviceName, unitPath string) bool {
+	if s == nil || s.cfg == nil || s.cfg.Features.PlatformMode == "dryrun" {
+		return true
+	}
+	if path := strings.TrimSpace(unitPath); path != "" {
+		if st, err := os.Stat(path); err == nil && !st.IsDir() {
+			return true
+		}
+	}
+	name := strings.TrimSpace(serviceName)
+	if name == "" {
+		return false
+	}
+	candidates := []string{name}
+	if !strings.HasSuffix(name, ".service") {
+		candidates = append(candidates, name+".service")
+	}
+	for _, candidate := range candidates {
+		res, err := s.runner.Run(ctx, system.CommandRequest{
+			Binary:  s.cfg.Paths.SystemctlBinary,
+			Args:    []string{"list-unit-files", candidate, "--no-legend"},
+			Timeout: 8 * time.Second,
+		})
+		if err == nil && strings.Contains(res.Stdout, candidate) {
+			return true
+		}
+		res, err = s.runner.Run(ctx, system.CommandRequest{
+			Binary:  s.cfg.Paths.SystemctlBinary,
+			Args:    []string{"list-units", "--all", candidate, "--no-legend"},
+			Timeout: 8 * time.Second,
+		})
+		if err == nil && strings.Contains(res.Stdout, candidate) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *SystemPackageService) packageInstalled(ctx context.Context, manager, pkg string) (bool, error) {

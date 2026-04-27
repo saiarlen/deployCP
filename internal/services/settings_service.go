@@ -25,6 +25,7 @@ type SettingsService struct {
 type RuntimeVersionState struct {
 	Version   string
 	Installed bool
+	Verified  bool
 }
 
 var (
@@ -173,7 +174,7 @@ func (s *SettingsService) RuntimeVersionStates(runtime string) []RuntimeVersionS
 	installed := s.installedRuntimeVersions(runtime)
 	out := make([]RuntimeVersionState, 0, len(installed))
 	for _, v := range installed {
-		out = append(out, RuntimeVersionState{Version: v, Installed: true})
+		out = append(out, RuntimeVersionState{Version: v, Installed: true, Verified: s.verifyInstalledRuntimeVersion(runtime, v)})
 	}
 	return out
 }
@@ -693,6 +694,45 @@ func isValidRuntimeVersionGuess(version string) bool {
 	default:
 		return false
 	}
+}
+
+func (s *SettingsService) verifyInstalledRuntimeVersion(runtime, version string) bool {
+	runtime = strings.ToLower(strings.TrimSpace(runtime))
+	version = strings.TrimSpace(version)
+	if runtime == "" || version == "" {
+		return false
+	}
+	binary := ""
+	args := []string{}
+	expect := ""
+	switch runtime {
+	case "go":
+		binary = filepath.Join(s.cfg.Paths.RuntimeRoot, runtime, version, "bin", "go")
+		args = []string{"version"}
+		expect = version
+	case "node":
+		binary = filepath.Join(s.cfg.Paths.RuntimeRoot, runtime, version, "bin", "node")
+		args = []string{"--version"}
+		expect = strings.TrimPrefix(version, "node")
+	case "python":
+		binary = filepath.Join(s.cfg.Paths.RuntimeRoot, runtime, version, "bin", "python3")
+		args = []string{"--version"}
+		expect = strings.TrimPrefix(version, "python")
+	case "php":
+		binary = filepath.Join(s.cfg.Paths.RuntimeRoot, runtime, version, "bin", "php")
+		args = []string{"-v"}
+		expect = version
+	default:
+		return false
+	}
+	if st, err := os.Stat(binary); err != nil || st.IsDir() {
+		return false
+	}
+	out, err := exec.Command(binary, args...).CombinedOutput()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(out), expect)
 }
 
 func containsRuntimeVersion(items []string, target string) bool {

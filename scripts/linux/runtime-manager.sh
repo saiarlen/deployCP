@@ -7,13 +7,14 @@ version="${3:-}"
 runtime_root="${4:-}"
 
 if [[ -z "$action" || -z "$runtime" || -z "$version" || -z "$runtime_root" ]]; then
-  echo "usage: runtime-manager.sh <install|remove> <runtime> <version> <runtime_root>" >&2
+  echo "usage: runtime-manager.sh <install|remove|set-default> <runtime> <version> <runtime_root>" >&2
   exit 1
 fi
 
 version_dir="${runtime_root}/${runtime}/${version}"
 bin_dir="${version_dir}/bin"
 mkdir -p "$bin_dir"
+global_bin_dir="/usr/local/bin"
 
 pkg_manager() {
   if command -v apt-get >/dev/null 2>&1; then echo apt; return; fi
@@ -345,6 +346,57 @@ prepare_runtime_binaries() {
   esac
 }
 
+set_system_default_runtime() {
+  local target_bin=""
+  case "$runtime" in
+    go)
+      target_bin="${bin_dir}/go"
+      ;;
+    node)
+      target_bin="${bin_dir}/node"
+      ;;
+    python)
+      target_bin="${bin_dir}/python3"
+      ;;
+    php)
+      target_bin="${bin_dir}/php"
+      ;;
+    *)
+      echo "unsupported runtime for system default: ${runtime}" >&2
+      exit 1
+      ;;
+  esac
+  if [[ ! -x "$target_bin" ]]; then
+    echo "runtime ${runtime}:${version} is not prepared; install it first" >&2
+    exit 1
+  fi
+  mkdir -p "$global_bin_dir"
+  case "$runtime" in
+    go)
+      ln -sf "$target_bin" "${global_bin_dir}/go"
+      if [[ -x "${bin_dir}/gofmt" ]]; then
+        ln -sf "${bin_dir}/gofmt" "${global_bin_dir}/gofmt"
+      fi
+      ;;
+    node)
+      ln -sf "$target_bin" "${global_bin_dir}/node"
+      ln -sf "$target_bin" "${global_bin_dir}/nodejs"
+      [[ -x "${bin_dir}/npm" ]] && ln -sf "${bin_dir}/npm" "${global_bin_dir}/npm"
+      [[ -x "${bin_dir}/npx" ]] && ln -sf "${bin_dir}/npx" "${global_bin_dir}/npx"
+      [[ -x "${bin_dir}/pm2" ]] && ln -sf "${bin_dir}/pm2" "${global_bin_dir}/pm2"
+      ;;
+    python)
+      ln -sf "$target_bin" "${global_bin_dir}/python3"
+      [[ -x "${bin_dir}/python" ]] && ln -sf "${bin_dir}/python" "${global_bin_dir}/python"
+      [[ -x "${bin_dir}/pip3" ]] && ln -sf "${bin_dir}/pip3" "${global_bin_dir}/pip3"
+      [[ -x "${bin_dir}/pip" ]] && ln -sf "${bin_dir}/pip" "${global_bin_dir}/pip"
+      ;;
+    php)
+      ln -sf "$target_bin" "${global_bin_dir}/php"
+      ;;
+  esac
+}
+
 package_list() {
   local manager="$1"
   case "$runtime" in
@@ -439,6 +491,10 @@ case "$action" in
       remove_packages "$manager" $pkgs || true
     fi
     rm -rf "$version_dir"
+    ;;
+  set-default)
+    prepare_runtime_binaries
+    set_system_default_runtime
     ;;
   *)
     echo "unsupported action: $action" >&2

@@ -471,6 +471,7 @@ func (a *Application) registerRoutes() {
 	secured.Post("/settings/users/:id/delete", adminOnly, a.SettingsHandler.UsersDelete)
 	secured.Post("/settings/runtime-versions/:runtime/add", adminOnly, a.SettingsHandler.RuntimeVersionAdd)
 	secured.Post("/settings/runtime-versions/:runtime/remove", adminOnly, a.SettingsHandler.RuntimeVersionRemove)
+	secured.Post("/settings/runtime-versions/:runtime/default", adminOnly, a.SettingsHandler.RuntimeVersionDefault)
 	secured.Post("/settings/firewall", adminOnly, a.SettingsHandler.FirewallCreate)
 	secured.Post("/settings/firewall/:id", adminOnly, a.SettingsHandler.FirewallUpdate)
 	secured.Post("/settings/firewall/:id/delete", adminOnly, a.SettingsHandler.FirewallDelete)

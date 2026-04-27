@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -224,6 +225,9 @@ func (s *ServiceService) Create(input ServiceInput, actor *uint, ip string) (boo
 	if err != nil {
 		return false, err
 	}
+	if err := s.validateTrackableService(context.Background(), sanitized); err != nil {
+		return false, err
+	}
 	if existing, err := s.repo.FindByName(sanitized.Name); err == nil {
 		if !input.Upsert {
 			return false, fmt.Errorf("service identifier already exists")
@@ -273,6 +277,9 @@ func (s *ServiceService) Update(id uint, input ServiceInput, actor *uint, ip str
 	}
 	sanitized, err := s.sanitizeInput(input)
 	if err != nil {
+		return err
+	}
+	if err := s.validateTrackableService(context.Background(), sanitized); err != nil {
 		return err
 	}
 
@@ -481,33 +488,9 @@ func (s *ServiceService) findByRef(ref string) (*models.ManagedService, error) {
 }
 
 func (s *ServiceService) phpVersions() []string {
-	defaults := []string{"8.3", "8.2", "8.1"}
-	root := filepath.Join(s.cfg.Paths.RuntimeRoot, "php")
-	if entries, err := os.ReadDir(root); err == nil {
-		found := make([]string, 0, len(entries))
-		seen := map[string]struct{}{}
-		for _, entry := range entries {
-			if !entry.IsDir() {
-				continue
-			}
-			v := strings.TrimSpace(entry.Name())
-			if v == "" || !phpVersionPattern.MatchString(v) {
-				continue
-			}
-			if _, ok := seen[v]; ok {
-				continue
-			}
-			seen[v] = struct{}{}
-			found = append(found, v)
-		}
-		if len(found) > 0 {
-			sort.SliceStable(found, func(i, j int) bool { return found[i] > found[j] })
-			return found
-		}
-	}
+	seen := map[string]struct{}{}
+	found := make([]string, 0, 6)
 	if entries, err := os.ReadDir("/etc/php"); err == nil {
-		found := make([]string, 0, len(entries))
-		seen := map[string]struct{}{}
 		for _, entry := range entries {
 			if !entry.IsDir() {
 				continue
@@ -525,33 +508,77 @@ func (s *ServiceService) phpVersions() []string {
 			seen[v] = struct{}{}
 			found = append(found, v)
 		}
-		if len(found) > 0 {
-			sort.SliceStable(found, func(i, j int) bool { return found[i] > found[j] })
-			return found
-		}
 	}
-	raw, err := s.settings.Get("php_versions")
-	if err != nil {
-		return defaults
-	}
-	parts := strings.Split(raw, ",")
-	out := make([]string, 0, len(parts))
-	seen := map[string]struct{}{}
-	for _, part := range parts {
-		v := strings.TrimSpace(part)
-		if v == "" || !phpVersionPattern.MatchString(v) {
-			continue
-		}
+	for _, v := range s.rpmPHPFPMVersions() {
 		if _, ok := seen[v]; ok {
 			continue
 		}
 		seen[v] = struct{}{}
-		out = append(out, v)
+		found = append(found, v)
 	}
-	if len(out) == 0 {
-		return defaults
+	if len(found) > 0 {
+		sort.SliceStable(found, func(i, j int) bool { return found[i] > found[j] })
+		return found
 	}
-	return out
+	return []string{}
+}
+
+func (s *ServiceService) rpmPHPFPMVersions() []string {
+	if _, err := exec.LookPath("rpm"); err != nil {
+		return []string{}
+	}
+	out, err := exec.Command("rpm", "-qa").Output()
+	if err != nil {
+		return []string{}
+	}
+	seen := map[string]struct{}{}
+	versions := make([]string, 0, 4)
+	for _, line := range strings.Split(string(out), "\n") {
+		pkg := strings.TrimSpace(line)
+		if pkg == "" {
+			continue
+		}
+		switch {
+		case strings.Contains(pkg, "php-fpm"):
+		default:
+			continue
+		}
+		if strings.HasPrefix(pkg, "php-fpm-") || pkg == "php-fpm" {
+			if version := s.detectDefaultPHPVersion(); version != "" {
+				if _, ok := seen[version]; !ok {
+					seen[version] = struct{}{}
+					versions = append(versions, version)
+				}
+			}
+			continue
+		}
+		matches := regexp.MustCompile(`^php([0-9]{2})-php-fpm`).FindStringSubmatch(pkg)
+		if len(matches) == 2 {
+			version := matches[1][:1] + "." + matches[1][1:]
+			if _, ok := seen[version]; ok {
+				continue
+			}
+			seen[version] = struct{}{}
+			versions = append(versions, version)
+		}
+	}
+	return versions
+}
+
+func (s *ServiceService) detectDefaultPHPVersion() string {
+	phpBin, err := exec.LookPath("php")
+	if err != nil {
+		return ""
+	}
+	out, err := exec.Command(phpBin, "-v").CombinedOutput()
+	if err != nil {
+		return ""
+	}
+	matches := regexp.MustCompile(`PHP\s+([0-9]+\.[0-9]+)`).FindStringSubmatch(string(out))
+	if len(matches) != 2 {
+		return ""
+	}
+	return matches[1]
 }
 
 func (s *ServiceService) coreSystemServices() []models.ManagedService {
@@ -635,6 +662,9 @@ func (s *ServiceService) installedState(ctx context.Context, serviceName string)
 	if s.packages == nil {
 		return true
 	}
+	if !s.packages.KnownService(serviceName) {
+		return s.packages.UnitExists(ctx, serviceName, "")
+	}
 	return s.packages.IsInstalled(ctx, serviceName)
 }
 
@@ -655,4 +685,17 @@ func (s *ServiceService) ensureInstalledIfRequested(ctx context.Context, service
 		return nil
 	}
 	return s.packages.EnsureInstalled(ctx, serviceName, actor, ip)
+}
+
+func (s *ServiceService) validateTrackableService(ctx context.Context, input ServiceInput) error {
+	if s.packages == nil || s.cfg.Features.PlatformMode == "dryrun" {
+		return nil
+	}
+	if s.packages.KnownService(input.Name) {
+		return nil
+	}
+	if !s.packages.UnitExists(ctx, input.Name, input.UnitPath) {
+		return fmt.Errorf("service unit %s was not found on this host", strings.TrimSpace(input.Name))
+	}
+	return nil
 }

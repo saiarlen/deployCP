@@ -328,8 +328,87 @@
 
   <div id="panel-services" class="settings-panel {{ if ActiveTab == "services" }}settings-panel-active{{ end }}">
     <section class="surface p-5 sm:p-6 mb-5">
+      <h2 class="text-lg font-semibold">System Runtime Defaults</h2>
+      <p class="text-sm opacity-70 mt-1">Choose which installed runtime should answer the generic system commands like <code>go</code>, <code>node</code>, <code>python3</code>, and <code>php</code>.</p>
+      <div class="grid gap-4 lg:grid-cols-2 mt-4">
+        <div class="rounded-lg border border-[var(--border)] p-4">
+          <div class="flex items-start justify-between gap-3 mb-3">
+            <div>
+              <h3 class="font-semibold">Go Default</h3>
+              <p class="text-xs opacity-70 mt-1">{{ if GoRuntimeDefault.Version }}Current: {{ GoRuntimeDefault.Version }}{{ else }}No default detected{{ end }}</p>
+            </div>
+            {{ if GoRuntimeDefault.Binary }}<span class="badge badge-neutral">{{ if GoRuntimeDefault.Managed }}deploycp managed{{ else }}host binary{{ end }}</span>{{ end }}
+          </div>
+          {{ if GoRuntimeDefault.Binary }}<p class="text-xs opacity-70 font-mono break-all mb-3">{{ GoRuntimeDefault.Binary }}</p>{{ end }}
+          <form action="/settings/runtime-versions/go/default" method="post" class="flex gap-2">
+            <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+            <select class="field flex-1" name="version" required>
+              <option value="" selected disabled>Select installed Go version</option>
+              {{ range _, v := GoRuntimeEntries }}<option value="{{ v.Version }}">{{ v.Version }}</option>{{ end }}
+            </select>
+            <button class="btn btn-primary" type="submit">Set Default</button>
+          </form>
+        </div>
+        <div class="rounded-lg border border-[var(--border)] p-4">
+          <div class="flex items-start justify-between gap-3 mb-3">
+            <div>
+              <h3 class="font-semibold">Node Default</h3>
+              <p class="text-xs opacity-70 mt-1">{{ if NodeRuntimeDefault.Version }}Current: {{ NodeRuntimeDefault.Version }}{{ else }}No default detected{{ end }}</p>
+            </div>
+            {{ if NodeRuntimeDefault.Binary }}<span class="badge badge-neutral">{{ if NodeRuntimeDefault.Managed }}deploycp managed{{ else }}host binary{{ end }}</span>{{ end }}
+          </div>
+          {{ if NodeRuntimeDefault.Binary }}<p class="text-xs opacity-70 font-mono break-all mb-3">{{ NodeRuntimeDefault.Binary }}</p>{{ end }}
+          <form action="/settings/runtime-versions/node/default" method="post" class="flex gap-2">
+            <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+            <select class="field flex-1" name="version" required>
+              <option value="" selected disabled>Select installed Node version</option>
+              {{ range _, v := NodeRuntimeEntries }}<option value="{{ v.Version }}">{{ v.Version }}</option>{{ end }}
+            </select>
+            <button class="btn btn-primary" type="submit">Set Default</button>
+          </form>
+        </div>
+        <div class="rounded-lg border border-[var(--border)] p-4">
+          <div class="flex items-start justify-between gap-3 mb-3">
+            <div>
+              <h3 class="font-semibold">Python Default</h3>
+              <p class="text-xs opacity-70 mt-1">{{ if PythonRuntimeDefault.Version }}Current: {{ PythonRuntimeDefault.Version }}{{ else }}No default detected{{ end }}</p>
+            </div>
+            {{ if PythonRuntimeDefault.Binary }}<span class="badge badge-neutral">{{ if PythonRuntimeDefault.Managed }}deploycp managed{{ else }}host binary{{ end }}</span>{{ end }}
+          </div>
+          {{ if PythonRuntimeDefault.Binary }}<p class="text-xs opacity-70 font-mono break-all mb-3">{{ PythonRuntimeDefault.Binary }}</p>{{ end }}
+          <form action="/settings/runtime-versions/python/default" method="post" class="flex gap-2">
+            <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+            <select class="field flex-1" name="version" required>
+              <option value="" selected disabled>Select installed Python version</option>
+              {{ range _, v := PythonRuntimeEntries }}<option value="{{ v.Version }}">{{ v.Version }}</option>{{ end }}
+            </select>
+            <button class="btn btn-primary" type="submit">Set Default</button>
+          </form>
+        </div>
+        <div class="rounded-lg border border-[var(--border)] p-4">
+          <div class="flex items-start justify-between gap-3 mb-3">
+            <div>
+              <h3 class="font-semibold">PHP Default</h3>
+              <p class="text-xs opacity-70 mt-1">{{ if PHPRuntimeDefault.Version }}Current: {{ PHPRuntimeDefault.Version }}{{ else }}No default detected{{ end }}</p>
+            </div>
+            {{ if PHPRuntimeDefault.Binary }}<span class="badge badge-neutral">{{ if PHPRuntimeDefault.Managed }}deploycp managed{{ else }}host binary{{ end }}</span>{{ end }}
+          </div>
+          {{ if PHPRuntimeDefault.Binary }}<p class="text-xs opacity-70 font-mono break-all mb-3">{{ PHPRuntimeDefault.Binary }}</p>{{ end }}
+          <form action="/settings/runtime-versions/php/default" method="post" class="flex gap-2">
+            <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+            <select class="field flex-1" name="version" required>
+              <option value="" selected disabled>Select installed PHP version</option>
+              {{ range _, v := PHPRuntimeEntries }}<option value="{{ v.Version }}">{{ v.Version }}</option>{{ end }}
+            </select>
+            <button class="btn btn-primary" type="submit">Set Default</button>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <section class="surface p-5 sm:p-6 mb-5">
       <h2 class="text-lg font-semibold">Runtime Version Management</h2>
-      <p class="text-sm opacity-70 mt-1">Installed versions are discovered from the host. On supported Linux package managers, add-version dropdowns are populated from the real package source instead of free-text version entry.</p>
+      <p class="text-sm opacity-70 mt-1">Installed versions are discovered from the host runtime root and validated through real runtime wrappers. On supported Linux package managers, add-version dropdowns are populated from the actual package source.</p>
       <div class="grid gap-4 lg:grid-cols-2 mt-4">
         <div class="rounded-lg border border-[var(--border)] p-4">
           <h3 class="font-semibold mb-2">Go Versions</h3>
@@ -337,7 +416,7 @@
             {{ range _, v := GoRuntimeEntries }}
             <div class="runtime-version-chip">
               <span class="badge badge-neutral runtime-version-badge">{{ v.Version }}</span>
-              {{ if v.Installed }}<span class="badge badge-ok runtime-version-state">installed</span>{{ else }}<span class="badge badge-neutral runtime-version-state">catalog only</span>{{ end }}
+              {{ if v.Verified }}<span class="badge badge-ok runtime-version-state">ready</span>{{ else }}<span class="badge badge-danger runtime-version-state">needs repair</span>{{ end }}
               <form action="/settings/runtime-versions/go/remove" method="post" class="runtime-version-remove-form runtime-version-action-form" data-confirm-message="Remove {{ v.Version }} from Go versions? If any platform uses this version, removal will be blocked." data-runtime-action="remove" data-runtime-kind="go" data-runtime-version="{{ v.Version }}">
                 <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
                 <input type="hidden" name="version" value="{{ v.Version }}">
@@ -369,7 +448,7 @@
             {{ range _, v := NodeRuntimeEntries }}
             <div class="runtime-version-chip">
               <span class="badge badge-neutral runtime-version-badge">{{ v.Version }}</span>
-              {{ if v.Installed }}<span class="badge badge-ok runtime-version-state">installed</span>{{ else }}<span class="badge badge-neutral runtime-version-state">catalog only</span>{{ end }}
+              {{ if v.Verified }}<span class="badge badge-ok runtime-version-state">ready</span>{{ else }}<span class="badge badge-danger runtime-version-state">needs repair</span>{{ end }}
               <form action="/settings/runtime-versions/node/remove" method="post" class="runtime-version-remove-form runtime-version-action-form" data-confirm-message="Remove {{ v.Version }} from Node versions? If any platform uses this version, removal will be blocked." data-runtime-action="remove" data-runtime-kind="node" data-runtime-version="{{ v.Version }}">
                 <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
                 <input type="hidden" name="version" value="{{ v.Version }}">
@@ -401,7 +480,7 @@
             {{ range _, v := PythonRuntimeEntries }}
             <div class="runtime-version-chip">
               <span class="badge badge-neutral runtime-version-badge">{{ v.Version }}</span>
-              {{ if v.Installed }}<span class="badge badge-ok runtime-version-state">installed</span>{{ else }}<span class="badge badge-neutral runtime-version-state">catalog only</span>{{ end }}
+              {{ if v.Verified }}<span class="badge badge-ok runtime-version-state">ready</span>{{ else }}<span class="badge badge-danger runtime-version-state">needs repair</span>{{ end }}
               <form action="/settings/runtime-versions/python/remove" method="post" class="runtime-version-remove-form runtime-version-action-form" data-confirm-message="Remove {{ v.Version }} from Python versions? If any platform uses this version, removal will be blocked." data-runtime-action="remove" data-runtime-kind="python" data-runtime-version="{{ v.Version }}">
                 <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
                 <input type="hidden" name="version" value="{{ v.Version }}">
@@ -433,7 +512,7 @@
             {{ range _, v := PHPRuntimeEntries }}
             <div class="runtime-version-chip">
               <span class="badge badge-neutral runtime-version-badge">{{ v.Version }}</span>
-              {{ if v.Installed }}<span class="badge badge-ok runtime-version-state">installed</span>{{ else }}<span class="badge badge-neutral runtime-version-state">catalog only</span>{{ end }}
+              {{ if v.Verified }}<span class="badge badge-ok runtime-version-state">ready</span>{{ else }}<span class="badge badge-danger runtime-version-state">needs repair</span>{{ end }}
               <form action="/settings/runtime-versions/php/remove" method="post" class="runtime-version-remove-form runtime-version-action-form" data-confirm-message="Remove {{ v.Version }} from PHP versions? If any platform uses this version, removal will be blocked." data-runtime-action="remove" data-runtime-kind="php" data-runtime-version="{{ v.Version }}">
                 <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
                 <input type="hidden" name="version" value="{{ v.Version }}">
@@ -463,8 +542,8 @@
     </section>
 
     <section class="surface p-5 sm:p-6 mb-5">
-      <h2 class="text-lg font-semibold">Add Custom Service</h2>
-      <p class="text-sm opacity-70 mt-1">Use this when a required system-level service is not in the default managed list.</p>
+      <h2 class="text-lg font-semibold">Track Existing Service</h2>
+      <p class="text-sm opacity-70 mt-1">Use this to attach an already existing host service to DeployCP. The service unit must already exist on the server.</p>
       <form action="/services" method="post" class="grid gap-4 md:grid-cols-2 mt-4">
         <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
         <label class="block text-sm font-medium">Service Identifier *

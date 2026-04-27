@@ -274,6 +274,10 @@ func (h *SettingsHandler) Index(c *fiber.Ctx) error {
 		"NodeVersions":             h.service.RuntimeVersions("node"),
 		"PythonVersions":           h.service.RuntimeVersions("python"),
 		"PHPVersions":              h.service.RuntimeVersions("php"),
+		"GoRuntimeDefault":         h.runtimeDefaultStatus("go"),
+		"NodeRuntimeDefault":       h.runtimeDefaultStatus("node"),
+		"PythonRuntimeDefault":     h.runtimeDefaultStatus("python"),
+		"PHPRuntimeDefault":        h.runtimeDefaultStatus("php"),
 		"ActiveTab":                activeTab,
 		"UpdateView":               updateView,
 	})
@@ -480,6 +484,10 @@ func (h *SettingsHandler) RuntimeVersionAdd(c *fiber.Ctx) error {
 func (h *SettingsHandler) RuntimeVersionRemove(c *fiber.Ctx) error {
 	runtime := strings.ToLower(strings.TrimSpace(c.Params("runtime")))
 	version := strings.TrimSpace(c.FormValue("version"))
+	if current := h.runtimeDefaultStatus(runtime); strings.TrimSpace(current.Version) == version {
+		h.base.Sessions.SetFlash(c, fmt.Sprintf("cannot remove %s while it is the current system default for %s", version, runtime))
+		return c.Redirect("/settings?tab=services")
+	}
 	usageCount, usageNames, usageErr := h.runtimeVersionUsage(runtime, version)
 	if usageErr != nil {
 		h.base.Sessions.SetFlash(c, usageErr.Error())
@@ -515,6 +523,32 @@ func (h *SettingsHandler) RuntimeVersionRemove(c *fiber.Ctx) error {
 	_ = h.service.SyncInstalledRuntimeCatalogs()
 	h.base.Sessions.SetFlash(c, "version removed")
 	return c.Redirect("/settings?tab=services")
+}
+
+func (h *SettingsHandler) RuntimeVersionDefault(c *fiber.Ctx) error {
+	runtime := strings.ToLower(strings.TrimSpace(c.Params("runtime")))
+	version := strings.TrimSpace(c.FormValue("version"))
+	if version == "" {
+		h.base.Sessions.SetFlash(c, "version is required")
+		return c.Redirect("/settings?tab=services")
+	}
+	if h.runtimeService == nil {
+		h.base.Sessions.SetFlash(c, "runtime service not available")
+		return c.Redirect("/settings?tab=services")
+	}
+	if err := h.runtimeService.SetSystemDefaultVersion(c.Context(), runtime, version, currentUserID(c), c.IP()); err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect("/settings?tab=services")
+	}
+	h.base.Sessions.SetFlash(c, fmt.Sprintf("%s default set to %s", strings.ToUpper(runtime), version))
+	return c.Redirect("/settings?tab=services")
+}
+
+func (h *SettingsHandler) runtimeDefaultStatus(runtime string) services.RuntimeDefaultStatus {
+	if h.runtimeService == nil {
+		return services.RuntimeDefaultStatus{Runtime: runtime}
+	}
+	return h.runtimeService.SystemDefaultVersion(runtime)
 }
 
 func (h *SettingsHandler) FirewallCreate(c *fiber.Ctx) error {
