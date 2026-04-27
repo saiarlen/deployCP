@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -74,6 +75,9 @@ func (s *AppService) Create(ctx context.Context, in AppInput, actor *uint, ip st
 	if err := s.validate(in); err != nil {
 		return nil, err
 	}
+	if err := s.ensurePortAvailable(in.Host, in.Port, 0, false); err != nil {
+		return nil, err
+	}
 	serviceName := "deploycp-app-" + strings.ReplaceAll(strings.ToLower(in.Name), " ", "-")
 	stdoutPath := filepath.Join(s.cfg.Paths.LogRoot, "apps", in.Name, "stdout.log")
 	stderrPath := filepath.Join(s.cfg.Paths.LogRoot, "apps", in.Name, "stderr.log")
@@ -127,6 +131,10 @@ func (s *AppService) Update(ctx context.Context, id uint, in AppInput, actor *ui
 	}
 	app, err := s.repo.Find(id)
 	if err != nil {
+		return err
+	}
+	sameBinding := sameAppBinding(app.Host, app.Port, in.Host, in.Port)
+	if err := s.ensurePortAvailable(in.Host, in.Port, id, sameBinding); err != nil {
 		return err
 	}
 	app.Name = in.Name
@@ -364,6 +372,8 @@ func (s *AppService) UpdateRuntimeSettings(ctx context.Context, id uint, process
 	if err != nil {
 		return err
 	}
+	originalHost := app.Host
+	originalPort := app.Port
 	if pm := normalizeProcessManager(processManager); pm != "" {
 		app.ProcessManager = pm
 	}
@@ -377,6 +387,9 @@ func (s *AppService) UpdateRuntimeSettings(ctx context.Context, id uint, process
 	}
 	if port > 0 {
 		app.Port = port
+	}
+	if err := s.ensurePortAvailable(app.Host, app.Port, id, sameAppBinding(originalHost, originalPort, app.Host, app.Port)); err != nil {
+		return err
 	}
 	if restartPolicy != "" {
 		app.RestartPolicy = restartPolicy
@@ -533,6 +546,113 @@ func (s *AppService) validate(in AppInput) error {
 		in.RestartPolicy = "on-failure"
 	}
 	return nil
+}
+
+func (s *AppService) ensurePortAvailable(host string, port int, excludeID uint, allowCurrentBinding bool) error {
+	host = normalizeAppBindHost(host)
+	if port < 1 || port > 65535 {
+		return fmt.Errorf("invalid port")
+	}
+	items, err := s.repo.List()
+	if err != nil {
+		return err
+	}
+	for _, item := range items {
+		if excludeID != 0 && item.ID == excludeID {
+			continue
+		}
+		if item.Port != port {
+			continue
+		}
+		if appBindingsConflict(item.Host, item.Port, host, port) {
+			return fmt.Errorf("port %d is already used by platform %s", port, strings.TrimSpace(item.Name))
+		}
+	}
+	if allowCurrentBinding || s.cfg.Features.PlatformMode == "dryrun" {
+		return nil
+	}
+	if !isLocalBindableHost(host) {
+		return nil
+	}
+	if appPortUnavailable(host, port) {
+		return fmt.Errorf("port %d is already occupied on this server", port)
+	}
+	return nil
+}
+
+func sameAppBinding(hostA string, portA int, hostB string, portB int) bool {
+	return portA == portB && normalizeAppBindHost(hostA) == normalizeAppBindHost(hostB)
+}
+
+func appBindingsConflict(hostA string, portA int, hostB string, portB int) bool {
+	if portA != portB {
+		return false
+	}
+	a := normalizeAppBindHost(hostA)
+	b := normalizeAppBindHost(hostB)
+	if a == b {
+		return true
+	}
+	return isWildcardBindHost(a) || isWildcardBindHost(b)
+}
+
+func normalizeAppBindHost(host string) string {
+	h := strings.TrimSpace(strings.ToLower(host))
+	switch h {
+	case "", "localhost":
+		return "127.0.0.1"
+	case "::":
+		return "::"
+	default:
+		return h
+	}
+}
+
+func isWildcardBindHost(host string) bool {
+	switch normalizeAppBindHost(host) {
+	case "0.0.0.0", "::":
+		return true
+	default:
+		return false
+	}
+}
+
+func isLocalBindableHost(host string) bool {
+	h := normalizeAppBindHost(host)
+	switch h {
+	case "127.0.0.1", "::1", "0.0.0.0", "::":
+		return true
+	}
+	ip := net.ParseIP(h)
+	if ip == nil {
+		return false
+	}
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return false
+	}
+	for _, addr := range addrs {
+		var candidate net.IP
+		switch v := addr.(type) {
+		case *net.IPNet:
+			candidate = v.IP
+		case *net.IPAddr:
+			candidate = v.IP
+		}
+		if candidate != nil && candidate.Equal(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+func appPortUnavailable(host string, port int) bool {
+	ln, err := net.Listen("tcp", net.JoinHostPort(normalizeAppBindHost(host), fmt.Sprintf("%d", port)))
+	if err != nil {
+		return true
+	}
+	_ = ln.Close()
+	return false
 }
 
 func defaultExecutionMode(runtime string) string {

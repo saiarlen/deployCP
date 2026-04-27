@@ -3,6 +3,7 @@ package services
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -31,6 +32,15 @@ var (
 	runtimeNodeRe   = regexp.MustCompile(`^node[0-9]+(\.[0-9]+)?$`)
 	runtimePythonRe = regexp.MustCompile(`^python[0-9]+\.[0-9]+(\.[0-9]+)?$`)
 	runtimePHPRe    = regexp.MustCompile(`^[0-9]+\.[0-9]+(\.[0-9]+)?$`)
+	aptPHPPkgRe     = regexp.MustCompile(`^php([0-9]+\.[0-9]+)-(cli|fpm)$`)
+	aptPythonPkgRe  = regexp.MustCompile(`^python([0-9]+\.[0-9]+)$`)
+	aptGoPkgRe      = regexp.MustCompile(`^golang-(1\.[0-9]+)-go$`)
+	aptNodeMajorRe  = regexp.MustCompile(`([0-9]{2,})\.`)
+	rhelPHPModuleRe = regexp.MustCompile(`^php\s+([0-9]+\.[0-9]+)\b`)
+	rhelNodeModRe   = regexp.MustCompile(`^nodejs\s+([0-9]+)\b`)
+	rhelPythonPkgRe = regexp.MustCompile(`^python([0-9]+\.[0-9]+)$`)
+	rhelPHPRemiRe   = regexp.MustCompile(`^php([0-9]{2})-php-(cli|fpm)$`)
+	rhelVersionRe   = regexp.MustCompile(`([0-9]+\.[0-9]+)`)
 )
 
 func NewSettingsService(
@@ -168,6 +178,24 @@ func (s *SettingsService) RuntimeVersionStates(runtime string) []RuntimeVersionS
 	return out
 }
 
+func (s *SettingsService) AvailableRuntimeVersions(runtime string) []string {
+	runtime = strings.ToLower(strings.TrimSpace(runtime))
+	if runtime == "" {
+		return []string{}
+	}
+	if strings.EqualFold(strings.TrimSpace(s.cfg.Features.PlatformMode), "dryrun") {
+		return s.configuredRuntimeVersions(runtime)
+	}
+	switch s.detectPackageManager() {
+	case "apt":
+		return s.aptAvailableRuntimeVersions(runtime)
+	case "dnf", "yum":
+		return s.rhelAvailableRuntimeVersions(runtime)
+	default:
+		return []string{}
+	}
+}
+
 func (s *SettingsService) SyncInstalledRuntimeCatalogs() error {
 	for _, runtime := range []string{"go", "node", "python", "php"} {
 		if err := s.syncInstalledRuntimeCatalog(runtime); err != nil {
@@ -295,6 +323,9 @@ func (s *SettingsService) AddRuntimeVersion(runtime, version string, actor *uint
 	if !isValidRuntimeVersion(runtime, v) {
 		return fmt.Errorf("invalid %s version", strings.TrimSpace(runtime))
 	}
+	if available := s.AvailableRuntimeVersions(runtime); len(available) > 0 && !containsRuntimeVersion(available, v) {
+		return fmt.Errorf("%s is not available from the detected package source", v)
+	}
 	versions := s.RuntimeVersions(runtime)
 	for _, item := range versions {
 		if item == v {
@@ -377,6 +408,301 @@ func isValidRuntimeVersion(runtime, version string) bool {
 	default:
 		return false
 	}
+}
+
+func (s *SettingsService) detectPackageManager() string {
+	if _, err := exec.LookPath("apt-cache"); err == nil {
+		if _, err := exec.LookPath("apt-get"); err == nil {
+			return "apt"
+		}
+	}
+	if _, err := exec.LookPath("dnf"); err == nil {
+		return "dnf"
+	}
+	if _, err := exec.LookPath("yum"); err == nil {
+		return "yum"
+	}
+	return ""
+}
+
+func (s *SettingsService) aptAvailableRuntimeVersions(runtime string) []string {
+	switch runtime {
+	case "php":
+		return s.aptSearchMappedVersions(`^php[0-9]+\.[0-9]+-(cli|fpm)$`, func(pkg string) string {
+			matches := aptPHPPkgRe.FindStringSubmatch(pkg)
+			if len(matches) != 3 {
+				return ""
+			}
+			return matches[1]
+		})
+	case "python":
+		return s.aptSearchMappedVersions(`^python[0-9]+\.[0-9]+$`, func(pkg string) string {
+			matches := aptPythonPkgRe.FindStringSubmatch(pkg)
+			if len(matches) != 2 {
+				return ""
+			}
+			return "python" + matches[1]
+		})
+	case "go":
+		return s.aptSearchMappedVersions(`^golang-1\.[0-9]+-go$`, func(pkg string) string {
+			matches := aptGoPkgRe.FindStringSubmatch(pkg)
+			if len(matches) != 2 {
+				return ""
+			}
+			return "go" + matches[1]
+		})
+	case "node":
+		return s.aptNodeAvailableVersions()
+	default:
+		return []string{}
+	}
+}
+
+func (s *SettingsService) aptSearchMappedVersions(pattern string, mapper func(string) string) []string {
+	if strings.TrimSpace(pattern) == "" || mapper == nil {
+		return []string{}
+	}
+	out, err := exec.Command("apt-cache", "search", "--names-only", pattern).Output()
+	if err != nil {
+		return []string{}
+	}
+	seen := map[string]struct{}{}
+	versions := make([]string, 0, 8)
+	for _, line := range strings.Split(string(out), "\n") {
+		fields := strings.Fields(strings.TrimSpace(line))
+		if len(fields) == 0 {
+			continue
+		}
+		version := strings.TrimSpace(mapper(fields[0]))
+		if version == "" || !isValidRuntimeVersionGuess(version) {
+			continue
+		}
+		if _, ok := seen[version]; ok {
+			continue
+		}
+		seen[version] = struct{}{}
+		versions = append(versions, version)
+	}
+	sort.SliceStable(versions, func(i, j int) bool { return versions[i] > versions[j] })
+	return versions
+}
+
+func (s *SettingsService) aptNodeAvailableVersions() []string {
+	out, err := exec.Command("apt-cache", "policy", "nodejs").Output()
+	if err != nil {
+		return []string{}
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "Candidate:") {
+			continue
+		}
+		candidate := strings.TrimSpace(strings.TrimPrefix(line, "Candidate:"))
+		if candidate == "" || candidate == "(none)" {
+			return []string{}
+		}
+		matches := aptNodeMajorRe.FindStringSubmatch(candidate)
+		if len(matches) != 2 {
+			return []string{}
+		}
+		version := "node" + matches[1]
+		if !isValidRuntimeVersion("node", version) {
+			return []string{}
+		}
+		return []string{version}
+	}
+	return []string{}
+}
+
+func (s *SettingsService) rhelAvailableRuntimeVersions(runtime string) []string {
+	manager := s.detectPackageManager()
+	switch runtime {
+	case "php":
+		versions := s.rhelModuleVersions(manager, "php", rhelPHPModuleRe, func(v string) string { return v })
+		versions = appendUniqueStrings(versions, s.rhelSearchMappedVersions(manager, "php*-php-cli", func(pkg string) string {
+			matches := rhelPHPRemiRe.FindStringSubmatch(pkg)
+			if len(matches) != 3 {
+				return ""
+			}
+			if len(matches[1]) != 2 {
+				return ""
+			}
+			return matches[1][:1] + "." + matches[1][1:]
+		})...)
+		return sortRuntimeVersionsDesc(versions)
+	case "node":
+		versions := s.rhelModuleVersions(manager, "nodejs", rhelNodeModRe, func(v string) string { return "node" + v })
+		if len(versions) == 0 {
+			if version := s.rhelInfoVersion(manager, "nodejs"); version != "" {
+				versions = append(versions, "node"+strings.Split(version, ".")[0])
+			}
+		}
+		return sortRuntimeVersionsDesc(versions)
+	case "python":
+		versions := s.rhelSearchMappedVersions(manager, "python3*", func(pkg string) string {
+			matches := rhelPythonPkgRe.FindStringSubmatch(stripArchSuffix(pkg))
+			if len(matches) != 2 {
+				return ""
+			}
+			return "python" + matches[1]
+		})
+		return sortRuntimeVersionsDesc(versions)
+	case "go":
+		if version := s.rhelInfoVersion(manager, "golang"); version != "" {
+			return []string{"go" + version}
+		}
+		return []string{}
+	default:
+		return []string{}
+	}
+}
+
+func (s *SettingsService) rhelModuleVersions(manager, module string, re *regexp.Regexp, mapper func(string) string) []string {
+	if strings.TrimSpace(manager) == "" || strings.TrimSpace(module) == "" || re == nil || mapper == nil {
+		return []string{}
+	}
+	out, err := exec.Command(manager, "module", "list", module, "--all").Output()
+	if err != nil {
+		return []string{}
+	}
+	seen := map[string]struct{}{}
+	versions := make([]string, 0, 6)
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "Name") || strings.HasPrefix(line, "Hint") {
+			continue
+		}
+		matches := re.FindStringSubmatch(line)
+		if len(matches) < 2 {
+			continue
+		}
+		version := strings.TrimSpace(mapper(matches[1]))
+		if version == "" || !isValidRuntimeVersionGuess(version) {
+			continue
+		}
+		if _, ok := seen[version]; ok {
+			continue
+		}
+		seen[version] = struct{}{}
+		versions = append(versions, version)
+	}
+	return versions
+}
+
+func (s *SettingsService) rhelSearchMappedVersions(manager, query string, mapper func(string) string) []string {
+	if strings.TrimSpace(manager) == "" || strings.TrimSpace(query) == "" || mapper == nil {
+		return []string{}
+	}
+	out, err := exec.Command(manager, "list", "available", query).Output()
+	if err != nil {
+		return []string{}
+	}
+	seen := map[string]struct{}{}
+	versions := make([]string, 0, 8)
+	for _, line := range strings.Split(string(out), "\n") {
+		fields := strings.Fields(strings.TrimSpace(line))
+		if len(fields) == 0 {
+			continue
+		}
+		pkg := stripArchSuffix(fields[0])
+		version := strings.TrimSpace(mapper(pkg))
+		if version == "" || !isValidRuntimeVersionGuess(version) {
+			continue
+		}
+		if _, ok := seen[version]; ok {
+			continue
+		}
+		seen[version] = struct{}{}
+		versions = append(versions, version)
+	}
+	return versions
+}
+
+func (s *SettingsService) rhelInfoVersion(manager, pkg string) string {
+	if strings.TrimSpace(manager) == "" || strings.TrimSpace(pkg) == "" {
+		return ""
+	}
+	out, err := exec.Command(manager, "info", pkg).Output()
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(strings.ToLower(line), "version") {
+			continue
+		}
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		match := rhelVersionRe.FindString(strings.TrimSpace(parts[1]))
+		if match == "" {
+			continue
+		}
+		return match
+	}
+	return ""
+}
+
+func stripArchSuffix(pkg string) string {
+	pkg = strings.TrimSpace(pkg)
+	for _, arch := range []string{".x86_64", ".aarch64", ".noarch", ".src", ".i686", ".ppc64le", ".s390x"} {
+		if strings.HasSuffix(pkg, arch) {
+			return strings.TrimSuffix(pkg, arch)
+		}
+	}
+	return pkg
+}
+
+func appendUniqueStrings(base []string, extras ...string) []string {
+	seen := make(map[string]struct{}, len(base))
+	out := append([]string{}, base...)
+	for _, item := range out {
+		seen[item] = struct{}{}
+	}
+	for _, item := range extras {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		if _, ok := seen[item]; ok {
+			continue
+		}
+		seen[item] = struct{}{}
+		out = append(out, item)
+	}
+	return out
+}
+
+func sortRuntimeVersionsDesc(items []string) []string {
+	out := append([]string{}, items...)
+	sort.SliceStable(out, func(i, j int) bool { return out[i] > out[j] })
+	return out
+}
+
+func isValidRuntimeVersionGuess(version string) bool {
+	switch {
+	case runtimeGoRe.MatchString(version):
+		return true
+	case runtimeNodeRe.MatchString(version):
+		return true
+	case runtimePythonRe.MatchString(version):
+		return true
+	case runtimePHPRe.MatchString(version):
+		return true
+	default:
+		return false
+	}
+}
+
+func containsRuntimeVersion(items []string, target string) bool {
+	target = strings.TrimSpace(target)
+	for _, item := range items {
+		if strings.TrimSpace(item) == target {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *SettingsService) SupportedTimezones() []string {

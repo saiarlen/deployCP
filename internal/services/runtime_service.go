@@ -114,11 +114,19 @@ func (s *RuntimeService) ResolveBinary(runtime, version, requestedBinary string)
 	if binary == "" {
 		return "", fmt.Errorf("binary path is required")
 	}
+	version = strings.TrimSpace(version)
+	runtime = strings.ToLower(strings.TrimSpace(runtime))
+	if version != "" {
+		if preferred := s.preferredRuntimeBinary(runtime, binary); preferred != "" {
+			candidate := filepath.Join(s.runtimeVersionDir(runtime, version), "bin", preferred)
+			if st, err := os.Stat(candidate); err == nil && !st.IsDir() {
+				return candidate, nil
+			}
+		}
+	}
 	if filepath.IsAbs(binary) {
 		return binary, nil
 	}
-	version = strings.TrimSpace(version)
-	runtime = strings.ToLower(strings.TrimSpace(runtime))
 	if version != "" {
 		candidate := filepath.Join(s.runtimeVersionDir(runtime, version), "bin", filepath.Base(binary))
 		if st, err := os.Stat(candidate); err == nil && !st.IsDir() {
@@ -130,6 +138,21 @@ func (s *RuntimeService) ResolveBinary(runtime, version, requestedBinary string)
 		return lookedUp, nil
 	}
 	return binary, nil
+}
+
+func (s *RuntimeService) preferredRuntimeBinary(runtime, requestedBinary string) string {
+	switch strings.TrimSpace(requestedBinary) {
+	case "env", "/usr/bin/env", "/bin/env":
+		switch runtime {
+		case "node":
+			return "node"
+		case "python":
+			return "python3"
+		case "php":
+			return "php"
+		}
+	}
+	return ""
 }
 
 func (s *RuntimeService) MergeRuntimeEnv(runtime, version string, env map[string]string) map[string]string {

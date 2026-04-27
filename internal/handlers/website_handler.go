@@ -729,7 +729,7 @@ func (h *WebsiteHandler) ManageAdminerDB(c *fiber.Ctx) error {
 		h.base.Sessions.SetFlash(c, err.Error())
 		return c.Redirect(platformURLWithTab("website", id, "databases"))
 	}
-	if err := ensureToolReachable(h.databaseService.AdminerURL()); err != nil {
+	if err := h.databaseService.EnsureAdminerReady(); err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
 		return c.Redirect(platformURLWithTab("website", id, "databases"))
 	}
@@ -760,7 +760,7 @@ func (h *WebsiteHandler) ManageOpenPostgresGUI(c *fiber.Ctx) error {
 		h.base.Sessions.SetFlash(c, err.Error())
 		return c.Redirect(platformURLWithTab("website", id, "databases"))
 	}
-	if err := ensureToolReachable(h.databaseService.PostgresGUIBaseURL()); err != nil {
+	if err := h.databaseService.EnsurePostgresGUIReady(); err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
 		return c.Redirect(platformURLWithTab("website", id, "databases"))
 	}

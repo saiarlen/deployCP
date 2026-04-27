@@ -290,11 +290,15 @@ Important:
 
 ## Database UI Helpers
 
-DeployCP does not bundle a database UI server itself.
+DeployCP does not expose DB helpers publicly.
 
-- PostgreSQL UI links are designed for a loopback-only `pgweb` instance or another private Postgres UI endpoint configured in `POSTGRES_GUI_URL`
-- Adminer is optional and should be deployed separately behind loopback or a trusted private network, then exposed to DeployCP through `ADMINER_URL`
-- the helper scripts do not start Docker containers for these tools
+- install/update now attempts to provision local loopback-only DB helpers when distro packages are available
+- `ADMINER_URL` defaults to `http://127.0.0.1:8081`
+- `POSTGRES_GUI_URL` defaults to `http://127.0.0.1:8082`
+- the panel proxies those helpers through authenticated DeployCP routes instead of exposing them directly to the browser
+- `pgweb` is used for PostgreSQL when present
+- Adminer is used for MariaDB, and DeployCP can start a local Adminer PHP helper when `php` and a local Adminer install are available
+- Docker is not used for these tools
 
 ## Local Development
 

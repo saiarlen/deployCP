@@ -172,6 +172,67 @@ install_packages() {
   esac
 }
 
+package_available() {
+  local manager="$1"
+  local pkg="$2"
+  case "$manager" in
+    apt) apt-cache show "$pkg" >/dev/null 2>&1 ;;
+    dnf) dnf info "$pkg" >/dev/null 2>&1 ;;
+    yum) yum info "$pkg" >/dev/null 2>&1 ;;
+    zypper) zypper --non-interactive info "$pkg" >/dev/null 2>&1 ;;
+    pacman) pacman -Si "$pkg" >/dev/null 2>&1 ;;
+    *) return 1 ;;
+  esac
+}
+
+install_named_packages() {
+  local manager="$1"
+  shift
+  [[ $# -gt 0 ]] || return 0
+  case "$manager" in
+    apt)
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get install -y "$@"
+      ;;
+    dnf) dnf install -y "$@" ;;
+    yum) yum install -y "$@" ;;
+    zypper) zypper --non-interactive install "$@" ;;
+    pacman) pacman -Sy --noconfirm "$@" ;;
+  esac
+}
+
+install_optional_packages() {
+  local manager="$1"
+  shift
+  local pkg available=()
+  for pkg in "$@"; do
+    if package_available "$manager" "$pkg"; then
+      available+=("$pkg")
+    fi
+  done
+  [[ ${#available[@]} -gt 0 ]] || return 0
+  install_named_packages "$manager" "${available[@]}"
+}
+
+install_first_available_package() {
+  local manager="$1"
+  shift
+  local pkg
+  for pkg in "$@"; do
+    if package_available "$manager" "$pkg"; then
+      install_named_packages "$manager" "$pkg"
+      return 0
+    fi
+  done
+  return 0
+}
+
+install_db_ui_helper_packages() {
+  local manager="$1"
+  install_first_available_package "$manager" php-cli php8-cli php php8
+  install_optional_packages "$manager" adminer pgweb
+}
+
 install_default_php_runtime() {
   local helper=""
   local candidate=""
@@ -582,6 +643,7 @@ EOF
 
 pkg_manager="$(detect_pkg_manager)"
 install_packages "$pkg_manager"
+install_db_ui_helper_packages "$pkg_manager"
 configure_platform_defaults
 initialize_databases
 
@@ -650,6 +712,8 @@ POSTGRES_ADMIN_PASSWORD=
 POSTGRES_ADMIN_HOST=127.0.0.1
 POSTGRES_ADMIN_PORT=5432
 POSTGRES_ADMIN_DB=postgres
+ADMINER_URL=http://127.0.0.1:8081
+POSTGRES_GUI_URL=http://127.0.0.1:8082
 FTP_NOLOGIN_SHELL=/usr/sbin/nologin
 PROFTPD_CONF_DIR=${PROFTPD_CONF_DIR}
 PROFTPD_SERVICE_NAME=${PROFTPD_SERVICE_NAME}
@@ -675,6 +739,8 @@ fi
 
 set_env_value "${CORE_DIR}/.env" "APP_VERSION" "$(resolved_release_version)"
 set_env_value "${CORE_DIR}/.env" "DEPLOYCP_REPO" "${DEPLOYCP_REPO:-saiarlen/deployCP}"
+set_env_value "${CORE_DIR}/.env" "ADMINER_URL" "http://127.0.0.1:8081"
+set_env_value "${CORE_DIR}/.env" "POSTGRES_GUI_URL" "http://127.0.0.1:8082"
 install_default_php_runtime
 if [[ -x "${CORE_DIR}/scripts/linux/harden-host.sh" ]]; then
   bash "${CORE_DIR}/scripts/linux/harden-host.sh"

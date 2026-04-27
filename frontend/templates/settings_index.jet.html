@@ -329,7 +329,7 @@
   <div id="panel-services" class="settings-panel {{ if ActiveTab == "services" }}settings-panel-active{{ end }}">
     <section class="surface p-5 sm:p-6 mb-5">
       <h2 class="text-lg font-semibold">Runtime Version Management</h2>
-      <p class="text-sm opacity-70 mt-1">Installed versions are discovered from the host and synced into the panel catalog. Add and remove actions perform real Linux package/runtime changes.</p>
+      <p class="text-sm opacity-70 mt-1">Installed versions are discovered from the host. On supported Linux package managers, add-version dropdowns are populated from the real package source instead of free-text version entry.</p>
       <div class="grid gap-4 lg:grid-cols-2 mt-4">
         <div class="rounded-lg border border-[var(--border)] p-4">
           <h3 class="font-semibold mb-2">Go Versions</h3>
@@ -350,7 +350,16 @@
           </div>
           <form action="/settings/runtime-versions/go/add" method="post" class="flex gap-2 runtime-version-action-form" data-runtime-action="install" data-runtime-kind="go">
             <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+            {{ if len(GoRuntimeChoices) > 0 }}
+            <select class="field flex-1" name="version" required>
+              <option value="" selected disabled>Select Go version</option>
+              {{ range _, v := GoRuntimeChoices }}
+              <option value="{{ v }}">{{ v }}</option>
+              {{ end }}
+            </select>
+            {{ else }}
             <input class="field flex-1" name="version" placeholder="go1.26" required>
+            {{ end }}
             <button class="btn btn-primary" type="submit">Add Version</button>
           </form>
         </div>
@@ -373,7 +382,16 @@
           </div>
           <form action="/settings/runtime-versions/node/add" method="post" class="flex gap-2 runtime-version-action-form" data-runtime-action="install" data-runtime-kind="node">
             <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+            {{ if len(NodeRuntimeChoices) > 0 }}
+            <select class="field flex-1" name="version" required>
+              <option value="" selected disabled>Select Node version</option>
+              {{ range _, v := NodeRuntimeChoices }}
+              <option value="{{ v }}">{{ v }}</option>
+              {{ end }}
+            </select>
+            {{ else }}
             <input class="field flex-1" name="version" placeholder="node26" required>
+            {{ end }}
             <button class="btn btn-primary" type="submit">Add Version</button>
           </form>
         </div>
@@ -396,7 +414,16 @@
           </div>
           <form action="/settings/runtime-versions/python/add" method="post" class="flex gap-2 runtime-version-action-form" data-runtime-action="install" data-runtime-kind="python">
             <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+            {{ if len(PythonRuntimeChoices) > 0 }}
+            <select class="field flex-1" name="version" required>
+              <option value="" selected disabled>Select Python version</option>
+              {{ range _, v := PythonRuntimeChoices }}
+              <option value="{{ v }}">{{ v }}</option>
+              {{ end }}
+            </select>
+            {{ else }}
             <input class="field flex-1" name="version" placeholder="python3.14" required>
+            {{ end }}
             <button class="btn btn-primary" type="submit">Add Version</button>
           </form>
         </div>
@@ -419,7 +446,16 @@
           </div>
           <form action="/settings/runtime-versions/php/add" method="post" class="flex gap-2 runtime-version-action-form" data-runtime-action="install" data-runtime-kind="php">
             <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+            {{ if len(PHPRuntimeChoices) > 0 }}
+            <select class="field flex-1" name="version" required>
+              <option value="" selected disabled>Select PHP version</option>
+              {{ range _, v := PHPRuntimeChoices }}
+              <option value="{{ v }}">{{ v }}</option>
+              {{ end }}
+            </select>
+            {{ else }}
             <input class="field flex-1" name="version" placeholder="8.5" required>
+            {{ end }}
             <button class="btn btn-primary" type="submit">Add Version</button>
           </form>
         </div>

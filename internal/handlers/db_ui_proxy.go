@@ -1,44 +1,12 @@
 package handlers
 
 import (
-	"fmt"
-	"net"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/gofiber/fiber/v2"
 	fiberproxy "github.com/gofiber/fiber/v2/middleware/proxy"
 )
-
-func ensureToolReachable(baseURL string) error {
-	baseURL = strings.TrimSpace(baseURL)
-	if baseURL == "" {
-		return fmt.Errorf("database UI is not configured")
-	}
-	u, err := url.Parse(baseURL)
-	if err != nil {
-		return err
-	}
-	host := strings.TrimSpace(u.Host)
-	if host == "" {
-		return fmt.Errorf("database UI host is not configured")
-	}
-	if !strings.Contains(host, ":") {
-		switch strings.ToLower(strings.TrimSpace(u.Scheme)) {
-		case "https":
-			host += ":443"
-		default:
-			host += ":80"
-		}
-	}
-	conn, err := net.DialTimeout("tcp", host, 2*time.Second)
-	if err != nil {
-		return fmt.Errorf("database UI helper is not reachable at %s", host)
-	}
-	_ = conn.Close()
-	return nil
-}
 
 func proxyToolRequest(c *fiber.Ctx, baseURL string, fallbackQuery url.Values) error {
 	baseURL = strings.TrimSpace(baseURL)
@@ -50,10 +18,47 @@ func proxyToolRequest(c *fiber.Ctx, baseURL string, fallbackQuery url.Values) er
 		return err
 	}
 	q := target.Query()
+	protected := make(map[string]struct{}, len(fallbackQuery))
+	for key := range fallbackQuery {
+		key = strings.ToLower(strings.TrimSpace(key))
+		if key != "" {
+			protected[key] = struct{}{}
+		}
+	}
 	if raw := string(c.Context().QueryArgs().QueryString()); strings.TrimSpace(raw) != "" {
-		target.RawQuery = raw
+		if incoming, err := url.ParseQuery(raw); err == nil {
+			for key, values := range incoming {
+				if _, locked := protected[strings.ToLower(strings.TrimSpace(key))]; locked {
+					continue
+				}
+				q.Del(key)
+				for _, value := range values {
+					q.Add(key, value)
+				}
+			}
+			for key, values := range fallbackQuery {
+				key = strings.TrimSpace(key)
+				if key == "" {
+					continue
+				}
+				q.Del(key)
+				for _, value := range values {
+					q.Add(key, value)
+				}
+			}
+			target.RawQuery = q.Encode()
+		} else {
+			for key, values := range fallbackQuery {
+				q.Del(key)
+				for _, value := range values {
+					q.Add(key, value)
+				}
+			}
+			target.RawQuery = q.Encode()
+		}
 	} else if fallbackQuery != nil {
 		for key, values := range fallbackQuery {
+			q.Del(key)
 			for _, value := range values {
 				q.Add(key, value)
 			}

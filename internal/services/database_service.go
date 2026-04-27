@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -277,6 +278,20 @@ func (s *DatabaseService) PostgresGUIBaseURL() string {
 	return s.cfg.Integrations.PostgresGUIURL
 }
 
+func (s *DatabaseService) EnsureAdminerReady() error {
+	return s.ensureLoopbackUIReady(
+		s.cfg.Integrations.AdminerURL,
+		func(port int) error { return s.startAdminerHelper(port) },
+	)
+}
+
+func (s *DatabaseService) EnsurePostgresGUIReady() error {
+	return s.ensureLoopbackUIReady(
+		s.cfg.Integrations.PostgresGUIURL,
+		func(port int) error { return s.startPgwebHelper(port) },
+	)
+}
+
 // AdminerDBURL returns an Adminer URL with server/username/db pre-filled for
 // a specific MariaDB connection. The user still needs to enter the password in
 // Adminer's login form, but the fields are pre-populated for convenience.
@@ -404,6 +419,166 @@ func (s *DatabaseService) PostgresGUIURL(id uint) (string, error) {
 	q.Set("url", pgURL)
 	base.RawQuery = q.Encode()
 	return base.String(), nil
+}
+
+func (s *DatabaseService) ensureLoopbackUIReady(baseURL string, starter func(port int) error) error {
+	if err := ensureReachableAddress(baseURL); err == nil {
+		return nil
+	}
+	host, port, loopback, err := parseHelperTarget(baseURL)
+	if err != nil {
+		return err
+	}
+	if !loopback {
+		return fmt.Errorf("database UI helper is not reachable at %s", host)
+	}
+	if err := starter(port); err != nil {
+		return err
+	}
+	for i := 0; i < 8; i++ {
+		time.Sleep(250 * time.Millisecond)
+		if err := ensureReachableAddress(baseURL); err == nil {
+			return nil
+		}
+	}
+	return fmt.Errorf("database UI helper is not reachable at %s", host)
+}
+
+func ensureReachableAddress(baseURL string) error {
+	baseURL = strings.TrimSpace(baseURL)
+	if baseURL == "" {
+		return fmt.Errorf("database UI is not configured")
+	}
+	u, err := url.Parse(baseURL)
+	if err != nil {
+		return err
+	}
+	host := strings.TrimSpace(u.Host)
+	if host == "" {
+		return fmt.Errorf("database UI host is not configured")
+	}
+	if !strings.Contains(host, ":") {
+		switch strings.ToLower(strings.TrimSpace(u.Scheme)) {
+		case "https":
+			host += ":443"
+		default:
+			host += ":80"
+		}
+	}
+	conn, err := net.DialTimeout("tcp", host, 2*time.Second)
+	if err != nil {
+		return fmt.Errorf("database UI helper is not reachable at %s", host)
+	}
+	_ = conn.Close()
+	return nil
+}
+
+func parseHelperTarget(baseURL string) (string, int, bool, error) {
+	u, err := url.Parse(strings.TrimSpace(baseURL))
+	if err != nil {
+		return "", 0, false, err
+	}
+	host := strings.TrimSpace(u.Hostname())
+	if host == "" {
+		return "", 0, false, fmt.Errorf("database UI host is not configured")
+	}
+	portStr := u.Port()
+	if portStr == "" {
+		if strings.EqualFold(u.Scheme, "https") {
+			portStr = "443"
+		} else {
+			portStr = "80"
+		}
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil || port <= 0 || port > 65535 {
+		return "", 0, false, fmt.Errorf("invalid database UI port")
+	}
+	ip := net.ParseIP(host)
+	loopback := host == "localhost" || (ip != nil && ip.IsLoopback())
+	return net.JoinHostPort(host, portStr), port, loopback, nil
+}
+
+func (s *DatabaseService) startPgwebHelper(port int) error {
+	if _, err := exec.LookPath("pgweb"); err != nil {
+		return fmt.Errorf("pgweb is not installed on the server")
+	}
+	logFile, err := s.helperLogFile("pgweb")
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command("pgweb", "--listen=127.0.0.1", fmt.Sprintf("--port=%d", port), "--sessions")
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
+	if err := cmd.Start(); err != nil {
+		_ = logFile.Close()
+		return err
+	}
+	_ = cmd.Process.Release()
+	return logFile.Close()
+}
+
+func (s *DatabaseService) startAdminerHelper(port int) error {
+	phpBinary, err := exec.LookPath("php")
+	if err != nil {
+		return fmt.Errorf("PHP is not installed on the server for Adminer")
+	}
+	adminerSource := firstExistingPath(
+		"/usr/share/adminer/index.php",
+		"/usr/share/adminer/adminer.php",
+		"/usr/share/php/adminer/adminer.php",
+	)
+	if adminerSource == "" {
+		return fmt.Errorf("Adminer is not installed on the server")
+	}
+	helperRoot := filepath.Join(s.cfg.Paths.StorageRoot, "generated", "adminer-helper")
+	if err := os.MkdirAll(helperRoot, 0o755); err != nil {
+		return err
+	}
+	entrypoint := filepath.Join(helperRoot, "index.php")
+	src, err := os.ReadFile(adminerSource)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(entrypoint, src, 0o644); err != nil {
+		return err
+	}
+	logFile, err := s.helperLogFile("adminer")
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command(phpBinary, "-S", fmt.Sprintf("127.0.0.1:%d", port), "-t", helperRoot)
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
+	if err := cmd.Start(); err != nil {
+		_ = logFile.Close()
+		return err
+	}
+	_ = cmd.Process.Release()
+	return logFile.Close()
+}
+
+func (s *DatabaseService) helperLogFile(name string) (*os.File, error) {
+	logDir := s.cfg.Paths.LogRoot
+	if strings.TrimSpace(logDir) == "" {
+		logDir = "./storage/logs"
+	}
+	if err := os.MkdirAll(logDir, 0o755); err != nil {
+		return nil, err
+	}
+	return os.OpenFile(filepath.Join(logDir, name+"-helper.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+}
+
+func firstExistingPath(paths ...string) string {
+	for _, candidate := range paths {
+		if strings.TrimSpace(candidate) == "" {
+			continue
+		}
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+	return ""
 }
 
 func (s *DatabaseService) provisionManagedDatabase(in DBConnectionInput) error {

@@ -197,15 +197,15 @@ func (h *AppHandler) SitesAppsCreate(c *fiber.Ctx) error {
 			}
 		}
 		in := services.WebsiteInput{
-			Name:             name,
-			RootPath:         root,
-			Type:             kind,
-			PHPVersion:       strings.TrimSpace(c.FormValue("php_version")),
-			Domains:          []string{domain},
-			CustomDirectives: "",
+			Name:                 name,
+			RootPath:             root,
+			Type:                 kind,
+			PHPVersion:           strings.TrimSpace(c.FormValue("php_version")),
+			Domains:              []string{domain},
+			CustomDirectives:     "",
 			MaintenanceBypassIPs: "",
-			SiteUserID:       siteUserID,
-			Enabled:          true,
+			SiteUserID:           siteUserID,
+			Enabled:              true,
 		}
 		if kind == "php" && strings.TrimSpace(in.PHPVersion) == "" {
 			in.PHPVersion = "8.2"
@@ -247,16 +247,16 @@ func (h *AppHandler) SitesAppsCreate(c *fiber.Ctx) error {
 			}
 		}
 		siteInput := services.WebsiteInput{
-			Name:             name,
-			RootPath:         root,
-			Type:             "proxy",
-			AppRuntime:       kind,
-			ProxyTarget:      fmt.Sprintf("http://127.0.0.1:%d", port),
-			Domains:          []string{domain},
-			CustomDirectives: "",
+			Name:                 name,
+			RootPath:             root,
+			Type:                 "proxy",
+			AppRuntime:           kind,
+			ProxyTarget:          fmt.Sprintf("http://127.0.0.1:%d", port),
+			Domains:              []string{domain},
+			CustomDirectives:     "",
 			MaintenanceBypassIPs: "",
-			SiteUserID:       siteUserID,
-			Enabled:          true,
+			SiteUserID:           siteUserID,
+			Enabled:              true,
 		}
 		site, err := h.websiteService.Create(c.Context(), siteInput, currentUserID(c), c.IP())
 		if err != nil {
@@ -583,7 +583,7 @@ func (h *AppHandler) ManageAdminerDB(c *fiber.Ctx) error {
 		h.base.Sessions.SetFlash(c, err.Error())
 		return c.Redirect(platformURLWithTab("app", id, "databases"))
 	}
-	if err := ensureToolReachable(h.databaseService.AdminerURL()); err != nil {
+	if err := h.databaseService.EnsureAdminerReady(); err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
 		return c.Redirect(platformURLWithTab("app", id, "databases"))
 	}
@@ -646,7 +646,7 @@ func (h *AppHandler) ManageOpenPostgresGUI(c *fiber.Ctx) error {
 		h.base.Sessions.SetFlash(c, err.Error())
 		return c.Redirect(platformURLWithTab("app", id, "databases"))
 	}
-	if err := ensureToolReachable(h.databaseService.PostgresGUIBaseURL()); err != nil {
+	if err := h.databaseService.EnsurePostgresGUIReady(); err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
 		return c.Redirect(platformURLWithTab("app", id, "databases"))
 	}
