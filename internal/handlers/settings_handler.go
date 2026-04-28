@@ -63,6 +63,17 @@ type SettingsHandler struct {
 	updateService      *services.UpdateService
 }
 
+type runtimeSummary struct {
+	Runtime       string
+	SourceLabel   string
+	Installed     int
+	Ready         int
+	ChoiceCount   int
+	Default       string
+	DefaultBinary string
+	DefaultScope  string
+}
+
 func NewSettingsHandler(
 	cfg *config.Config,
 	sessions *middleware.SessionManager,
@@ -234,6 +245,19 @@ func (h *SettingsHandler) Index(c *fiber.Ctx) error {
 		updateView = h.updateService.FooterView()
 	}
 
+	goEntries := h.service.RuntimeVersionStates("go")
+	nodeEntries := h.service.RuntimeVersionStates("node")
+	pythonEntries := h.service.RuntimeVersionStates("python")
+	phpEntries := h.service.RuntimeVersionStates("php")
+	goChoices := h.service.AvailableRuntimeVersions("go")
+	nodeChoices := h.service.AvailableRuntimeVersions("node")
+	pythonChoices := h.service.AvailableRuntimeVersions("python")
+	phpChoices := h.service.AvailableRuntimeVersions("php")
+	goDefault := h.runtimeDefaultStatus("go")
+	nodeDefault := h.runtimeDefaultStatus("node")
+	pythonDefault := h.runtimeDefaultStatus("python")
+	phpDefault := h.runtimeDefaultStatus("php")
+
 	return h.base.Render(c, "settings_index", fiber.Map{
 		"Title":                    "Settings",
 		"Items":                    items,
@@ -262,22 +286,26 @@ func (h *SettingsHandler) Index(c *fiber.Ctx) error {
 		"SupportedTimezones":       h.service.SupportedTimezones(),
 		"PanelBasicEnabled":        basicAuthEnabled,
 		"PanelBasicUser":           basicAuthUsername,
-		"GoRuntimeEntries":         h.service.RuntimeVersionStates("go"),
-		"NodeRuntimeEntries":       h.service.RuntimeVersionStates("node"),
-		"PythonRuntimeEntries":     h.service.RuntimeVersionStates("python"),
-		"PHPRuntimeEntries":        h.service.RuntimeVersionStates("php"),
-		"GoRuntimeChoices":         h.service.AvailableRuntimeVersions("go"),
-		"NodeRuntimeChoices":       h.service.AvailableRuntimeVersions("node"),
-		"PythonRuntimeChoices":     h.service.AvailableRuntimeVersions("python"),
-		"PHPRuntimeChoices":        h.service.AvailableRuntimeVersions("php"),
+		"GoRuntimeEntries":         goEntries,
+		"NodeRuntimeEntries":       nodeEntries,
+		"PythonRuntimeEntries":     pythonEntries,
+		"PHPRuntimeEntries":        phpEntries,
+		"GoRuntimeChoices":         goChoices,
+		"NodeRuntimeChoices":       nodeChoices,
+		"PythonRuntimeChoices":     pythonChoices,
+		"PHPRuntimeChoices":        phpChoices,
 		"GoVersions":               h.service.RuntimeVersions("go"),
 		"NodeVersions":             h.service.RuntimeVersions("node"),
 		"PythonVersions":           h.service.RuntimeVersions("python"),
 		"PHPVersions":              h.service.RuntimeVersions("php"),
-		"GoRuntimeDefault":         h.runtimeDefaultStatus("go"),
-		"NodeRuntimeDefault":       h.runtimeDefaultStatus("node"),
-		"PythonRuntimeDefault":     h.runtimeDefaultStatus("python"),
-		"PHPRuntimeDefault":        h.runtimeDefaultStatus("php"),
+		"GoRuntimeDefault":         goDefault,
+		"NodeRuntimeDefault":       nodeDefault,
+		"PythonRuntimeDefault":     pythonDefault,
+		"PHPRuntimeDefault":        phpDefault,
+		"GoRuntimeSummary":         buildRuntimeSummary("go", goEntries, goChoices, goDefault),
+		"NodeRuntimeSummary":       buildRuntimeSummary("node", nodeEntries, nodeChoices, nodeDefault),
+		"PythonRuntimeSummary":     buildRuntimeSummary("python", pythonEntries, pythonChoices, pythonDefault),
+		"PHPRuntimeSummary":        buildRuntimeSummary("php", phpEntries, phpChoices, phpDefault),
 		"ActiveTab":                activeTab,
 		"UpdateView":               updateView,
 	})
@@ -466,32 +494,30 @@ func (h *SettingsHandler) UsersDelete(c *fiber.Ctx) error {
 func (h *SettingsHandler) RuntimeVersionAdd(c *fiber.Ctx) error {
 	runtime := strings.ToLower(strings.TrimSpace(c.Params("runtime")))
 	version := strings.TrimSpace(c.FormValue("version"))
+	var runtimeResult services.RuntimeActionResult
 	if h.runtimeService != nil {
-		if err := h.runtimeService.InstallVersion(c.Context(), runtime, version, currentUserID(c), c.IP()); err != nil {
-			h.base.Sessions.SetFlash(c, err.Error())
-			return c.Redirect("/settings?tab=services")
+		result, err := h.runtimeService.InstallVersion(c.Context(), runtime, version, currentUserID(c), c.IP())
+		runtimeResult = result
+		if err != nil {
+			return h.runtimeActionError(c, err, runtimeResult)
 		}
 	}
 	if err := h.service.AddRuntimeVersion(runtime, version, currentUserID(c), c.IP()); err != nil {
-		h.base.Sessions.SetFlash(c, err.Error())
-		return c.Redirect("/settings?tab=services")
+		return h.runtimeActionError(c, err, runtimeResult)
 	}
 	_ = h.service.SyncInstalledRuntimeCatalogs()
-	h.base.Sessions.SetFlash(c, "version added")
-	return c.Redirect("/settings?tab=services")
+	return h.runtimeActionSuccess(c, "version added", runtimeResult)
 }
 
 func (h *SettingsHandler) RuntimeVersionRemove(c *fiber.Ctx) error {
 	runtime := strings.ToLower(strings.TrimSpace(c.Params("runtime")))
 	version := strings.TrimSpace(c.FormValue("version"))
 	if current := h.runtimeDefaultStatus(runtime); strings.TrimSpace(current.Version) == version {
-		h.base.Sessions.SetFlash(c, fmt.Sprintf("cannot remove %s while it is the current system default for %s", version, runtime))
-		return c.Redirect("/settings?tab=services")
+		return h.runtimeActionError(c, fmt.Errorf("cannot remove %s while it is the current system default for %s", version, runtime), services.RuntimeActionResult{})
 	}
 	usageCount, usageNames, usageErr := h.runtimeVersionUsage(runtime, version)
 	if usageErr != nil {
-		h.base.Sessions.SetFlash(c, usageErr.Error())
-		return c.Redirect("/settings?tab=services")
+		return h.runtimeActionError(c, usageErr, services.RuntimeActionResult{})
 	}
 	if usageCount > 0 {
 		msg := fmt.Sprintf("cannot remove %s: in use by %d platform(s)", version, usageCount)
@@ -507,41 +533,69 @@ func (h *SettingsHandler) RuntimeVersionRemove(c *fiber.Ctx) error {
 				msg += ")"
 			}
 		}
-		h.base.Sessions.SetFlash(c, msg)
-		return c.Redirect("/settings?tab=services")
+		return h.runtimeActionError(c, fmt.Errorf("%s", msg), services.RuntimeActionResult{})
 	}
+	var runtimeResult services.RuntimeActionResult
 	if h.runtimeService != nil {
-		if err := h.runtimeService.RemoveVersion(c.Context(), runtime, version, currentUserID(c), c.IP()); err != nil {
-			h.base.Sessions.SetFlash(c, err.Error())
-			return c.Redirect("/settings?tab=services")
+		result, err := h.runtimeService.RemoveVersion(c.Context(), runtime, version, currentUserID(c), c.IP())
+		runtimeResult = result
+		if err != nil {
+			return h.runtimeActionError(c, err, runtimeResult)
 		}
 	}
 	if err := h.service.RemoveRuntimeVersion(runtime, version, currentUserID(c), c.IP()); err != nil {
-		h.base.Sessions.SetFlash(c, err.Error())
-		return c.Redirect("/settings?tab=services")
+		return h.runtimeActionError(c, err, runtimeResult)
 	}
 	_ = h.service.SyncInstalledRuntimeCatalogs()
-	h.base.Sessions.SetFlash(c, "version removed")
-	return c.Redirect("/settings?tab=services")
+	return h.runtimeActionSuccess(c, "version removed", runtimeResult)
 }
 
 func (h *SettingsHandler) RuntimeVersionDefault(c *fiber.Ctx) error {
 	runtime := strings.ToLower(strings.TrimSpace(c.Params("runtime")))
 	version := strings.TrimSpace(c.FormValue("version"))
 	if version == "" {
-		h.base.Sessions.SetFlash(c, "version is required")
-		return c.Redirect("/settings?tab=services")
+		return h.runtimeActionError(c, fmt.Errorf("version is required"), services.RuntimeActionResult{})
 	}
 	if h.runtimeService == nil {
-		h.base.Sessions.SetFlash(c, "runtime service not available")
-		return c.Redirect("/settings?tab=services")
+		return h.runtimeActionError(c, fmt.Errorf("runtime service not available"), services.RuntimeActionResult{})
 	}
-	if err := h.runtimeService.SetSystemDefaultVersion(c.Context(), runtime, version, currentUserID(c), c.IP()); err != nil {
-		h.base.Sessions.SetFlash(c, err.Error())
-		return c.Redirect("/settings?tab=services")
+	result, err := h.runtimeService.SetSystemDefaultVersion(c.Context(), runtime, version, currentUserID(c), c.IP())
+	if err != nil {
+		return h.runtimeActionError(c, err, result)
 	}
-	h.base.Sessions.SetFlash(c, fmt.Sprintf("%s default set to %s", strings.ToUpper(runtime), version))
+	return h.runtimeActionSuccess(c, fmt.Sprintf("%s default set to %s", strings.ToUpper(runtime), version), result)
+}
+
+func (h *SettingsHandler) runtimeActionError(c *fiber.Ctx, err error, result services.RuntimeActionResult) error {
+	if h.runtimeAsync(c) {
+		return c.Status(400).JSON(fiber.Map{
+			"ok":       false,
+			"error":    err.Error(),
+			"stdout":   result.Stdout,
+			"stderr":   result.Stderr,
+			"redirect": "/settings?tab=services",
+		})
+	}
+	h.base.Sessions.SetFlash(c, err.Error())
 	return c.Redirect("/settings?tab=services")
+}
+
+func (h *SettingsHandler) runtimeActionSuccess(c *fiber.Ctx, message string, result services.RuntimeActionResult) error {
+	if h.runtimeAsync(c) {
+		return c.JSON(fiber.Map{
+			"ok":       true,
+			"message":  message,
+			"stdout":   result.Stdout,
+			"stderr":   result.Stderr,
+			"redirect": "/settings?tab=services",
+		})
+	}
+	h.base.Sessions.SetFlash(c, message)
+	return c.Redirect("/settings?tab=services")
+}
+
+func (h *SettingsHandler) runtimeAsync(c *fiber.Ctx) bool {
+	return strings.EqualFold(strings.TrimSpace(c.Get("X-DeployCP-Async")), "runtime")
 }
 
 func (h *SettingsHandler) runtimeDefaultStatus(runtime string) services.RuntimeDefaultStatus {
@@ -549,6 +603,33 @@ func (h *SettingsHandler) runtimeDefaultStatus(runtime string) services.RuntimeD
 		return services.RuntimeDefaultStatus{Runtime: runtime}
 	}
 	return h.runtimeService.SystemDefaultVersion(runtime)
+}
+
+func buildRuntimeSummary(runtime string, entries []services.RuntimeVersionState, choices []string, def services.RuntimeDefaultStatus) runtimeSummary {
+	ready := 0
+	for _, item := range entries {
+		if item.Verified {
+			ready++
+		}
+	}
+	scope := "host binary"
+	if def.Managed {
+		scope = "deploycp managed"
+	}
+	source := "Managed runtime catalog"
+	if len(choices) == 0 {
+		source = "Installed versions only"
+	}
+	return runtimeSummary{
+		Runtime:       runtime,
+		SourceLabel:   source,
+		Installed:     len(entries),
+		Ready:         ready,
+		ChoiceCount:   len(choices),
+		Default:       strings.TrimSpace(def.Version),
+		DefaultBinary: strings.TrimSpace(def.Binary),
+		DefaultScope:  scope,
+	}
 }
 
 func (h *SettingsHandler) FirewallCreate(c *fiber.Ctx) error {

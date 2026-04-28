@@ -12,7 +12,7 @@ import (
 var (
 	domainRe = regexp.MustCompile(`^[a-zA-Z0-9.-]+$`)
 	userRe   = regexp.MustCompile(`^[a-z_][a-z0-9_-]{2,31}$`)
-	phpRe    = regexp.MustCompile(`^[0-9]+\.[0-9]+$`)
+	phpRe    = regexp.MustCompile(`^[0-9]+\.[0-9]+(\.[0-9]+)?$`)
 )
 
 func Require(v, field string) error {

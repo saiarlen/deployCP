@@ -340,7 +340,13 @@
             {{ if GoRuntimeDefault.Binary }}<span class="badge badge-neutral">{{ if GoRuntimeDefault.Managed }}deploycp managed{{ else }}host binary{{ end }}</span>{{ end }}
           </div>
           {{ if GoRuntimeDefault.Binary }}<p class="text-xs opacity-70 font-mono break-all mb-3">{{ GoRuntimeDefault.Binary }}</p>{{ end }}
-          <form action="/settings/runtime-versions/go/default" method="post" class="flex gap-2">
+          <div class="runtime-summary-grid mb-3">
+            <span class="runtime-summary-pill">catalog: {{ GoRuntimeSummary.SourceLabel }}</span>
+            <span class="runtime-summary-pill">installed: {{ GoRuntimeSummary.Installed }}</span>
+            <span class="runtime-summary-pill">ready: {{ GoRuntimeSummary.Ready }}</span>
+            <span class="runtime-summary-pill">choices: {{ GoRuntimeSummary.ChoiceCount }}</span>
+          </div>
+          <form action="/settings/runtime-versions/go/default" method="post" class="flex gap-2 runtime-version-action-form" data-runtime-action="set-default" data-runtime-kind="go">
             <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
             <select class="field flex-1" name="version" required>
               <option value="" selected disabled>Select installed Go version</option>
@@ -358,7 +364,13 @@
             {{ if NodeRuntimeDefault.Binary }}<span class="badge badge-neutral">{{ if NodeRuntimeDefault.Managed }}deploycp managed{{ else }}host binary{{ end }}</span>{{ end }}
           </div>
           {{ if NodeRuntimeDefault.Binary }}<p class="text-xs opacity-70 font-mono break-all mb-3">{{ NodeRuntimeDefault.Binary }}</p>{{ end }}
-          <form action="/settings/runtime-versions/node/default" method="post" class="flex gap-2">
+          <div class="runtime-summary-grid mb-3">
+            <span class="runtime-summary-pill">catalog: {{ NodeRuntimeSummary.SourceLabel }}</span>
+            <span class="runtime-summary-pill">installed: {{ NodeRuntimeSummary.Installed }}</span>
+            <span class="runtime-summary-pill">ready: {{ NodeRuntimeSummary.Ready }}</span>
+            <span class="runtime-summary-pill">choices: {{ NodeRuntimeSummary.ChoiceCount }}</span>
+          </div>
+          <form action="/settings/runtime-versions/node/default" method="post" class="flex gap-2 runtime-version-action-form" data-runtime-action="set-default" data-runtime-kind="node">
             <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
             <select class="field flex-1" name="version" required>
               <option value="" selected disabled>Select installed Node version</option>
@@ -376,7 +388,13 @@
             {{ if PythonRuntimeDefault.Binary }}<span class="badge badge-neutral">{{ if PythonRuntimeDefault.Managed }}deploycp managed{{ else }}host binary{{ end }}</span>{{ end }}
           </div>
           {{ if PythonRuntimeDefault.Binary }}<p class="text-xs opacity-70 font-mono break-all mb-3">{{ PythonRuntimeDefault.Binary }}</p>{{ end }}
-          <form action="/settings/runtime-versions/python/default" method="post" class="flex gap-2">
+          <div class="runtime-summary-grid mb-3">
+            <span class="runtime-summary-pill">catalog: {{ PythonRuntimeSummary.SourceLabel }}</span>
+            <span class="runtime-summary-pill">installed: {{ PythonRuntimeSummary.Installed }}</span>
+            <span class="runtime-summary-pill">ready: {{ PythonRuntimeSummary.Ready }}</span>
+            <span class="runtime-summary-pill">choices: {{ PythonRuntimeSummary.ChoiceCount }}</span>
+          </div>
+          <form action="/settings/runtime-versions/python/default" method="post" class="flex gap-2 runtime-version-action-form" data-runtime-action="set-default" data-runtime-kind="python">
             <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
             <select class="field flex-1" name="version" required>
               <option value="" selected disabled>Select installed Python version</option>
@@ -394,7 +412,13 @@
             {{ if PHPRuntimeDefault.Binary }}<span class="badge badge-neutral">{{ if PHPRuntimeDefault.Managed }}deploycp managed{{ else }}host binary{{ end }}</span>{{ end }}
           </div>
           {{ if PHPRuntimeDefault.Binary }}<p class="text-xs opacity-70 font-mono break-all mb-3">{{ PHPRuntimeDefault.Binary }}</p>{{ end }}
-          <form action="/settings/runtime-versions/php/default" method="post" class="flex gap-2">
+          <div class="runtime-summary-grid mb-3">
+            <span class="runtime-summary-pill">catalog: {{ PHPRuntimeSummary.SourceLabel }}</span>
+            <span class="runtime-summary-pill">installed: {{ PHPRuntimeSummary.Installed }}</span>
+            <span class="runtime-summary-pill">ready: {{ PHPRuntimeSummary.Ready }}</span>
+            <span class="runtime-summary-pill">choices: {{ PHPRuntimeSummary.ChoiceCount }}</span>
+          </div>
+          <form action="/settings/runtime-versions/php/default" method="post" class="flex gap-2 runtime-version-action-form" data-runtime-action="set-default" data-runtime-kind="php">
             <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
             <select class="field flex-1" name="version" required>
               <option value="" selected disabled>Select installed PHP version</option>
@@ -408,7 +432,7 @@
 
     <section class="surface p-5 sm:p-6 mb-5">
       <h2 class="text-lg font-semibold">Runtime Version Management</h2>
-      <p class="text-sm opacity-70 mt-1">Installed versions are discovered from the host runtime root and validated through real runtime wrappers. On supported Linux package managers, add-version dropdowns are populated from the actual package source.</p>
+      <p class="text-sm opacity-70 mt-1">Installed versions are discovered from the host runtime root and validated through real runtime wrappers. Add-version dropdowns prefer the managed remote runtime catalog, with package-manager fallback only when the managed backend is unavailable.</p>
       <div class="grid gap-4 lg:grid-cols-2 mt-4">
         <div class="rounded-lg border border-[var(--border)] p-4">
           <h3 class="font-semibold mb-2">Go Versions</h3>
@@ -1095,12 +1119,27 @@ $(function () {
   }
 
   function runtimeProgressScript(action, runtime, version) {
-    var noun = action === 'remove' ? 'Removing' : 'Installing';
+    if (action === 'set-default') {
+      return [
+        'Preparing managed runtime wrappers...',
+        'Switching the system-wide ' + runtime + ' command to ' + version + '...',
+        'Validating the selected default command path...',
+        'Refreshing runtime defaults in the settings view...'
+      ];
+    }
+    if (action === 'remove') {
+      return [
+        'Checking whether any platform still uses ' + version + '...',
+        'Removing the managed runtime version from the host...',
+        'Cleaning the DeployCP runtime directory...',
+        'Refreshing the installed runtime catalog...'
+      ];
+    }
     return [
-      noun + ' ' + runtime + ' ' + version + '...',
-      'Resolving packages and runtime binaries...',
-      'Syncing runtime catalog and validating platform usage...',
-      'This can take a few minutes on a fresh Linux host.'
+      'Loading the managed remote runtime catalog...',
+      'Installing ' + runtime + ' ' + version + ' on this host...',
+      runtime === 'php' ? 'PHP may compile from source, so this can take several minutes on a fresh server.' : 'This can take a few minutes on a fresh Linux host.',
+      'Verifying the installed wrapper and refreshing the runtime catalog...'
     ];
   }
 
@@ -1114,13 +1153,13 @@ $(function () {
     var form = this;
     var action = String(form.getAttribute('data-runtime-action') || 'install').toLowerCase();
     var runtime = String(form.getAttribute('data-runtime-kind') || '').toLowerCase();
-    var versionInput = form.querySelector('input[name="version"]');
+    var versionInput = form.querySelector('[name="version"]');
     var version = versionInput ? String(versionInput.value || '').trim() : String(form.getAttribute('data-runtime-version') || '').trim();
-    var title = (action === 'remove' ? 'Remove ' : 'Install ') + runtime.toUpperCase() + ' ' + version;
+    var title = (action === 'remove' ? 'Remove ' : action === 'set-default' ? 'Set Default ' : 'Install ') + runtime.toUpperCase() + ' ' + version;
     runtimeOpenModal(title);
     var lines = runtimeProgressScript(action, runtime, version);
     var idx = 0;
-    runtimeLine('$ ' + (action === 'remove' ? 'remove' : 'install') + ' ' + runtime + ' ' + version);
+    runtimeLine('$ ' + (action === 'remove' ? 'remove' : action === 'set-default' ? 'set-default' : 'install') + ' ' + runtime + ' ' + version);
     runtimeLine(lines[idx++]);
     runtimeTerminalTimer = window.setInterval(function () {
       if (idx >= lines.length) {
@@ -1137,13 +1176,25 @@ $(function () {
     fetch(form.action, {
       method: (form.method || 'POST').toUpperCase(),
       body: new FormData(form),
-      headers: { 'Accept': 'text/html' },
+      headers: { 'Accept': 'application/json', 'X-DeployCP-Async': 'runtime' },
       credentials: 'same-origin'
     }).then(function (resp) {
-      runtimeLine(resp.ok ? 'Host operation completed. Refreshing service catalog...' : 'Operation returned an error. Reloading settings for details...');
+      return resp.json().catch(function () {
+        return { ok: false, error: 'invalid response from server', redirect: '/settings?tab=services' };
+      });
+    }).then(function (payload) {
+      if (payload && payload.stdout) runtimeLine(payload.stdout);
+      if (payload && payload.stderr) runtimeLine(payload.stderr);
+      if (payload && payload.ok) {
+        runtimeLine(payload.message || 'Host operation completed. Refreshing service catalog...');
+      } else {
+        runtimeLine('Operation failed.');
+        if (payload && payload.error) runtimeLine(payload.error);
+        if (runtime === 'php') runtimeLine('If PHP failed, review missing build libraries and retry after the host packages are installed.');
+      }
       runtimeCloseReady();
       window.setTimeout(function () {
-        window.location.href = resp.url || '/settings?tab=services';
+        window.location.href = (payload && payload.redirect) || '/settings?tab=services';
       }, 700);
     }).catch(function (err) {
       runtimeLine('Request failed: ' + (err && err.message ? err.message : 'unknown error'));

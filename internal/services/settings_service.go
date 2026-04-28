@@ -30,7 +30,7 @@ type RuntimeVersionState struct {
 
 var (
 	runtimeGoRe     = regexp.MustCompile(`^go[0-9]+\.[0-9]+(\.[0-9]+)?$`)
-	runtimeNodeRe   = regexp.MustCompile(`^node[0-9]+(\.[0-9]+)?$`)
+	runtimeNodeRe   = regexp.MustCompile(`^node[0-9]+(\.[0-9]+){0,2}$`)
 	runtimePythonRe = regexp.MustCompile(`^python[0-9]+\.[0-9]+(\.[0-9]+)?$`)
 	runtimePHPRe    = regexp.MustCompile(`^[0-9]+\.[0-9]+(\.[0-9]+)?$`)
 	aptPHPPkgRe     = regexp.MustCompile(`^php([0-9]+\.[0-9]+)-(cli|fpm)$`)
@@ -187,6 +187,9 @@ func (s *SettingsService) AvailableRuntimeVersions(runtime string) []string {
 	if strings.EqualFold(strings.TrimSpace(s.cfg.Features.PlatformMode), "dryrun") {
 		return s.configuredRuntimeVersions(runtime)
 	}
+	if managed := s.managedAvailableRuntimeVersions(runtime); len(managed) > 0 {
+		return managed
+	}
 	switch s.detectPackageManager() {
 	case "apt":
 		return s.aptAvailableRuntimeVersions(runtime)
@@ -195,6 +198,38 @@ func (s *SettingsService) AvailableRuntimeVersions(runtime string) []string {
 	default:
 		return []string{}
 	}
+}
+
+func (s *SettingsService) managedAvailableRuntimeVersions(runtime string) []string {
+	script := filepath.Join(".", "scripts", "linux", "runtime-manager.sh")
+	if st, err := os.Stat(script); err != nil || st.IsDir() {
+		return []string{}
+	}
+	out, err := exec.Command(
+		"/bin/bash",
+		script,
+		"list-remote",
+		runtime,
+		"-",
+		s.cfg.Paths.RuntimeRoot,
+	).Output()
+	if err != nil {
+		return []string{}
+	}
+	seen := map[string]struct{}{}
+	versions := make([]string, 0, 8)
+	for _, line := range strings.Split(string(out), "\n") {
+		version := strings.TrimSpace(line)
+		if version == "" || !isValidRuntimeVersion(runtime, version) {
+			continue
+		}
+		if _, ok := seen[version]; ok {
+			continue
+		}
+		seen[version] = struct{}{}
+		versions = append(versions, version)
+	}
+	return versions
 }
 
 func (s *SettingsService) SyncInstalledRuntimeCatalogs() error {
@@ -325,7 +360,7 @@ func (s *SettingsService) AddRuntimeVersion(runtime, version string, actor *uint
 		return fmt.Errorf("invalid %s version", strings.TrimSpace(runtime))
 	}
 	if available := s.AvailableRuntimeVersions(runtime); len(available) > 0 && !containsRuntimeVersion(available, v) {
-		return fmt.Errorf("%s is not available from the detected package source", v)
+		return fmt.Errorf("%s is not available from the managed runtime catalog", v)
 	}
 	versions := s.RuntimeVersions(runtime)
 	for _, item := range versions {

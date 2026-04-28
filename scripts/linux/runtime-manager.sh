@@ -7,14 +7,60 @@ version="${3:-}"
 runtime_root="${4:-}"
 
 if [[ -z "$action" || -z "$runtime" || -z "$version" || -z "$runtime_root" ]]; then
-  echo "usage: runtime-manager.sh <install|remove|set-default> <runtime> <version> <runtime_root>" >&2
+  echo "usage: runtime-manager.sh <install|remove|set-default|list-remote> <runtime> <version> <runtime_root>" >&2
   exit 1
 fi
 
 version_dir="${runtime_root}/${runtime}/${version}"
 bin_dir="${version_dir}/bin"
-mkdir -p "$bin_dir"
 global_bin_dir="/usr/local/bin"
+asdf_dir="${runtime_root}/_asdf"
+asdf_data_dir="${runtime_root}/_asdf_data"
+asdf_version="v0.18.0"
+catalog_cache_dir="${runtime_root}/_catalog_cache"
+catalog_cache_file="${catalog_cache_dir}/${runtime}.txt"
+
+asdf_tool_name() {
+  case "$runtime" in
+    go) echo "golang" ;;
+    node) echo "nodejs" ;;
+    python) echo "python" ;;
+    php) echo "php" ;;
+    *)
+      echo ""
+      return 1
+      ;;
+  esac
+}
+
+asdf_plugin_url() {
+  case "$runtime" in
+    go) echo "https://github.com/asdf-community/asdf-golang.git" ;;
+    node) echo "https://github.com/asdf-vm/asdf-nodejs.git" ;;
+    python) echo "https://github.com/asdf-community/asdf-python.git" ;;
+    php) echo "https://github.com/asdf-community/asdf-php.git" ;;
+    *)
+      echo ""
+      return 1
+      ;;
+  esac
+}
+
+requested_runtime_version() {
+  case "$runtime" in
+    go) printf '%s\n' "${version#go}" ;;
+    node) printf '%s\n' "${version#node}" ;;
+    python) printf '%s\n' "${version#python}" ;;
+    php) printf '%s\n' "$version" ;;
+    *)
+      printf '%s\n' "$version"
+      ;;
+  esac
+}
+
+if [[ "$action" != "list-remote" ]]; then
+  mkdir -p "$bin_dir"
+fi
 
 pkg_manager() {
   if command -v apt-get >/dev/null 2>&1; then echo apt; return; fi
@@ -96,6 +142,126 @@ remove_packages() {
     pacman) pacman -Rns --noconfirm "$@" ;;
     *) ;;
   esac
+}
+
+install_manager_prereqs() {
+  local manager="$1"
+  case "$manager" in
+    apt)
+      install_packages "$manager" ca-certificates curl git gawk coreutils tar xz-utils unzip
+      ;;
+    dnf|yum)
+      install_packages "$manager" ca-certificates curl git gawk coreutils tar xz unzip
+      ;;
+    zypper)
+      install_packages "$manager" ca-certificates curl git gawk coreutils tar xz unzip
+      ;;
+    pacman)
+      install_packages "$manager" ca-certificates curl git gawk coreutils tar xz unzip
+      ;;
+  esac
+}
+
+install_runtime_build_deps() {
+  local manager="$1"
+  case "$runtime" in
+    node)
+      case "$manager" in
+        apt) install_packages "$manager" dirmngr gpg build-essential python3 ;;
+        dnf|yum) install_packages "$manager" gnupg2 gcc gcc-c++ make python3 ;;
+        zypper) install_packages "$manager" gpg2 gcc gcc-c++ make python3 ;;
+        pacman) install_packages "$manager" gnupg base-devel python ;;
+      esac
+      ;;
+    python)
+      case "$manager" in
+        apt) install_packages "$manager" build-essential libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev libffi-dev liblzma-dev tk-dev xz-utils ;;
+        dnf|yum) install_packages "$manager" gcc make patch zlib-devel bzip2 bzip2-devel readline-devel sqlite sqlite-devel openssl-devel tk-devel libffi-devel xz-devel ;;
+        zypper) install_packages "$manager" gcc make patch zlib-devel libbz2-devel readline-devel sqlite3-devel libopenssl-devel tk-devel libffi-devel xz-devel ;;
+        pacman) install_packages "$manager" base-devel zlib bzip2 readline sqlite openssl tk libffi xz ;;
+      esac
+      ;;
+    php)
+      case "$manager" in
+        apt) install_packages "$manager" build-essential autoconf bison re2c pkg-config libxml2-dev libsqlite3-dev libssl-dev libcurl4-openssl-dev libonig-dev libzip-dev ;;
+        dnf|yum) install_packages "$manager" gcc gcc-c++ make autoconf bison re2c pkgconfig libxml2-devel sqlite-devel openssl-devel libcurl-devel oniguruma-devel libzip-devel ;;
+        zypper) install_packages "$manager" gcc gcc-c++ make autoconf bison re2c pkg-config libxml2-devel sqlite3-devel libopenssl-devel libcurl-devel oniguruma-devel libzip-devel ;;
+        pacman) install_packages "$manager" base-devel autoconf bison re2c pkgconf libxml2 sqlite openssl curl oniguruma libzip ;;
+      esac
+      ;;
+  esac
+}
+
+ensure_asdf() {
+  local manager="$1"
+  install_manager_prereqs "$manager"
+  mkdir -p "$runtime_root"
+  if [[ ! -f "${asdf_dir}/asdf.sh" ]]; then
+    rm -rf "$asdf_dir"
+    git clone --branch "$asdf_version" https://github.com/asdf-vm/asdf.git "$asdf_dir"
+  fi
+  export ASDF_DIR="$asdf_dir"
+  export ASDF_DATA_DIR="$asdf_data_dir"
+  # shellcheck disable=SC1090
+  . "${asdf_dir}/asdf.sh"
+}
+
+ensure_asdf_plugin() {
+  local tool="$1"
+  local url="$2"
+  if [[ -z "$tool" || -z "$url" ]]; then
+    return 1
+  fi
+  if ! asdf plugin list | grep -qx "$tool"; then
+    asdf plugin add "$tool" "$url"
+  fi
+}
+
+asdf_install_version() {
+  local tool="$1"
+  local req="$2"
+  [[ -n "$tool" && -n "$req" ]] || return 1
+  asdf install "$tool" "$req"
+}
+
+asdf_uninstall_version() {
+  local tool="$1"
+  local req="$2"
+  [[ -n "$tool" && -n "$req" ]] || return 1
+  asdf uninstall "$tool" "$req"
+}
+
+asdf_install_path() {
+  local tool="$1"
+  local req="$2"
+  asdf where "$tool" "$req"
+}
+
+list_remote_versions() {
+  local tool="$1"
+  local raw
+  raw="$(asdf list all "$tool" 2>/dev/null || true)"
+  [[ -n "$raw" ]] || return 1
+  case "$runtime" in
+    go)
+      printf '%s\n' "$raw" | awk '/^[0-9]+\.[0-9]+(\.[0-9]+)?$/ {print "go"$0}' | tail -n 8 | tac
+      ;;
+    node)
+      printf '%s\n' "$raw" | awk '/^[0-9]+\.[0-9]+\.[0-9]+$/ {print "node"$0}' | tail -n 8 | tac
+      ;;
+    python)
+      printf '%s\n' "$raw" | awk '/^[0-9]+\.[0-9]+(\.[0-9]+)?$/ {print "python"$0}' | tail -n 8 | tac
+      ;;
+    php)
+      printf '%s\n' "$raw" | awk '/^[0-9]+\.[0-9]+(\.[0-9]+)?$/ {print $0}' | tail -n 8 | tac
+      ;;
+  esac
+}
+
+cat_cached_versions_if_fresh() {
+  [[ -f "$catalog_cache_file" ]] || return 1
+  find "$catalog_cache_file" -mmin -720 >/dev/null 2>&1 || return 1
+  cat "$catalog_cache_file"
 }
 
 is_executable_file() {
@@ -292,10 +458,20 @@ EOF
 
 prepare_runtime_binaries() {
   rm -f "${bin_dir}/"*
+  local requested=""
+  requested="$(requested_runtime_version)"
+  local tool=""
+  tool="$(asdf_tool_name)"
+  local install_dir=""
+  install_dir="$(asdf_install_path "$tool" "$requested" 2>/dev/null || true)"
+  if [[ -z "$install_dir" || ! -d "$install_dir" ]]; then
+    echo "failed to resolve managed runtime path for ${runtime}:${version}" >&2
+    exit 1
+  fi
   case "$runtime" in
     go)
       local go_bin=""
-      go_bin="$(detect_go_binary || true)"
+      go_bin="${install_dir}/bin/go"
       if ! is_executable_file "$go_bin"; then
         echo "failed to prepare strict Go runtime for ${version}" >&2
         exit 1
@@ -307,20 +483,23 @@ prepare_runtime_binaries() {
       ;;
     node)
       local node_bin=""
-      node_bin="$(detect_node_binary || true)"
+      node_bin="${install_dir}/bin/node"
       if ! is_executable_file "$node_bin"; then
         echo "failed to prepare strict Node runtime for ${version}" >&2
         exit 1
       fi
       write_exec_wrapper "node" "$node_bin" "node" "${version#node}"
       write_exec_wrapper "nodejs" "$node_bin" "node" "${version#node}"
-      write_passthrough_wrapper "npm" "$(command -v npm || true)" || true
-      write_passthrough_wrapper "npx" "$(command -v npx || true)" || true
-      write_passthrough_wrapper "pm2" "$(command -v pm2 || true)" || true
+      write_passthrough_wrapper "npm" "${install_dir}/bin/npm" || true
+      write_passthrough_wrapper "npx" "${install_dir}/bin/npx" || true
+      write_passthrough_wrapper "pm2" "${install_dir}/bin/pm2" || true
       ;;
     python)
       local python_bin=""
-      python_bin="$(detect_python_binary || true)"
+      python_bin="${install_dir}/bin/python"
+      if [[ ! -x "$python_bin" && -x "${install_dir}/bin/python3" ]]; then
+        python_bin="${install_dir}/bin/python3"
+      fi
       if ! is_executable_file "$python_bin"; then
         echo "failed to prepare strict Python runtime for ${version}" >&2
         exit 1
@@ -335,7 +514,7 @@ prepare_runtime_binaries() {
       ;;
     php)
       local php_bin=""
-      php_bin="$(detect_php_binary || true)"
+      php_bin="${install_dir}/bin/php"
       if ! is_executable_file "$php_bin"; then
         echo "failed to prepare strict PHP runtime for ${version}" >&2
         exit 1
@@ -464,35 +643,37 @@ package_list() {
 }
 
 manager="$(pkg_manager)"
-pkgs="$(package_list "$manager")"
+tool_name="$(asdf_tool_name)"
+plugin_url="$(asdf_plugin_url)"
+requested_version_value="$(requested_runtime_version)"
 
 case "$action" in
+  list-remote)
+    mkdir -p "$catalog_cache_dir"
+    if cat_cached_versions_if_fresh >/dev/null 2>&1; then
+      cat_cached_versions_if_fresh
+      exit 0
+    fi
+    ensure_asdf "$manager"
+    ensure_asdf_plugin "$tool_name" "$plugin_url"
+    list_remote_versions "$tool_name" | tee "$catalog_cache_file"
+    ;;
   install)
-    if [[ "$manager" == "dnf" || "$manager" == "yum" ]]; then
-      if [[ "$runtime" == "node" && "$version" =~ ^node([0-9]+) ]]; then
-        enable_module_stream "$manager" "nodejs" "${BASH_REMATCH[1]}" || true
-      fi
-      if [[ "$runtime" == "php" && "$version" =~ ^([0-9]+\.[0-9]+)$ ]]; then
-        php_digits="${version/./}"
-        if ! package_available "$manager" "php${php_digits}-php-cli"; then
-          enable_module_stream "$manager" "php" "$version" || true
-        fi
-      fi
-    fi
-    if [[ -n "$pkgs" ]]; then
-      # shellcheck disable=SC2086
-      install_packages "$manager" $pkgs
-    fi
+    ensure_asdf "$manager"
+    ensure_asdf_plugin "$tool_name" "$plugin_url"
+    install_runtime_build_deps "$manager" || true
+    asdf_install_version "$tool_name" "$requested_version_value"
     prepare_runtime_binaries
     ;;
   remove)
-    if [[ -n "$pkgs" ]]; then
-      # shellcheck disable=SC2086
-      remove_packages "$manager" $pkgs || true
-    fi
+    ensure_asdf "$manager"
+    ensure_asdf_plugin "$tool_name" "$plugin_url"
+    asdf_uninstall_version "$tool_name" "$requested_version_value" || true
     rm -rf "$version_dir"
     ;;
   set-default)
+    ensure_asdf "$manager"
+    ensure_asdf_plugin "$tool_name" "$plugin_url"
     prepare_runtime_binaries
     set_system_default_runtime
     ;;

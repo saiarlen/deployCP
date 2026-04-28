@@ -28,6 +28,11 @@ type RuntimeDefaultStatus struct {
 	Managed bool
 }
 
+type RuntimeActionResult struct {
+	Stdout string
+	Stderr string
+}
+
 var (
 	goVersionOutRe     = regexp.MustCompile(`go([0-9]+\.[0-9]+(?:\.[0-9]+)?)`)
 	nodeVersionOutRe   = regexp.MustCompile(`v([0-9]+(?:\.[0-9]+){0,2})`)
@@ -39,85 +44,55 @@ func NewRuntimeService(cfg *config.Config, runner *system.Runner, audit *AuditSe
 	return &RuntimeService{cfg: cfg, runner: runner, audit: audit}
 }
 
-func (s *RuntimeService) InstallVersion(ctx context.Context, runtime, version string, actor *uint, ip string) error {
+func (s *RuntimeService) InstallVersion(ctx context.Context, runtime, version string, actor *uint, ip string) (RuntimeActionResult, error) {
 	runtime = strings.ToLower(strings.TrimSpace(runtime))
 	version = strings.TrimSpace(version)
 	if runtime == "" || version == "" {
-		return fmt.Errorf("runtime and version are required")
+		return RuntimeActionResult{}, fmt.Errorf("runtime and version are required")
 	}
 	if s.cfg.Features.PlatformMode == "dryrun" {
-		return s.ensureRuntimeBinDir(runtime, version)
+		return RuntimeActionResult{}, s.ensureRuntimeBinDir(runtime, version)
 	}
-	script, err := s.helperScriptPath()
+	result, err := s.runRuntimeAction(ctx, "install", runtime, version, 15*time.Minute, "runtime.install", actor, ip)
 	if err != nil {
-		return err
-	}
-	if _, err := s.runner.Run(ctx, system.CommandRequest{
-		Binary:      "/bin/bash",
-		Args:        []string{script, "install", runtime, version, s.cfg.Paths.RuntimeRoot},
-		Timeout:     15 * time.Minute,
-		AuditAction: "runtime.install",
-		ActorUserID: actor,
-		IP:          ip,
-	}); err != nil {
-		return err
+		return result, err
 	}
 	s.audit.Record(actor, "runtime.install", "runtime_version", runtime+":"+version, ip, nil)
-	return nil
+	return result, nil
 }
 
-func (s *RuntimeService) RemoveVersion(ctx context.Context, runtime, version string, actor *uint, ip string) error {
+func (s *RuntimeService) RemoveVersion(ctx context.Context, runtime, version string, actor *uint, ip string) (RuntimeActionResult, error) {
 	runtime = strings.ToLower(strings.TrimSpace(runtime))
 	version = strings.TrimSpace(version)
 	if runtime == "" || version == "" {
-		return fmt.Errorf("runtime and version are required")
+		return RuntimeActionResult{}, fmt.Errorf("runtime and version are required")
 	}
 	if s.cfg.Features.PlatformMode == "dryrun" {
-		return os.RemoveAll(s.runtimeVersionDir(runtime, version))
+		return RuntimeActionResult{}, os.RemoveAll(s.runtimeVersionDir(runtime, version))
 	}
-	script, err := s.helperScriptPath()
+	result, err := s.runRuntimeAction(ctx, "remove", runtime, version, 10*time.Minute, "runtime.remove", actor, ip)
 	if err != nil {
-		return err
-	}
-	if _, err := s.runner.Run(ctx, system.CommandRequest{
-		Binary:      "/bin/bash",
-		Args:        []string{script, "remove", runtime, version, s.cfg.Paths.RuntimeRoot},
-		Timeout:     10 * time.Minute,
-		AuditAction: "runtime.remove",
-		ActorUserID: actor,
-		IP:          ip,
-	}); err != nil {
-		return err
+		return result, err
 	}
 	s.audit.Record(actor, "runtime.remove", "runtime_version", runtime+":"+version, ip, nil)
-	return nil
+	return result, nil
 }
 
-func (s *RuntimeService) SetSystemDefaultVersion(ctx context.Context, runtime, version string, actor *uint, ip string) error {
+func (s *RuntimeService) SetSystemDefaultVersion(ctx context.Context, runtime, version string, actor *uint, ip string) (RuntimeActionResult, error) {
 	runtime = strings.ToLower(strings.TrimSpace(runtime))
 	version = strings.TrimSpace(version)
 	if runtime == "" || version == "" {
-		return fmt.Errorf("runtime and version are required")
+		return RuntimeActionResult{}, fmt.Errorf("runtime and version are required")
 	}
 	if s.cfg.Features.PlatformMode == "dryrun" {
-		return nil
+		return RuntimeActionResult{}, nil
 	}
-	script, err := s.helperScriptPath()
+	result, err := s.runRuntimeAction(ctx, "set-default", runtime, version, 2*time.Minute, "runtime.default.set", actor, ip)
 	if err != nil {
-		return err
-	}
-	if _, err := s.runner.Run(ctx, system.CommandRequest{
-		Binary:      "/bin/bash",
-		Args:        []string{script, "set-default", runtime, version, s.cfg.Paths.RuntimeRoot},
-		Timeout:     2 * time.Minute,
-		AuditAction: "runtime.default.set",
-		ActorUserID: actor,
-		IP:          ip,
-	}); err != nil {
-		return err
+		return result, err
 	}
 	s.audit.Record(actor, "runtime.default.set", "runtime_default", runtime+":"+version, ip, nil)
-	return nil
+	return result, nil
 }
 
 func (s *RuntimeService) SystemDefaultVersion(runtime string) RuntimeDefaultStatus {
@@ -258,6 +233,29 @@ func (s *RuntimeService) helperScriptPath() (string, error) {
 		}
 	}
 	return "", fmt.Errorf("runtime helper script not found")
+}
+
+func (s *RuntimeService) runRuntimeAction(ctx context.Context, action, runtime, version string, timeout time.Duration, auditAction string, actor *uint, ip string) (RuntimeActionResult, error) {
+	script, err := s.helperScriptPath()
+	if err != nil {
+		return RuntimeActionResult{}, err
+	}
+	res, runErr := s.runner.Run(ctx, system.CommandRequest{
+		Binary:      "/bin/bash",
+		Args:        []string{script, action, runtime, version, s.cfg.Paths.RuntimeRoot},
+		Timeout:     timeout,
+		AuditAction: auditAction,
+		ActorUserID: actor,
+		IP:          ip,
+	})
+	result := RuntimeActionResult{
+		Stdout: strings.TrimSpace(res.Stdout),
+		Stderr: strings.TrimSpace(res.Stderr),
+	}
+	if runErr != nil {
+		return result, runErr
+	}
+	return result, nil
 }
 
 func (s *RuntimeService) ensureRuntimeBinDir(runtime, version string) error {

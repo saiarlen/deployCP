@@ -1002,6 +1002,23 @@ body.light-theme .settings-tab-active { color: var(--primary-dark); }
   color: var(--danger);
   background: var(--danger-soft);
 }
+.runtime-summary-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.runtime-summary-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-subtle);
+  color: var(--text-sec);
+  font-size: 0.75rem;
+  line-height: 1.2;
+}
 .runtime-terminal-card {
   width: min(760px, calc(100vw - 2rem));
 }
