@@ -75,7 +75,7 @@ require_input() {
 require_commands() {
   local missing=0
   local cmd
-  for cmd in curl sqlite3 sed awk grep tr mktemp getent runuser timeout; do
+  for cmd in curl sqlite3 sed awk grep tr mktemp getent runuser timeout base64; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
       echo "Missing required command: $cmd" >&2
       missing=1
@@ -277,6 +277,40 @@ website_id_by_domain() {
   sql_single "select website_id from website_domains where domain = '$(sql_escape "$domain")' order by id desc limit 1;"
 }
 
+decode_platform_ref() {
+  local ref="$1"
+  if [[ -z "$ref" ]]; then
+    return 1
+  fi
+  local normalized="$ref"
+  normalized="${normalized//-/+}"
+  normalized="${normalized//_/\/}"
+  local mod=$(( ${#normalized} % 4 ))
+  if [[ $mod -eq 2 ]]; then
+    normalized="${normalized}=="
+  elif [[ $mod -eq 3 ]]; then
+    normalized="${normalized}="
+  elif [[ $mod -eq 1 ]]; then
+    return 1
+  fi
+  printf '%s' "$normalized" | base64 -d 2>/dev/null
+}
+
+website_id_from_manage_url() {
+  local manage_url="$1"
+  local ref payload kind id
+  ref="${manage_url%%#*}"
+  ref="${ref##*/}"
+  payload="$(decode_platform_ref "$ref" || true)"
+  kind="${payload%%:*}"
+  id="${payload##*:}"
+  if [[ "$kind" == "website" && "$id" =~ ^[0-9]+$ ]]; then
+    printf '%s\n' "$id"
+    return 0
+  fi
+  return 1
+}
+
 ssl_id_by_domain() {
   local domain="$1"
   sql_single "select id from ssl_certificates where domain = '$(sql_escape "$domain")' order by id desc limit 1;"
@@ -373,7 +407,7 @@ test_file_manager_backend() {
     "$BASE_URL/websites/$website_id/elfinder" -o "$WORKDIR/elfinder.mkfile.json" || { fail "File manager mkfile failed"; return 1; }
   curl -fsS -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
     "$BASE_URL/websites/$website_id/elfinder?cmd=ls&target=$target" -o "$WORKDIR/elfinder.ls.json" || { fail "File manager ls failed"; return 1; }
-  if [[ ! -f "$platform_root/htdocs/panel-smoke.txt" ]]; then
+  if [[ ! -f "$platform_root/panel-smoke.txt" ]]; then
     fail "File manager mkfile did not create platform file"
     return 1
   fi
@@ -390,7 +424,7 @@ test_file_manager_backend() {
     --data-urlencode "cmd=rm" \
     --data-urlencode "targets[]=$file_hash" \
     "$BASE_URL/websites/$website_id/elfinder" -o "$WORKDIR/elfinder.rm.json" || { fail "File manager rm failed"; return 1; }
-  if [[ -e "$platform_root/htdocs/panel-smoke.txt" ]]; then
+  if [[ -e "$platform_root/panel-smoke.txt" ]]; then
     fail "File manager rm did not remove platform file"
     return 1
   fi
@@ -400,7 +434,19 @@ test_file_manager_backend() {
 run_as_platform_user() {
   local username="$1" platform_root="$2" command="$3"
   timeout 15s runuser -u "$username" -- /bin/bash -lc \
-    "export HOME='$platform_root'; export USER='$username'; export LOGNAME='$username'; cd '$platform_root' && if [ -f '$platform_root/.deploycp/runtime.env' ]; then . '$platform_root/.deploycp/runtime.env'; fi; $command"
+    "umask 0002; export HOME='$platform_root'; export USER='$username'; export LOGNAME='$username'; cd '$platform_root' && if [ -f '$platform_root/.deploycp/runtime.env' ]; then . '$platform_root/.deploycp/runtime.env'; fi; $command"
+}
+
+domain_request_retry() {
+  local scheme="$1" domain="$2" path="$3" out="$4" attempts="${5:-10}"
+  local n
+  for (( n=1; n<=attempts; n++ )); do
+    if domain_request "$scheme" "$domain" "$path" "$out"; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
 }
 
 test_site_shell_collaboration() {
@@ -499,7 +545,7 @@ create_static_suite() {
   local manage_url
   manage_url="$(create_platform static "$domain" "$name" "$user" "$pass" "$root")" || { fail "Static platform creation failed"; return 1; }
   local website_id
-  website_id="$(website_id_by_domain "$domain")"
+  website_id="$(website_id_from_manage_url "$manage_url" || website_id_by_domain "$domain")"
   if [[ -z "$website_id" ]]; then
     fail "Could not resolve website id for static platform"
     return 1
@@ -737,7 +783,7 @@ create_runtime_suite() {
   local manage_url
   manage_url="$(create_platform "$kind" "$domain" "$name" "$user" "$pass" "$root" "$selected" "$port")" || { fail "$kind platform creation failed"; return 1; }
   local website_id
-  website_id="$(website_id_by_domain "$domain")"
+  website_id="$(website_id_from_manage_url "$manage_url" || website_id_by_domain "$domain")"
   if [[ -z "$website_id" ]]; then
     fail "Could not resolve website id for $kind platform"
     return 1
@@ -753,7 +799,7 @@ create_runtime_suite() {
   assert_manage_page_contains_tabs "$manage_url" "Settings" "Runtime" "Databases" "SSL/TLS" "SSH/FTP" "Logs"
 
   local runtime_out="$WORKDIR/$kind-site.out"
-  if domain_request http "$domain" "/" "$runtime_out"; then
+  if domain_request_retry http "$domain" "/" "$runtime_out" 15; then
     if file_contains "$runtime_out" "DeployCP"; then
       pass "$kind platform served local host-header traffic"
     else
@@ -792,7 +838,7 @@ create_php_suite() {
   local manage_url
   manage_url="$(create_platform php "$domain" "$name" "$user" "$pass" "$root" "$selected")" || { fail "PHP platform creation failed"; return 1; }
   local website_id
-  website_id="$(website_id_by_domain "$domain")"
+  website_id="$(website_id_from_manage_url "$manage_url" || website_id_by_domain "$domain")"
   if [[ -z "$website_id" ]]; then
     fail "Could not resolve website id for PHP platform"
     return 1
