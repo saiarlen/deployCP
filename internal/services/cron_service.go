@@ -111,11 +111,12 @@ func (s *CronService) DeleteWebsiteJobs(_ context.Context, websiteID uint, actor
 }
 
 func (s *CronService) renderJobScript(site *models.Website, command string) string {
-	runtimeEnv := filepath.Join(site.RootPath, ".deploycp", "runtime.env")
+	platformHome := platformHomeFromWebRoot(site.RootPath)
+	runtimeEnv := filepath.Join(platformHome, ".deploycp", "runtime.env")
 	lines := []string{
 		"#!/bin/bash",
 		"set -euo pipefail",
-		fmt.Sprintf("cd %q", site.RootPath),
+		fmt.Sprintf("cd %q", platformHome),
 		fmt.Sprintf("if [ -f %q ]; then . %q; fi", runtimeEnv, runtimeEnv),
 		command,
 	}

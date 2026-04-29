@@ -142,12 +142,17 @@
 
 	          <div id="sa-php" class="wizard-stage form-grid">
 	            <label class="pw-field">
-	              <span class="pw-label">PHP Version <span class="pw-required">*</span></span>
+	              <span class="pw-label">PHP-FPM Version <span class="pw-required">*</span></span>
 	              <select class="field" id="sa-php-version" name="php_version" required>
-	                {{ range i, v := PHPVersions }}
-	                <option value="{{ v }}" {{ if i == 0 }}selected{{ end }}>{{ v }}</option>
+	                {{ if len(PHPVersions) == 0 }}
+	                <option value="" selected disabled>No PHP-FPM versions installed</option>
+	                {{ else }}
+	                  {{ range i, v := PHPVersions }}
+	                  <option value="{{ v }}" {{ if i == 0 }}selected{{ end }}>{{ v }}</option>
+	                  {{ end }}
 	                {{ end }}
 	              </select>
+	              <span class="pw-help">PHP websites require a matching installed host PHP-FPM service.</span>
 	              <span id="sa-php-version-error" class="pw-error" aria-live="polite"></span>
 	            </label>
 	          </div>

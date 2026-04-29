@@ -170,6 +170,68 @@ func (s *SettingsService) RuntimeVersions(runtime string) []string {
 	return []string{}
 }
 
+func (s *SettingsService) PHPFPMVersions() []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, 8)
+	if entries, err := os.ReadDir("/etc/php"); err == nil {
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			version := strings.TrimSpace(entry.Name())
+			if version == "" || !isValidRuntimeVersion("php", version) {
+				continue
+			}
+			if _, err := os.Stat(filepath.Join("/etc/php", version, "fpm")); err != nil {
+				continue
+			}
+			if _, ok := seen[version]; ok {
+				continue
+			}
+			seen[version] = struct{}{}
+			out = append(out, version)
+		}
+	}
+	for _, version := range s.detectRPMPHPFPMVersions() {
+		if _, ok := seen[version]; ok {
+			continue
+		}
+		seen[version] = struct{}{}
+		out = append(out, version)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i] > out[j] })
+	return out
+}
+
+func (s *SettingsService) PHPFPMVersionChoices() []string {
+	installed := s.PHPFPMVersions()
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(installed)+6)
+	for _, version := range installed {
+		if _, ok := seen[version]; ok {
+			continue
+		}
+		seen[version] = struct{}{}
+		out = append(out, version)
+	}
+	var available []string
+	switch s.detectPackageManager() {
+	case "apt":
+		available = s.aptAvailableRuntimeVersions("php")
+	case "dnf", "yum":
+		available = s.rhelAvailableRuntimeVersions("php")
+	}
+	for _, version := range available {
+		if _, ok := seen[version]; ok {
+			continue
+		}
+		seen[version] = struct{}{}
+		out = append(out, version)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i] > out[j] })
+	return out
+}
+
 func (s *SettingsService) RuntimeVersionStates(runtime string) []RuntimeVersionState {
 	installed := s.installedRuntimeVersions(runtime)
 	out := make([]RuntimeVersionState, 0, len(installed))
@@ -184,17 +246,21 @@ func (s *SettingsService) AvailableRuntimeVersions(runtime string) []string {
 	if runtime == "" {
 		return []string{}
 	}
+	installedSet := map[string]struct{}{}
+	for _, item := range s.installedRuntimeVersions(runtime) {
+		installedSet[item] = struct{}{}
+	}
 	if strings.EqualFold(strings.TrimSpace(s.cfg.Features.PlatformMode), "dryrun") {
-		return s.configuredRuntimeVersions(runtime)
+		return filterOutInstalledVersions(s.configuredRuntimeVersions(runtime), installedSet)
 	}
 	if managed := s.managedAvailableRuntimeVersions(runtime); len(managed) > 0 {
-		return managed
+		return filterOutInstalledVersions(managed, installedSet)
 	}
 	switch s.detectPackageManager() {
 	case "apt":
-		return s.aptAvailableRuntimeVersions(runtime)
+		return filterOutInstalledVersions(s.aptAvailableRuntimeVersions(runtime), installedSet)
 	case "dnf", "yum":
-		return s.rhelAvailableRuntimeVersions(runtime)
+		return filterOutInstalledVersions(s.rhelAvailableRuntimeVersions(runtime), installedSet)
 	default:
 		return []string{}
 	}
@@ -295,27 +361,6 @@ func (s *SettingsService) installedRuntimeVersions(runtime string) []string {
 		}
 	}
 
-	if runtime == "php" {
-		if entries, err := os.ReadDir("/etc/php"); err == nil {
-			for _, entry := range entries {
-				if !entry.IsDir() {
-					continue
-				}
-				version := strings.TrimSpace(entry.Name())
-				if version == "" || !isValidRuntimeVersion(runtime, version) {
-					continue
-				}
-				if _, err := os.Stat(filepath.Join("/etc/php", version, "fpm")); err != nil {
-					continue
-				}
-				if _, ok := seen[version]; ok {
-					continue
-				}
-				seen[version] = struct{}{}
-				out = append(out, version)
-			}
-		}
-	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i] > out[j] })
 	return out
 }
@@ -680,6 +725,46 @@ func (s *SettingsService) rhelInfoVersion(manager, pkg string) string {
 	return ""
 }
 
+func (s *SettingsService) detectRPMPHPFPMVersions() []string {
+	manager := s.detectPackageManager()
+	if manager != "dnf" && manager != "yum" {
+		return []string{}
+	}
+	out, err := exec.Command("rpm", "-qa").Output()
+	if err != nil {
+		return []string{}
+	}
+	seen := map[string]struct{}{}
+	versions := make([]string, 0, 6)
+	for _, line := range strings.Split(string(out), "\n") {
+		pkg := stripArchSuffix(strings.TrimSpace(line))
+		if pkg == "" || !strings.Contains(pkg, "php-fpm") {
+			continue
+		}
+		if strings.HasPrefix(pkg, "php-fpm-") || pkg == "php-fpm" {
+			if version := s.rhelInfoVersion(manager, "php-fpm"); version != "" {
+				if _, ok := seen[version]; !ok {
+					seen[version] = struct{}{}
+					versions = append(versions, version)
+				}
+			}
+			continue
+		}
+		matches := regexp.MustCompile(`^php([0-9]{2})-php-fpm`).FindStringSubmatch(pkg)
+		if len(matches) != 2 {
+			continue
+		}
+		version := matches[1][:1] + "." + matches[1][1:]
+		if _, ok := seen[version]; ok {
+			continue
+		}
+		seen[version] = struct{}{}
+		versions = append(versions, version)
+	}
+	sort.SliceStable(versions, func(i, j int) bool { return versions[i] > versions[j] })
+	return versions
+}
+
 func stripArchSuffix(pkg string) string {
 	pkg = strings.TrimSpace(pkg)
 	for _, arch := range []string{".x86_64", ".aarch64", ".noarch", ".src", ".i686", ".ppc64le", ".s390x"} {
@@ -778,6 +863,20 @@ func containsRuntimeVersion(items []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func filterOutInstalledVersions(items []string, installed map[string]struct{}) []string {
+	if len(items) == 0 || len(installed) == 0 {
+		return append([]string{}, items...)
+	}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		if _, ok := installed[strings.TrimSpace(item)]; ok {
+			continue
+		}
+		out = append(out, item)
+	}
+	return out
 }
 
 func (s *SettingsService) SupportedTimezones() []string {

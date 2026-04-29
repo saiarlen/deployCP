@@ -74,6 +74,11 @@ Runtime behavior on live Linux:
 - fresh install attempts to install at least one real PHP-FPM version by default
 - runtime add/remove actions are real host operations
 - runtime removal is blocked if a platform is still using that version
+- per-platform runtime selection is applied through `<platform-root>/.deploycp/runtime.env`
+- site-user SSH and extra SSH users for the same platform read the same platform runtime env
+- PHP websites use real host `php-fpm`; PHP CLI/runtime management is separate from PHP-FPM service management
+- if a PHP website shell still falls back to a managed PHP CLI version, DeployCP blocks removing that managed version
+- direct `systemd` runtime platforms are verified more strictly than `pm2`, `gunicorn`, and `uwsgi`, which remain best-effort verified from live process inspection
 
 ## Supported Platforms
 

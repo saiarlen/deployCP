@@ -134,6 +134,7 @@ func Build() (*Application, error) {
 		databaseService,
 		ftpService,
 		varnishService,
+		packageService,
 	)
 	appService := services.NewAppService(cfg, repos.GoApps, repos.Services, websiteService, platformAdapter, auditService, runtimeService)
 	siteUserService := services.NewSiteUserService(cfg, repos.SiteUsers, platformAdapter, auditService)

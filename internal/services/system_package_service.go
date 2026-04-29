@@ -128,6 +128,37 @@ func (s *SystemPackageService) IsInstalled(ctx context.Context, serviceName stri
 	return err == nil && installed
 }
 
+func (s *SystemPackageService) EnsurePHPCLIInstalled(ctx context.Context, version string, actor *uint, ip string) error {
+	if s == nil || s.cfg == nil || s.cfg.Features.PlatformMode == "dryrun" {
+		return nil
+	}
+	version = strings.TrimSpace(version)
+	if version == "" {
+		return nil
+	}
+	manager := s.DetectManager()
+	if manager == "" {
+		return fmt.Errorf("no supported linux package manager found")
+	}
+	packages := phpCLIPackagesForManager(manager, version)
+	if len(packages) == 0 {
+		return nil
+	}
+	for _, pkg := range packages {
+		if pkg == "" {
+			continue
+		}
+		installed, err := s.packageInstalled(ctx, manager, pkg)
+		if err == nil && installed {
+			return nil
+		}
+		if err := s.installPackage(ctx, manager, pkg, actor, ip); err == nil {
+			return nil
+		}
+	}
+	return fmt.Errorf("unable to install PHP CLI %s", version)
+}
+
 func (s *SystemPackageService) ResolveServiceUnit(ctx context.Context, serviceName string) string {
 	if s == nil || s.cfg == nil || s.cfg.Features.PlatformMode == "dryrun" {
 		return serviceName
@@ -209,6 +240,46 @@ func (s *SystemPackageService) packageInstalled(ctx context.Context, manager, pk
 	return err == nil, nil
 }
 
+func (s *SystemPackageService) installPackage(ctx context.Context, manager, pkg string, actor *uint, ip string) error {
+	req := system.CommandRequest{
+		Timeout:     10 * time.Minute,
+		AuditAction: "package.install",
+		ActorUserID: actor,
+		IP:          ip,
+	}
+	switch manager {
+	case "apt":
+		if _, err := s.runner.Run(ctx, system.CommandRequest{
+			Binary:      "apt-get",
+			Args:        []string{"update", "-y"},
+			Timeout:     10 * time.Minute,
+			AuditAction: "package.install.update",
+			ActorUserID: actor,
+			IP:          ip,
+		}); err != nil {
+			return err
+		}
+		req.Binary = "apt-get"
+		req.Args = []string{"install", "-y", pkg}
+	case "dnf":
+		req.Binary = "dnf"
+		req.Args = []string{"install", "-y", pkg}
+	case "yum":
+		req.Binary = "yum"
+		req.Args = []string{"install", "-y", pkg}
+	case "zypper":
+		req.Binary = "zypper"
+		req.Args = []string{"--non-interactive", "install", pkg}
+	case "pacman":
+		req.Binary = "pacman"
+		req.Args = []string{"-Sy", "--noconfirm", pkg}
+	default:
+		return fmt.Errorf("unsupported package manager")
+	}
+	_, err := s.runner.Run(ctx, req)
+	return err
+}
+
 type servicePackageSpec struct {
 	basePackages map[string]string
 	baseUnits    map[string][]string
@@ -234,6 +305,21 @@ func (s servicePackageSpec) unitCandidates(manager string) []string {
 		filtered = append(filtered, item)
 	}
 	return filtered
+}
+
+func phpCLIPackagesForManager(manager, version string) []string {
+	version = strings.TrimSpace(version)
+	switch manager {
+	case "apt":
+		return []string{"php" + version + "-cli"}
+	case "dnf", "yum":
+		squeezed := strings.ReplaceAll(version, ".", "")
+		return []string{"php-cli", "php" + squeezed + "-php-cli"}
+	case "zypper", "pacman":
+		return []string{"php-cli", "php"}
+	default:
+		return nil
+	}
 }
 
 var phpFPMServicePattern = regexp.MustCompile(`^php([0-9]+(?:\.[0-9]+){1,2})-fpm$`)

@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"sort"
 	"strings"
 	"time"
@@ -70,6 +71,7 @@ type WebsiteService struct {
 	database   *DatabaseService
 	ftp        *FTPService
 	varnishOS  *VarnishService
+	packages   *SystemPackageService
 }
 
 func NewWebsiteService(
@@ -96,6 +98,7 @@ func NewWebsiteService(
 	database *DatabaseService,
 	ftp *FTPService,
 	varnishOS *VarnishService,
+	packages *SystemPackageService,
 ) *WebsiteService {
 	return &WebsiteService{
 		cfg:        cfg,
@@ -121,6 +124,7 @@ func NewWebsiteService(
 		database:   database,
 		ftp:        ftp,
 		varnishOS:  varnishOS,
+		packages:   packages,
 	}
 }
 
@@ -132,7 +136,107 @@ func (s *WebsiteService) Find(id uint) (*models.Website, error) {
 	return s.repo.Find(id)
 }
 
+func (s *WebsiteService) RuntimeInspection(site *models.Website) RuntimeInspection {
+	if s.runtime == nil || site == nil {
+		return RuntimeInspection{}
+	}
+	if !strings.EqualFold(strings.TrimSpace(site.Type), "php") {
+		return RuntimeInspection{}
+	}
+	selected := strings.TrimSpace(site.PHPVersion)
+	inspection := RuntimeInspection{
+		Applicable:      true,
+		Runtime:         "php",
+		SelectedVersion: selected,
+		ServiceVersion:  selected,
+	}
+	if selected == "" {
+		inspection.Issues = append(inspection.Issues, "No PHP-FPM version is selected for this website.")
+		return inspection
+	}
+	root := platformHomeFromWebRoot(site.RootPath)
+	inspection.SSHBinary = s.runtime.PlatformShellBinaryPath(root, "php", selected)
+	inspection.SSHVersion = s.runtime.PlatformShellVersion(root, "php", selected)
+	if inspection.SSHVersion == "" {
+		inspection.Issues = append(inspection.Issues, "PHP CLI version could not be resolved for the website shell.")
+	} else if !runtimeVersionMatches("php", selected, inspection.SSHVersion) {
+		inspection.Issues = append(inspection.Issues, fmt.Sprintf("PHP CLI resolves %s while PHP-FPM is set to %s.", inspection.SSHVersion, selected))
+	}
+	serviceName := "php" + selected + "-fpm"
+	if s.packages != nil {
+		serviceName = s.packages.ResolveServiceUnit(context.Background(), serviceName)
+	}
+	inspection.ServiceBinary = serviceName
+	if s.adapter != nil && s.adapter.Services() != nil {
+		status, err := s.adapter.Services().Status(context.Background(), serviceName)
+		if err != nil || !status.Active {
+			inspection.Issues = append(inspection.Issues, fmt.Sprintf("PHP-FPM service %s is not active.", serviceName))
+		}
+	}
+	socketPath := phpFPMSocketPathForPlatform(selected, s.cfg)
+	if socketPath == "" {
+		inspection.Issues = append(inspection.Issues, "PHP-FPM socket path could not be determined.")
+	} else if st, err := os.Stat(socketPath); err != nil || st.IsDir() {
+		inspection.Issues = append(inspection.Issues, fmt.Sprintf("PHP-FPM socket is missing: %s", socketPath))
+	}
+	if s.nginxRepo != nil {
+		if nginxCfg, err := s.nginxRepo.FindByWebsite(site.ID); err != nil || nginxCfg == nil || strings.TrimSpace(nginxCfg.ConfigPath) == "" {
+			inspection.Issues = append(inspection.Issues, "Generated nginx config for this website could not be found.")
+		} else if content, err := os.ReadFile(nginxCfg.ConfigPath); err != nil {
+			inspection.Issues = append(inspection.Issues, "Generated nginx config for this website could not be read.")
+		} else if !strings.Contains(string(content), "fastcgi_pass unix:"+socketPath+";") {
+			inspection.Issues = append(inspection.Issues, fmt.Sprintf("Nginx config is not targeting the expected PHP-FPM socket %s.", socketPath))
+		}
+	}
+	inspection.Healthy = len(inspection.Issues) == 0
+	return inspection
+}
+
+func (s *WebsiteService) ManagedPHPShellFallbackUsage(version string) ([]string, error) {
+	if s.runtime == nil {
+		return nil, nil
+	}
+	items, err := s.repo.List()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, 4)
+	for _, site := range items {
+		if !strings.EqualFold(strings.TrimSpace(site.Type), "php") {
+			continue
+		}
+		root := platformHomeFromWebRoot(site.RootPath)
+		if !s.runtime.UsesManagedPlatformRuntime(root, "php", version) {
+			continue
+		}
+		name := strings.TrimSpace(site.Name)
+		if name == "" {
+			name = fmt.Sprintf("platform#%d", site.ID)
+		}
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+func phpFPMSocketPathForPlatform(version string, cfg *config.Config) string {
+	version = strings.TrimSpace(version)
+	if version == "" {
+		return ""
+	}
+	if cfg != nil && strings.EqualFold(strings.TrimSpace(cfg.Features.PlatformMode), "dryrun") {
+		return ""
+	}
+	if goruntime.GOOS == "darwin" {
+		return fmt.Sprintf("/opt/homebrew/var/run/php@%s-fpm.sock", version)
+	}
+	return fmt.Sprintf("/run/php/php%s-fpm.sock", version)
+}
+
 func (s *WebsiteService) Create(ctx context.Context, in WebsiteInput, actor *uint, ip string) (*models.Website, error) {
+	if err := s.ensurePHPFPMVersion(ctx, strings.TrimSpace(in.Type), strings.TrimSpace(in.PHPVersion), actor, ip); err != nil {
+		return nil, err
+	}
 	normalizedBypass, err := normalizeMaintenanceBypassIPs(in.MaintenanceBypassIPs)
 	if err != nil {
 		return nil, err
@@ -177,6 +281,9 @@ func (s *WebsiteService) Create(ctx context.Context, in WebsiteInput, actor *uin
 }
 
 func (s *WebsiteService) Update(ctx context.Context, id uint, in WebsiteInput, actor *uint, ip string) error {
+	if err := s.ensurePHPFPMVersion(ctx, strings.TrimSpace(in.Type), strings.TrimSpace(in.PHPVersion), actor, ip); err != nil {
+		return err
+	}
 	normalizedBypass, err := normalizeMaintenanceBypassIPs(in.MaintenanceBypassIPs)
 	if err != nil {
 		return err
@@ -387,6 +494,9 @@ func (s *WebsiteService) UpdatePhpSettings(id uint, phpVersion string, data PhpS
 		return err
 	}
 	if phpVersion != "" {
+		if err := s.ensurePHPFPMVersion(context.Background(), "php", strings.TrimSpace(phpVersion), nil, ""); err != nil {
+			return err
+		}
 		site.PHPVersion = phpVersion
 	}
 	b, _ := json.Marshal(data)
@@ -399,6 +509,33 @@ func (s *WebsiteService) UpdatePhpSettings(id uint, phpVersion string, data PhpS
 		return err
 	}
 	return s.applyPlatformRuntime(site, nil, "")
+}
+
+func (s *WebsiteService) ensurePHPFPMVersion(ctx context.Context, siteType, version string, actor *uint, ip string) error {
+	if !strings.EqualFold(strings.TrimSpace(siteType), "php") {
+		return nil
+	}
+	version = strings.TrimSpace(version)
+	if version == "" {
+		return fmt.Errorf("php-fpm version is required")
+	}
+	if s.packages == nil || s.cfg == nil || s.cfg.Features.PlatformMode == "dryrun" {
+		return nil
+	}
+	serviceName := "php" + version + "-fpm"
+	if !s.packages.IsInstalled(ctx, serviceName) {
+		if err := s.packages.EnsureInstalled(ctx, serviceName, actor, ip); err != nil {
+			return err
+		}
+	}
+	_ = s.packages.EnsurePHPCLIInstalled(ctx, version, actor, ip)
+	unitName := s.packages.ResolveServiceUnit(ctx, serviceName)
+	if unitName == "" {
+		unitName = serviceName
+	}
+	_ = s.adapter.Services().Enable(ctx, unitName)
+	_ = s.adapter.Services().Start(ctx, unitName)
+	return nil
 }
 
 func (s *WebsiteService) RefreshConfig(ctx context.Context, id uint) error {
@@ -576,16 +713,30 @@ func (s *WebsiteService) applyPlatformRuntime(site *models.Website, actor *uint,
 	}
 	switch site.Type {
 	case "php":
-		return s.runtime.ApplyPlatformRuntime(platformHomeFromWebRoot(site.RootPath), "php", site.PHPVersion, actor, ip)
+		return s.runtime.ApplyPHPWebsiteRuntime(platformHomeFromWebRoot(site.RootPath), site.PHPVersion, actor, ip)
 	case "proxy":
-		if strings.TrimSpace(site.AppRuntime) != "" {
-			version := runtimeVersionFromWebsite(site)
-			if version != "" {
-				return s.runtime.ApplyPlatformRuntime(platformHomeFromWebRoot(site.RootPath), site.AppRuntime, version, actor, ip)
-			}
+		runtimeName, version := s.linkedAppRuntime(site)
+		if runtimeName != "" && version != "" {
+			return s.runtime.ApplyPlatformRuntime(platformHomeFromWebRoot(site.RootPath), runtimeName, version, actor, ip)
 		}
 	}
 	return s.runtime.ApplyPlatformRuntime(platformHomeFromWebRoot(site.RootPath), "", "", actor, ip)
+}
+
+func (s *WebsiteService) linkedAppRuntime(site *models.Website) (string, string) {
+	if site == nil {
+		return "", ""
+	}
+	runtimeName := strings.ToLower(strings.TrimSpace(site.AppRuntime))
+	if runtimeName == "" || s.appRepo == nil {
+		return "", ""
+	}
+	app, err := s.appRepo.FindByWebsiteID(site.ID)
+	if err != nil || app == nil {
+		return runtimeName, ""
+	}
+	version := appEnvValue(app.EnvVars, "RUNTIME_VERSION")
+	return runtimeName, strings.TrimSpace(version)
 }
 
 func (s *WebsiteService) ensurePublicWebRoot(root string) error {
@@ -1206,27 +1357,6 @@ func firstWebsiteCert(site *models.Website, items []models.SSLCertificate) *mode
 	return nil
 }
 
-func runtimeVersionFromWebsite(site *models.Website) string {
-	if site == nil {
-		return ""
-	}
-	switch strings.ToLower(strings.TrimSpace(site.AppRuntime)) {
-	case "node":
-		return "node20"
-	case "python":
-		return "python3.12"
-	case "go":
-		return "go1.25"
-	case "php":
-		if strings.TrimSpace(site.PHPVersion) != "" {
-			return strings.TrimSpace(site.PHPVersion)
-		}
-		return "8.3"
-	default:
-		return ""
-	}
-}
-
 func tailFile(path string, lines int) (string, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {
@@ -1256,11 +1386,7 @@ func errorsIsGormNotFound(err error) bool {
 // platformHomeFromWebRoot returns the platform home directory from a web root path.
 // If the root ends with /htdocs, the platform home is the parent directory.
 func platformHomeFromWebRoot(webRoot string) string {
-	clean := filepath.Clean(strings.TrimSpace(webRoot))
-	if filepath.Base(clean) == "htdocs" {
-		return filepath.Dir(clean)
-	}
-	return clean
+	return platformHomeFromPath(webRoot)
 }
 
 func websiteSharedGroup(websiteID uint) string {

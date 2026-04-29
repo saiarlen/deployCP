@@ -244,18 +244,67 @@ list_remote_versions() {
   [[ -n "$raw" ]] || return 1
   case "$runtime" in
     go)
-      printf '%s\n' "$raw" | awk '/^[0-9]+\.[0-9]+(\.[0-9]+)?$/ {print "go"$0}' | tail -n 8 | tac
+      printf '%s\n' "$raw" | curated_latest_patch_per_minor "go" 6
       ;;
     node)
-      printf '%s\n' "$raw" | awk '/^[0-9]+\.[0-9]+\.[0-9]+$/ {print "node"$0}' | tail -n 8 | tac
+      printf '%s\n' "$raw" | curated_latest_patch_per_major "node" 6
       ;;
     python)
-      printf '%s\n' "$raw" | awk '/^[0-9]+\.[0-9]+(\.[0-9]+)?$/ {print "python"$0}' | tail -n 8 | tac
+      printf '%s\n' "$raw" | curated_latest_patch_per_minor "python" 6
       ;;
     php)
-      printf '%s\n' "$raw" | awk '/^[0-9]+\.[0-9]+(\.[0-9]+)?$/ {print $0}' | tail -n 8 | tac
+      printf '%s\n' "$raw" | curated_latest_patch_per_minor "php" 6
       ;;
   esac
+}
+
+stable_semver_lines() {
+  awk '
+    /^[0-9]+\.[0-9]+(\.[0-9]+)?$/ {
+      if ($0 ~ /alpha|beta|rc|dev|preview/) next;
+      print $0
+    }
+  '
+}
+
+curated_latest_patch_per_minor() {
+  local prefix="$1"
+  local limit="${2:-6}"
+  stable_semver_lines | sort -V | awk -v pfx="$prefix" '
+    {
+      split($0, parts, ".");
+      key = parts[1] "." parts[2];
+      latest[key] = $0;
+    }
+    END {
+      for (k in latest) print latest[k];
+    }
+  ' | sort -V | tail -n "$limit" | while read -r item; do
+    [[ -n "$item" ]] || continue
+    if [[ "$prefix" == "php" ]]; then
+      printf '%s\n' "$item"
+    else
+      printf '%s%s\n' "$prefix" "$item"
+    fi
+  done | tac
+}
+
+curated_latest_patch_per_major() {
+  local prefix="$1"
+  local limit="${2:-6}"
+  stable_semver_lines | sort -V | awk '
+    {
+      split($0, parts, ".");
+      key = parts[1];
+      latest[key] = $0;
+    }
+    END {
+      for (k in latest) print latest[k];
+    }
+  ' | sort -V | tail -n "$limit" | while read -r item; do
+    [[ -n "$item" ]] || continue
+    printf '%s%s\n' "$prefix" "$item"
+  done | tac
 }
 
 cat_cached_versions_if_fresh() {

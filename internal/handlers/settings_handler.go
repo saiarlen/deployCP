@@ -1060,19 +1060,10 @@ func (h *SettingsHandler) runtimeVersionUsage(runtime, version string) (int, []s
 
 	usage := make(map[string]struct{})
 
-	if rt == "php" && h.websiteService != nil {
-		websites, err := h.websiteService.List()
-		if err != nil {
-			return 0, nil, err
-		}
-		for _, site := range websites {
-			if strings.EqualFold(strings.TrimSpace(site.Type), "php") && strings.EqualFold(strings.TrimSpace(site.PHPVersion), ver) {
-				name := strings.TrimSpace(site.Name)
-				if name == "" {
-					name = fmt.Sprintf("platform#%d", site.ID)
-				}
-				usage[name] = struct{}{}
-			}
+	if h.runtimeService != nil {
+		current := h.runtimeDefaultStatus(rt)
+		if strings.EqualFold(strings.TrimSpace(current.Version), ver) {
+			usage["system default"] = struct{}{}
 		}
 	}
 
@@ -1093,6 +1084,16 @@ func (h *SettingsHandler) runtimeVersionUsage(runtime, version string) (int, []s
 			if name == "" {
 				name = fmt.Sprintf("platform#%d", app.ID)
 			}
+			usage[name] = struct{}{}
+		}
+	}
+
+	if rt == "php" && h.websiteService != nil {
+		items, err := h.websiteService.ManagedPHPShellFallbackUsage(ver)
+		if err != nil {
+			return 0, nil, err
+		}
+		for _, name := range items {
 			usage[name] = struct{}{}
 		}
 	}

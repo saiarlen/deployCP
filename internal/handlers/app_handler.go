@@ -207,8 +207,19 @@ func (h *AppHandler) SitesAppsCreate(c *fiber.Ctx) error {
 			SiteUserID:           siteUserID,
 			Enabled:              true,
 		}
-		if kind == "php" && strings.TrimSpace(in.PHPVersion) == "" {
-			in.PHPVersion = "8.2"
+		if kind == "php" {
+			availablePHP := h.settings.PHPFPMVersionChoices()
+			if strings.TrimSpace(in.PHPVersion) == "" {
+				if len(availablePHP) == 0 {
+					h.base.Sessions.SetFlash(c, "no PHP-FPM versions are available on this server")
+					return c.Redirect("/platforms/new")
+				}
+				in.PHPVersion = availablePHP[0]
+			}
+			if !containsStringFold(availablePHP, in.PHPVersion) {
+				h.base.Sessions.SetFlash(c, "selected PHP-FPM version is not available on this server")
+				return c.Redirect("/platforms/new")
+			}
 		}
 		site, err := h.websiteService.Create(c.Context(), in, currentUserID(c), c.IP())
 		if err != nil {
@@ -268,7 +279,7 @@ func (h *AppHandler) SitesAppsCreate(c *fiber.Ctx) error {
 		startArgs := ""
 		processManager := "systemd"
 		binaryPath := ""
-		if kind == "python" || kind == "node" {
+		if kind == "go" || kind == "python" || kind == "node" {
 			execMode = "interpreted"
 		}
 		if binaryPath == "" {
@@ -285,6 +296,9 @@ func (h *AppHandler) SitesAppsCreate(c *fiber.Ctx) error {
 		}
 		if entryPoint == "" && execMode == "interpreted" {
 			switch kind {
+			case "go":
+				entryPoint = "main.go"
+				startArgs = "run"
 			case "python":
 				entryPoint = "app.py"
 			case "node":
@@ -295,6 +309,8 @@ func (h *AppHandler) SitesAppsCreate(c *fiber.Ctx) error {
 		if v := strings.TrimSpace(c.FormValue("runtime_version")); v != "" {
 			envMap["RUNTIME_VERSION"] = v
 		}
+		envMap["PORT"] = strconv.Itoa(port)
+		envMap["HOST"] = "127.0.0.1"
 		_, err = h.service.Create(c.Context(), services.AppInput{
 			Name:             name,
 			Runtime:          kind,
@@ -395,7 +411,7 @@ func (h *AppHandler) ShowByID(c *fiber.Ctx, id uint) error {
 		}
 	}
 	if defaultHomeDir == "" && status.App.WorkingDirectory != "" {
-		defaultHomeDir = status.App.WorkingDirectory
+		defaultHomeDir = platformHomeFromRoot(status.App.WorkingDirectory)
 	}
 	serverAddress := strings.TrimSpace(status.App.Host)
 	switch serverAddress {
@@ -407,6 +423,8 @@ func (h *AppHandler) ShowByID(c *fiber.Ctx, id uint) error {
 		"Title":            status.App.Name,
 		"PlatformKind":     "app",
 		"Status":           status,
+		"AppWorkingDir":    platformHomeFromRoot(status.App.WorkingDirectory),
+		"RuntimeHealth":    h.service.RuntimeInspection(status.App),
 		"RuntimeVersion":   envVarValue(status.App.EnvVars, "RUNTIME_VERSION"),
 		"GoVersions":       h.runtimeVersions("go"),
 		"NodeVersions":     h.runtimeVersions("node"),
@@ -670,8 +688,6 @@ func (h *AppHandler) runtimeVersions(runtime string) []string {
 		return []string{"python3.13", "python3.12", "python3.11", "python3.10", "python3.9"}
 	case "node":
 		return []string{"node24", "node22", "node20", "node18"}
-	case "php":
-		return []string{"8.4", "8.3", "8.2", "8.1", "8.0", "7.4"}
 	default:
 		return []string{}
 	}

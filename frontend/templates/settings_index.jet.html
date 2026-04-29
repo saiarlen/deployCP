@@ -406,7 +406,7 @@
         <div class="rounded-lg border border-[var(--border)] p-4">
           <div class="flex items-start justify-between gap-3 mb-3">
             <div>
-              <h3 class="font-semibold">PHP Default</h3>
+              <h3 class="font-semibold">PHP CLI Default</h3>
               <p class="text-xs opacity-70 mt-1">{{ if PHPRuntimeDefault.Version }}Current: {{ PHPRuntimeDefault.Version }}{{ else }}No default detected{{ end }}</p>
             </div>
             {{ if PHPRuntimeDefault.Binary }}<span class="badge badge-neutral">{{ if PHPRuntimeDefault.Managed }}deploycp managed{{ else }}host binary{{ end }}</span>{{ end }}
@@ -421,7 +421,7 @@
           <form action="/settings/runtime-versions/php/default" method="post" class="flex gap-2 runtime-version-action-form" data-runtime-action="set-default" data-runtime-kind="php">
             <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
             <select class="field flex-1" name="version" required>
-              <option value="" selected disabled>Select installed PHP version</option>
+              <option value="" selected disabled>Select installed PHP CLI version</option>
               {{ range _, v := PHPRuntimeEntries }}<option value="{{ v.Version }}">{{ v.Version }}</option>{{ end }}
             </select>
             <button class="btn btn-primary" type="submit">Set Default</button>
@@ -432,7 +432,7 @@
 
     <section class="surface p-5 sm:p-6 mb-5">
       <h2 class="text-lg font-semibold">Runtime Version Management</h2>
-      <p class="text-sm opacity-70 mt-1">Installed versions are discovered from the host runtime root and validated through real runtime wrappers. Add-version dropdowns prefer the managed remote runtime catalog, with package-manager fallback only when the managed backend is unavailable.</p>
+      <p class="text-sm opacity-70 mt-1">Installed versions are discovered from the host runtime root and validated through real runtime wrappers. Add-version dropdowns prefer the managed remote runtime catalog, with package-manager fallback only when the managed backend is unavailable. PHP here refers to managed PHP CLI runtimes, not host PHP-FPM website services.</p>
       <div class="grid gap-4 lg:grid-cols-2 mt-4">
         <div class="rounded-lg border border-[var(--border)] p-4">
           <h3 class="font-semibold mb-2">Go Versions</h3>
@@ -531,7 +531,7 @@
           </form>
         </div>
         <div class="rounded-lg border border-[var(--border)] p-4">
-          <h3 class="font-semibold mb-2">PHP Versions</h3>
+          <h3 class="font-semibold mb-2">PHP CLI Versions</h3>
           <div class="runtime-version-list mb-3">
             {{ range _, v := PHPRuntimeEntries }}
             <div class="runtime-version-chip">
@@ -551,7 +551,7 @@
             <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
             {{ if len(PHPRuntimeChoices) > 0 }}
             <select class="field flex-1" name="version" required>
-              <option value="" selected disabled>Select PHP version</option>
+              <option value="" selected disabled>Select PHP CLI version</option>
               {{ range _, v := PHPRuntimeChoices }}
               <option value="{{ v }}">{{ v }}</option>
               {{ end }}

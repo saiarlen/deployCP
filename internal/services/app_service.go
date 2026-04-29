@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -70,6 +71,13 @@ func (s *AppService) Find(id uint) (*models.GoApp, error) {
 	return s.repo.Find(id)
 }
 
+func (s *AppService) RuntimeInspection(app *models.GoApp) RuntimeInspection {
+	if s.runtime == nil {
+		return RuntimeInspection{}
+	}
+	return s.runtime.InspectAppRuntime(app)
+}
+
 func (s *AppService) Create(ctx context.Context, in AppInput, actor *uint, ip string) (*models.GoApp, error) {
 	in = normalizeAppInput(in)
 	if err := s.validate(in); err != nil {
@@ -111,8 +119,11 @@ func (s *AppService) Create(ctx context.Context, in AppInput, actor *uint, ip st
 	if err := s.repo.Create(app, in.Env); err != nil {
 		return nil, err
 	}
+	if err := s.ensureRuntimeScaffold(app); err != nil {
+		return nil, err
+	}
 	if s.runtime != nil {
-		_ = s.runtime.ApplyPlatformRuntime(app.WorkingDirectory, app.Runtime, in.Env["RUNTIME_VERSION"], actor, ip)
+		_ = s.runtime.ApplyPlatformRuntime(platformRuntimeRootForApp(app), app.Runtime, in.Env["RUNTIME_VERSION"], actor, ip)
 	}
 	if err := s.installService(ctx, app, in.Env); err != nil {
 		return nil, err
@@ -160,7 +171,7 @@ func (s *AppService) Update(ctx context.Context, id uint, in AppInput, actor *ui
 		return err
 	}
 	if s.runtime != nil {
-		_ = s.runtime.ApplyPlatformRuntime(app.WorkingDirectory, app.Runtime, in.Env["RUNTIME_VERSION"], actor, ip)
+		_ = s.runtime.ApplyPlatformRuntime(platformRuntimeRootForApp(app), app.Runtime, in.Env["RUNTIME_VERSION"], actor, ip)
 	}
 	if err := s.installService(ctx, app, in.Env); err != nil {
 		return err
@@ -399,6 +410,9 @@ func (s *AppService) UpdateRuntimeSettings(ctx context.Context, id uint, process
 		envMap[ev.Key] = ev.Value
 	}
 	if rv := strings.TrimSpace(runtimeVersion); rv != "" {
+		if s.runtime != nil && !s.runtime.VerifyInstalledVersion(app.Runtime, rv) {
+			return fmt.Errorf("selected %s runtime %s is not installed or is not verifiable on this server", app.Runtime, rv)
+		}
 		envMap["RUNTIME_VERSION"] = rv
 	} else {
 		delete(envMap, "RUNTIME_VERSION")
@@ -407,7 +421,7 @@ func (s *AppService) UpdateRuntimeSettings(ctx context.Context, id uint, process
 		return err
 	}
 	if s.runtime != nil {
-		if err := s.runtime.ApplyPlatformRuntime(app.WorkingDirectory, app.Runtime, envMap["RUNTIME_VERSION"], actor, ip); err != nil {
+		if err := s.runtime.ApplyPlatformRuntime(platformRuntimeRootForApp(app), app.Runtime, envMap["RUNTIME_VERSION"], actor, ip); err != nil {
 			return err
 		}
 	}
@@ -451,7 +465,7 @@ func (s *AppService) Reconcile(ctx context.Context, id uint, actor *uint, ip str
 		envMap[ev.Key] = ev.Value
 	}
 	if s.runtime != nil {
-		if err := s.runtime.ApplyPlatformRuntime(app.WorkingDirectory, app.Runtime, envMap["RUNTIME_VERSION"], actor, ip); err != nil {
+		if err := s.runtime.ApplyPlatformRuntime(platformRuntimeRootForApp(app), app.Runtime, envMap["RUNTIME_VERSION"], actor, ip); err != nil {
 			return err
 		}
 	}
@@ -465,6 +479,7 @@ func (s *AppService) installService(ctx context.Context, app *models.GoApp, env 
 	if !s.cfg.Features.EnableServiceManage {
 		return nil
 	}
+	env = s.serviceRuntimeEnv(app, env)
 	if s.runtime != nil {
 		env = s.runtime.MergeRuntimeEnv(app.Runtime, env["RUNTIME_VERSION"], env)
 		if resolvedBinary, err := s.runtime.ResolveBinary(app.Runtime, env["RUNTIME_VERSION"], app.BinaryPath); err == nil {
@@ -486,6 +501,20 @@ func (s *AppService) installService(ctx context.Context, app *models.GoApp, env 
 		}
 	}
 	return nil
+}
+
+func (s *AppService) serviceRuntimeEnv(app *models.GoApp, env map[string]string) map[string]string {
+	out := make(map[string]string, len(env)+3)
+	for k, v := range env {
+		out[k] = v
+	}
+	if strings.TrimSpace(out["PORT"]) == "" && app.Port > 0 {
+		out["PORT"] = strconv.Itoa(app.Port)
+	}
+	if strings.TrimSpace(out["HOST"]) == "" && strings.TrimSpace(app.Host) != "" {
+		out["HOST"] = strings.TrimSpace(app.Host)
+	}
+	return out
 }
 
 func (s *AppService) validate(in AppInput) error {
@@ -511,6 +540,15 @@ func (s *AppService) validate(in AppInput) error {
 	}
 	if err := validators.ValidatePath(in.WorkingDirectory); err != nil {
 		return err
+	}
+	if s.runtime != nil && strings.TrimSpace(in.Runtime) != "" && !strings.EqualFold(strings.TrimSpace(in.Runtime), "binary") {
+		version := strings.TrimSpace(in.Env["RUNTIME_VERSION"])
+		if version == "" {
+			return fmt.Errorf("runtime version is required for %s platforms", strings.TrimSpace(in.Runtime))
+		}
+		if !s.runtime.VerifyInstalledVersion(in.Runtime, version) {
+			return fmt.Errorf("selected %s runtime %s is not installed or is not verifiable on this server", strings.TrimSpace(in.Runtime), version)
+		}
 	}
 	if s.cfg.Features.PlatformMode != "dryrun" {
 		if err := validateExecutablePath(in.BinaryPath); err != nil {
@@ -546,6 +584,102 @@ func (s *AppService) validate(in AppInput) error {
 		in.RestartPolicy = "on-failure"
 	}
 	return nil
+}
+
+func (s *AppService) ensureRuntimeScaffold(app *models.GoApp) error {
+	if app == nil {
+		return nil
+	}
+	root := platformRuntimeRootForApp(app)
+	if root == "" || root == "." {
+		return nil
+	}
+	if err := os.MkdirAll(root, 0o775); err != nil {
+		return err
+	}
+	entryPoint := strings.TrimSpace(app.EntryPoint)
+	if entryPoint == "" {
+		return nil
+	}
+	if strings.EqualFold(strings.TrimSpace(app.Runtime), "python") && strings.Contains(entryPoint, ":") {
+		return nil
+	}
+	target := entryPoint
+	if !filepath.IsAbs(target) {
+		target = filepath.Join(root, target)
+	}
+	if st, err := os.Stat(target); err == nil && !st.IsDir() {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0o775); err != nil {
+		return err
+	}
+	content := ""
+	switch strings.ToLower(strings.TrimSpace(app.Runtime)) {
+	case "go":
+		content = `package main
+
+import (
+	"fmt"
+	"net/http"
+	"os"
+)
+
+func main() {
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+	http.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
+	http.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = fmt.Fprintf(w, "DeployCP Go platform is running on port %s\n", port)
+	})
+	_ = http.ListenAndServe(":"+port, nil)
+}
+`
+	case "node":
+		content = `const http = require('http');
+const port = parseInt(process.env.PORT || '3000', 10);
+
+const server = http.createServer((req, res) => {
+  if (req.url === '/health') {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('ok');
+    return;
+  }
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('DeployCP Node.js platform is running on port ' + port + '\n');
+});
+
+server.listen(port, '0.0.0.0');
+`
+	case "python":
+		content = `import os
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+PORT = int(os.getenv("PORT", "8000"))
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/health":
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"ok")
+            return
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(f"DeployCP Python platform is running on port {PORT}\n".encode())
+
+server = HTTPServer(("0.0.0.0", PORT), Handler)
+server.serve_forever()
+`
+	default:
+		return nil
+	}
+	return os.WriteFile(target, []byte(content), 0o664)
 }
 
 func (s *AppService) ensurePortAvailable(host string, port int, excludeID uint, allowCurrentBinding bool) error {
@@ -701,7 +835,7 @@ func buildAppServiceDefinition(app *models.GoApp, env map[string]string) platfor
 	base := platform.ServiceDefinition{
 		Name:          app.ServiceName,
 		Description:   "DeployCP app: " + app.Name,
-		WorkingDir:    app.WorkingDirectory,
+		WorkingDir:    platformRuntimeRootForApp(app),
 		Environment:   env,
 		RestartPolicy: app.RestartPolicy,
 		StdoutPath:    app.StdoutLogPath,
@@ -767,6 +901,11 @@ func buildAppServiceDefinition(app *models.GoApp, env map[string]string) platfor
 func serviceArgs(app *models.GoApp) []string {
 	args := make([]string, 0, 6)
 	if app.ExecutionMode == "interpreted" && strings.TrimSpace(app.EntryPoint) != "" {
+		if app.Runtime == "go" {
+			args = append(args, strings.Fields(strings.TrimSpace(app.StartArgs))...)
+			args = append(args, app.EntryPoint)
+			return args
+		}
 		args = append(args, app.EntryPoint)
 	}
 	startArgs := strings.Fields(strings.TrimSpace(app.StartArgs))

@@ -77,7 +77,7 @@
       </div>
       <div class="rounded-md border border-[var(--border)] p-3">
         <p class="text-xs uppercase tracking-wide opacity-70">Workdir</p>
-        <p class="mt-1 font-mono text-xs ">{{ Status.App.WorkingDirectory }}</p>
+        <p class="mt-1 font-mono text-xs ">{{ AppWorkingDir }}</p>
       </div>
       <div class="rounded-md border border-[var(--border)] p-3">
         <p class="text-xs uppercase tracking-wide opacity-70">Args</p>
@@ -106,6 +106,37 @@
   <!-- Service Controls -->
   <div class="surface p-5 mb-5">
     <h3 class="text-sm font-semibold mb-4">Service Controls</h3>
+    {{ if RuntimeHealth.Applicable }}
+    <div class="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4 mb-5">
+      <div class="rounded-md border border-[var(--border)] p-3">
+        <p class="text-xs uppercase tracking-wide opacity-70">Selected Runtime</p>
+        <p class="mt-1 font-mono text-xs">{{ RuntimeHealth.SelectedVersion }}</p>
+      </div>
+      <div class="rounded-md border border-[var(--border)] p-3">
+        <p class="text-xs uppercase tracking-wide opacity-70">SSH Version</p>
+        <p class="mt-1 font-mono text-xs">{{ if RuntimeHealth.SSHVersion != "" }}{{ RuntimeHealth.SSHVersion }}{{ else }}Unavailable{{ end }}</p>
+      </div>
+      <div class="rounded-md border border-[var(--border)] p-3">
+        <p class="text-xs uppercase tracking-wide opacity-70">Service Version</p>
+        <p class="mt-1 font-mono text-xs">{{ if RuntimeHealth.ServiceVersion != "" }}{{ RuntimeHealth.ServiceVersion }}{{ else }}Unavailable{{ end }}</p>
+      </div>
+      <div class="rounded-md border border-[var(--border)] p-3">
+        <p class="text-xs uppercase tracking-wide opacity-70">Runtime Health</p>
+        <p class="mt-1">{{ if RuntimeHealth.Healthy }}<span class="badge badge-ok">healthy</span>{{ else }}<span class="badge badge-warning">needs attention</span>{{ end }}</p>
+      </div>
+    </div>
+    {{ if RuntimeHealth.ServiceBinary != "" }}
+    <div class="mb-3 text-xs opacity-70">Resolved service binary: <span class="font-mono">{{ RuntimeHealth.ServiceBinary }}</span></div>
+    {{ end }}
+    {{ if len(RuntimeHealth.Issues) > 0 }}
+    <div class="mb-5 rounded-md border border-[var(--border)] p-3 text-sm">
+      <div class="text-xs uppercase tracking-wide opacity-60 mb-2">Runtime Checks</div>
+      {{ range _, issue := RuntimeHealth.Issues }}
+      <div class="opacity-80">{{ issue }}</div>
+      {{ end }}
+    </div>
+    {{ end }}
+    {{ end }}
     <div class="flex flex-wrap gap-2 mb-5">
       <form action="/apps/{{ Status.App.ID }}/actions/start" method="post">
         <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
@@ -1107,15 +1138,47 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
         <p class="settings-section-copy">Tune the PHP-FPM version and common request limits for this platform.</p>
       </div>
     </div>
+    {{ if PHPRuntimeHealth.Applicable }}
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4 text-sm">
+      <div class="rounded-md border border-[var(--border)] p-3">
+        <div class="text-xs uppercase tracking-wide opacity-60">PHP-FPM</div>
+        <div class="mt-1 font-mono text-xs">{{ PHPRuntimeHealth.SelectedVersion }}</div>
+      </div>
+      <div class="rounded-md border border-[var(--border)] p-3">
+        <div class="text-xs uppercase tracking-wide opacity-60">Shell PHP CLI</div>
+        <div class="mt-1 font-mono text-xs">{{ if PHPRuntimeHealth.SSHVersion != "" }}{{ PHPRuntimeHealth.SSHVersion }}{{ else }}Unavailable{{ end }}</div>
+      </div>
+      <div class="rounded-md border border-[var(--border)] p-3">
+        <div class="text-xs uppercase tracking-wide opacity-60">Service</div>
+        <div class="mt-1 font-mono text-xs">{{ PHPRuntimeHealth.ServiceBinary }}</div>
+      </div>
+      <div class="rounded-md border border-[var(--border)] p-3">
+        <div class="text-xs uppercase tracking-wide opacity-60">Health</div>
+        <div class="mt-1">{{ if PHPRuntimeHealth.Healthy }}<span class="badge badge-ok">healthy</span>{{ else }}<span class="badge badge-warning">needs attention</span>{{ end }}</div>
+      </div>
+    </div>
+    {{ if len(PHPRuntimeHealth.Issues) > 0 }}
+    <div class="mb-4 rounded-md border border-[var(--border)] p-3 text-sm">
+      {{ range _, issue := PHPRuntimeHealth.Issues }}
+      <div class="opacity-80">{{ issue }}</div>
+      {{ end }}
+    </div>
+    {{ end }}
+    {{ end }}
     <form action="/websites/{{ Item.ID }}/manage/php-settings" method="post">
       <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <label class="block text-sm font-medium">PHP Version
+        <label class="block text-sm font-medium">PHP-FPM Version
           <select class="field mt-2" name="php_version">
-            {{ range _, v := PHPVersions }}
-              <option value="{{ v }}" {{ if v == Item.PHPVersion }}selected{{ end }}>PHP {{ v }}</option>
+            {{ if len(PHPVersions) == 0 }}
+              <option value="" selected disabled>No PHP-FPM versions installed</option>
+            {{ else }}
+              {{ range _, v := PHPVersions }}
+                <option value="{{ v }}" {{ if v == Item.PHPVersion }}selected{{ end }}>PHP {{ v }}</option>
+              {{ end }}
             {{ end }}
           </select>
+          <span class="text-xs opacity-70 mt-1 block">PHP websites use host PHP-FPM services. Managed PHP CLI runtimes are separate.</span>
         </label>
         <label class="block text-sm font-medium">memory_limit
           <select class="field mt-2" name="memory_limit">
@@ -1202,6 +1265,36 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
         {{ end }}
       </div>
     </div>
+    {{ if LinkedRuntimeHealth.Applicable }}
+    <div class="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4 mb-5">
+      <div class="rounded-md border border-[var(--border)] p-3">
+        <p class="text-xs uppercase tracking-wide opacity-70">Selected Runtime</p>
+        <p class="mt-1 font-mono text-xs">{{ LinkedRuntimeHealth.SelectedVersion }}</p>
+      </div>
+      <div class="rounded-md border border-[var(--border)] p-3">
+        <p class="text-xs uppercase tracking-wide opacity-70">SSH Version</p>
+        <p class="mt-1 font-mono text-xs">{{ if LinkedRuntimeHealth.SSHVersion != "" }}{{ LinkedRuntimeHealth.SSHVersion }}{{ else }}Unavailable{{ end }}</p>
+      </div>
+      <div class="rounded-md border border-[var(--border)] p-3">
+        <p class="text-xs uppercase tracking-wide opacity-70">Service Version</p>
+        <p class="mt-1 font-mono text-xs">{{ if LinkedRuntimeHealth.ServiceVersion != "" }}{{ LinkedRuntimeHealth.ServiceVersion }}{{ else }}Unavailable{{ end }}</p>
+      </div>
+      <div class="rounded-md border border-[var(--border)] p-3">
+        <p class="text-xs uppercase tracking-wide opacity-70">Runtime Health</p>
+        <p class="mt-1">{{ if LinkedRuntimeHealth.Healthy }}<span class="badge badge-ok">healthy</span>{{ else }}<span class="badge badge-warning">needs attention</span>{{ end }}</p>
+      </div>
+    </div>
+    {{ if LinkedRuntimeHealth.ServiceBinary != "" }}
+    <div class="mb-3 text-xs opacity-70">Resolved service binary: <span class="font-mono">{{ LinkedRuntimeHealth.ServiceBinary }}</span></div>
+    {{ end }}
+    {{ if len(LinkedRuntimeHealth.Issues) > 0 }}
+    <div class="mb-5 rounded-md border border-[var(--border)] p-3 text-sm">
+      {{ range _, issue := LinkedRuntimeHealth.Issues }}
+      <div class="opacity-80">{{ issue }}</div>
+      {{ end }}
+    </div>
+    {{ end }}
+    {{ end }}
 
     <!-- Service Controls -->
     <div class="flex flex-wrap gap-2 mb-5">
@@ -1242,7 +1335,7 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
       {{ end }}
       <div class="rounded-md border border-[var(--border)] p-3">
         <p class="text-xs uppercase tracking-wide opacity-70">Working Directory</p>
-        <p class="mt-1 font-mono text-xs ">{{ LinkedApp.WorkingDirectory }}</p>
+        <p class="mt-1 font-mono text-xs ">{{ LinkedAppWorkingDir }}</p>
       </div>
       <div class="rounded-md border border-[var(--border)] p-3">
         <p class="text-xs uppercase tracking-wide opacity-70">Service Name</p>

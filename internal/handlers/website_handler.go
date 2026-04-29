@@ -106,6 +106,10 @@ func (h *WebsiteHandler) Create(c *fiber.Ctx) error {
 		return c.Redirect("/platforms/new")
 	}
 	websiteInput := form.Website
+	if err := h.validatePHPFPMSelection(&websiteInput); err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect("/platforms/new")
+	}
 	createdSiteUserID, generatedPassword, err := h.ensureSiteUser(c.Context(), &websiteInput, form, currentUserID(c), c.IP())
 	if err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
@@ -190,14 +194,21 @@ func (h *WebsiteHandler) ShowByID(c *fiber.Ctx, id uint) error {
 	var linkedApp *models.GoApp
 	var linkedAppStatus *services.AppStatus
 	linkedRuntimeVersion := ""
+	linkedAppWorkingDirectory := ""
+	var linkedRuntimeHealth services.RuntimeInspection
+	var phpRuntimeHealth services.RuntimeInspection
 	if item.Type == "proxy" {
 		linkedApp = websiteRuntimeApp(item)
 		if linkedApp != nil {
+			linkedAppWorkingDirectory = platformHomeFromRoot(item.RootPath)
 			linkedAppStatus, _ = h.appService.Status(c.Context(), linkedApp.ID)
 			if linkedAppStatus != nil && linkedAppStatus.App != nil {
 				linkedRuntimeVersion = envVarValue(linkedAppStatus.App.EnvVars, "RUNTIME_VERSION")
+				linkedRuntimeHealth = h.appService.RuntimeInspection(linkedAppStatus.App)
 			}
 		}
+	} else if item.Type == "php" {
+		phpRuntimeHealth = h.service.RuntimeInspection(item)
 	}
 	primaryDomain := primaryWebsiteDomain(item.Domains)
 	scopedSSL := websiteSSLItems(item, sslItems)
@@ -222,6 +233,9 @@ func (h *WebsiteHandler) ShowByID(c *fiber.Ctx, id uint) error {
 		"LinkedApp":            linkedApp,
 		"LinkedAppStatus":      linkedAppStatus,
 		"LinkedRuntimeVersion": linkedRuntimeVersion,
+		"LinkedAppWorkingDir":  linkedAppWorkingDirectory,
+		"LinkedRuntimeHealth":  linkedRuntimeHealth,
+		"PHPRuntimeHealth":     phpRuntimeHealth,
 		"GoVersions":           goVersions,
 		"NodeVersions":         nodeVersions,
 		"PythonVersions":       pythonVersions,
@@ -259,6 +273,10 @@ func (h *WebsiteHandler) Update(c *fiber.Ctx) error {
 	}
 	form, err := h.payload(c, current)
 	if err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect(platformURL("website", id))
+	}
+	if err := h.validatePHPFPMSelection(&form.Website); err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
 		return c.Redirect(platformURL("website", id))
 	}
@@ -1582,7 +1600,21 @@ func managedDatabaseTarget(engine string) (string, int, error) {
 }
 
 func (h *WebsiteHandler) phpVersions() []string {
-	return h.runtimeVersions("php")
+	return h.settings.PHPFPMVersionChoices()
+}
+
+func (h *WebsiteHandler) validatePHPFPMSelection(in *services.WebsiteInput) error {
+	if in == nil || !strings.EqualFold(strings.TrimSpace(in.Type), "php") {
+		return nil
+	}
+	available := h.phpVersions()
+	if len(available) == 0 {
+		return fmt.Errorf("no PHP-FPM versions are available on this server")
+	}
+	if !containsStringFold(available, strings.TrimSpace(in.PHPVersion)) {
+		return fmt.Errorf("selected PHP-FPM version is not available on this server")
+	}
+	return nil
 }
 
 func (h *WebsiteHandler) runtimeVersions(runtime string) []string {
@@ -1597,11 +1629,19 @@ func (h *WebsiteHandler) runtimeVersions(runtime string) []string {
 		return []string{"python3.13", "python3.12", "python3.11", "python3.10", "python3.9"}
 	case "node":
 		return []string{"node24", "node22", "node20", "node18"}
-	case "php":
-		return []string{"8.4", "8.3", "8.2", "8.1", "8.0", "7.4"}
 	default:
 		return []string{}
 	}
+}
+
+func containsStringFold(items []string, target string) bool {
+	target = strings.TrimSpace(target)
+	for _, item := range items {
+		if strings.EqualFold(strings.TrimSpace(item), target) {
+			return true
+		}
+	}
+	return false
 }
 
 // LogFiles returns available log files for a website (JSON).
@@ -1644,6 +1684,10 @@ func (h *WebsiteHandler) ManageSavePhpSettings(c *fiber.Ctx) error {
 		return c.Status(400).SendString("Invalid ID")
 	}
 	phpVersion := strings.TrimSpace(c.FormValue("php_version"))
+	if !containsStringFold(h.phpVersions(), phpVersion) {
+		h.base.Sessions.SetFlash(c, "selected PHP-FPM version is not available on this server")
+		return c.Redirect(platformURLWithTab("website", id, "settings"))
+	}
 	data := services.PhpSettingsData{
 		MemoryLimit:          c.FormValue("memory_limit", "256M"),
 		MaxExecutionTime:     c.FormValue("max_execution_time", "60"),
@@ -1687,6 +1731,7 @@ func (h *WebsiteHandler) ManageCreateLinkedApp(c *fiber.Ctx) error {
 	}
 	binaryPath := strings.TrimSpace(c.FormValue("binary_path"))
 	entryPoint := strings.TrimSpace(c.FormValue("entry_point"))
+	startArgs := strings.TrimSpace(c.FormValue("start_args"))
 	workdir := strings.TrimSpace(c.FormValue("working_directory"))
 	if workdir == "" {
 		workdir = site.RootPath
@@ -1705,7 +1750,7 @@ func (h *WebsiteHandler) ManageCreateLinkedApp(c *fiber.Ctx) error {
 	}
 
 	execMode := "compiled"
-	if runtime == "python" || runtime == "node" {
+	if runtime == "go" || runtime == "python" || runtime == "node" {
 		execMode = "interpreted"
 	}
 
@@ -1719,6 +1764,8 @@ func (h *WebsiteHandler) ManageCreateLinkedApp(c *fiber.Ctx) error {
 			binaryPath = "pm2"
 		default:
 			switch runtime {
+			case "go":
+				binaryPath = "/usr/bin/env"
 			case "python":
 				binaryPath = "python3"
 			case "node":
@@ -1728,6 +1775,11 @@ func (h *WebsiteHandler) ManageCreateLinkedApp(c *fiber.Ctx) error {
 	}
 	if entryPoint == "" && execMode == "interpreted" {
 		switch runtime {
+		case "go":
+			entryPoint = "main.go"
+			if startArgs == "" {
+				startArgs = "run"
+			}
 		case "python":
 			if processManager == "gunicorn" || processManager == "uwsgi" {
 				entryPoint = "app:app"
@@ -1752,6 +1804,7 @@ func (h *WebsiteHandler) ManageCreateLinkedApp(c *fiber.Ctx) error {
 		WorkingDirectory: workdir,
 		Host:             "127.0.0.1",
 		Port:             port,
+		StartArgs:        startArgs,
 		HealthPath:       "/health",
 		RestartPolicy:    strings.TrimSpace(c.FormValue("restart_policy")),
 		Workers:          workers,
@@ -1761,7 +1814,7 @@ func (h *WebsiteHandler) ManageCreateLinkedApp(c *fiber.Ctx) error {
 		ExecMode:         strings.TrimSpace(c.FormValue("exec_mode")),
 		WebsiteID:        &site.ID,
 		Enabled:          true,
-		Env:              map[string]string{},
+		Env:              map[string]string{"RUNTIME_VERSION": strings.TrimSpace(c.FormValue("runtime_version")), "PORT": strconv.Itoa(port), "HOST": "127.0.0.1"},
 	}, currentUserID(c), c.IP())
 	if err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
