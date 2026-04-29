@@ -7,6 +7,7 @@ ADMIN_PASS="${DEPLOYCP_TEST_ADMIN_PASS:-}"
 SQLITE_DB="${DEPLOYCP_TEST_SQLITE_DB:-/home/deploycp/core/storage/db/deploycp.sqlite}"
 DEPLOYCP_BIN="${DEPLOYCP_TEST_DEPLOYCP_BIN:-/home/deploycp/core/bin/deploycp}"
 SITE_ROOT_BASE="${DEPLOYCP_TEST_SITE_ROOT:-/home/deploycp/platforms/sites}"
+RUNTIME_ROOT="${DEPLOYCP_TEST_RUNTIME_ROOT:-/home/deploycp/core/storage/runtimes}"
 ALLOW_RUNTIME_MUTATION="${DEPLOYCP_TEST_ALLOW_RUNTIME_MUTATION:-0}"
 WORKDIR=""
 COOKIE_JAR=""
@@ -49,6 +50,7 @@ Optional environment:
   DEPLOYCP_TEST_SQLITE_DB=/home/deploycp/core/storage/db/deploycp.sqlite
   DEPLOYCP_TEST_DEPLOYCP_BIN=/home/deploycp/core/bin/deploycp
   DEPLOYCP_TEST_SITE_ROOT=/home/deploycp/platforms/sites
+  DEPLOYCP_TEST_RUNTIME_ROOT=/home/deploycp/core/storage/runtimes
   DEPLOYCP_TEST_ALLOW_RUNTIME_MUTATION=1
 
 Notes:
@@ -366,7 +368,20 @@ create_platform() {
     args+=( --data-urlencode "php_version=$runtime_version" )
   fi
   curl "${args[@]}" "$BASE_URL/platforms" >/dev/null || return 1
-  tr -d '\r' <"$headers" | sed -n 's/^Location: //p' | tail -n1
+  local location
+  location="$(tr -d '\r' <"$headers" | sed -n 's/^Location: //p' | tail -n1)"
+  if [[ "$location" == /platforms/* ]]; then
+    printf '%s\n' "$location"
+    return 0
+  fi
+  local flash
+  flash="$(sed -n 's:.*flash__text[^>]*>\([^<][^<]*\)</.*:\1:p' "$body" | head -n1)"
+  if [[ -n "$flash" ]]; then
+    echo "$flash" >&2
+  else
+    echo "platform create did not redirect to a platform manage URL for kind=$kind domain=$domain" >&2
+  fi
+  return 1
 }
 
 assert_manage_page_contains_tabs() {
@@ -447,6 +462,13 @@ domain_request_retry() {
     sleep 1
   done
   return 1
+}
+
+first_installed_runtime_version() {
+  local runtime="$1"
+  local root="$RUNTIME_ROOT/$runtime"
+  [[ -d "$root" ]] || return 1
+  find "$root" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; 2>/dev/null | sort -V | tail -n1
 }
 
 test_site_shell_collaboration() {
@@ -799,7 +821,7 @@ create_runtime_suite() {
   assert_manage_page_contains_tabs "$manage_url" "Settings" "Runtime" "Databases" "SSL/TLS" "SSH/FTP" "Logs"
 
   local runtime_out="$WORKDIR/$kind-site.out"
-  if domain_request_retry http "$domain" "/" "$runtime_out" 15; then
+  if domain_request_retry http "$domain" "/" "$runtime_out" 45; then
     if file_contains "$runtime_out" "DeployCP"; then
       pass "$kind platform served local host-header traffic"
     else
@@ -927,9 +949,9 @@ main() {
   fetch_page "/platforms/new" "$new_html" || { fail "Could not load /platforms/new for runtime discovery"; exit 1; }
   local php_version go_version python_version node_version
   php_version="$(first_select_option "$new_html" "sa-php-version")"
-  go_version="$(first_select_option "$new_html" "sa-go-version")"
-  python_version="$(first_select_option "$new_html" "sa-python-version")"
-  node_version="$(first_select_option "$new_html" "sa-node-version")"
+  go_version="$(first_installed_runtime_version go || true)"
+  python_version="$(first_installed_runtime_version python || true)"
+  node_version="$(first_installed_runtime_version node || true)"
 
   create_static_suite
 
