@@ -218,6 +218,41 @@ sudo /home/deploycp/core/bin/deploycp reconcile-managed
 sudo /home/deploycp/core/scripts/linux/harden-host.sh
 ```
 
+### Production Smoke Test
+
+DeployCP also ships with a production-oriented smoke test runner:
+
+```bash
+sudo DEPLOYCP_TEST_ADMIN_USER=admin \
+     DEPLOYCP_TEST_ADMIN_PASS='your-panel-password' \
+     /home/deploycp/core/scripts/linux/tests.sh
+```
+
+What it does:
+
+- logs into the panel with a real session, CSRF token, and captcha
+- checks major admin pages and platform-manager surfaces
+- creates temporary platforms and related resources
+- verifies runtime-backed platforms, logs, file manager, SSH/FTP users, cron, SSL, Varnish, and selected database/Redis flows when the matching host services are available
+- deletes the temporary resources again and runs `reconcile-managed`
+
+Important:
+
+- it is intended to run on a real server as `root`
+- it tries to leave the server in a clean managed state after the run
+- runtime removal guard checks are skipped by default because they intentionally hit mutation endpoints; enable them with:
+
+```bash
+sudo DEPLOYCP_TEST_ADMIN_USER=admin \
+     DEPLOYCP_TEST_ADMIN_PASS='your-panel-password' \
+     DEPLOYCP_TEST_ALLOW_RUNTIME_MUTATION=1 \
+     /home/deploycp/core/scripts/linux/tests.sh
+```
+
+Current limitation:
+
+- alternative managers such as `pm2`, `gunicorn`, and `uwsgi` are still only best-effort verifiable by the product itself, so the smoke test cannot prove them as strictly as direct `systemd` runtime execution
+
 **Recovery order:**
 
 1. `systemctl status deploycp` — check if the service is running
@@ -380,7 +415,7 @@ To build locally:
 │   ├── validators/             # input validation
 │   └── views/                  # template engine setup
 ├── scripts/
-│   └── linux/                  # install, update, uninstall, build, runtime-manager
+│   └── linux/                  # install, update, uninstall, build, runtime-manager, production smoke tests
 ├── docs/                       # HTML documentation
 ├── database/
 │   └── migrations/

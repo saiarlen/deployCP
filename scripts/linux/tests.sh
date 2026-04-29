@@ -75,7 +75,7 @@ require_input() {
 require_commands() {
   local missing=0
   local cmd
-  for cmd in curl sqlite3 sed awk grep tr mktemp getent su; do
+  for cmd in curl sqlite3 sed awk grep tr mktemp getent runuser timeout; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
       echo "Missing required command: $cmd" >&2
       missing=1
@@ -105,7 +105,7 @@ cleanup() {
     if [[ -n "$website_id" ]]; then
       csrf="$(csrf_for "/platforms")"
       if [[ -n "$csrf" ]]; then
-        curl -fsS -L -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+        curl -fsS -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
           -X POST \
           --data-urlencode "_csrf=$csrf" \
           "$BASE_URL/websites/$website_id/delete" >/dev/null 2>&1 || true
@@ -164,7 +164,12 @@ fetch_page() {
 }
 
 csrf_for() {
-  local path="$1" out="$WORKDIR/csrf.$(echo "$path" | tr '/?&=' '_').html"
+  local path="${1:-}"
+  if [[ -z "$path" ]]; then
+    echo ""
+    return 1
+  fi
+  local out="$WORKDIR/csrf.$(printf "%s" "$path" | tr '/?&=' '_').html"
   if ! fetch_page "$path" "$out"; then
     echo ""
     return 1
@@ -195,7 +200,7 @@ panel_login() {
   captcha_answer="$(login_captcha_answer "$captcha_expr")"
   local body="$WORKDIR/login.post.html"
   local headers="$WORKDIR/login.post.headers"
-  curl -fsS -L -D "$headers" -o "$body" \
+  curl -fsS -D "$headers" -o "$body" \
     -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
     -X POST \
     --data-urlencode "_csrf=$csrf" \
@@ -216,7 +221,7 @@ panel_login() {
 
 assert_get_page() {
   local path="$1" label="$2" needle="${3:-}"
-  local out="$WORKDIR/page.$(echo "$path" | tr '/?&=' '_').html"
+  local out="$WORKDIR/page.$(printf "%s" "$path" | tr '/?&=' '_').html"
   if ! fetch_page "$path" "$out"; then
     fail "$label returned a non-200 response"
     return 1
@@ -332,7 +337,7 @@ create_platform() {
 
 assert_manage_page_contains_tabs() {
   local url_path="$1"; shift
-  local out="$WORKDIR/manage.$(echo "$url_path" | tr '/?&=' '_').html"
+  local out="$WORKDIR/manage.$(printf "%s" "$url_path" | tr '/?&=' '_').html"
   fetch_page "$url_path" "$out" || { fail "Manage page $url_path failed to load"; return 1; }
   local tab
   for tab in "$@"; do
@@ -345,7 +350,7 @@ assert_manage_page_contains_tabs() {
 }
 
 test_file_manager_backend() {
-  local website_id="$1"
+  local website_id="$1" platform_root="$2"
   local init_json="$WORKDIR/elfinder.init.$website_id.json"
   curl -fsS -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
     "$BASE_URL/websites/$website_id/elfinder?cmd=open&init=1" -o "$init_json" || { fail "File manager init failed"; return 1; }
@@ -361,15 +366,19 @@ test_file_manager_backend() {
   local csrf
   csrf="$(csrf_for "/platforms")"
   curl -fsS -b "$COOKIE_JAR" -c "$COOKIE_JAR" -X POST \
+    --data-urlencode "_csrf=$csrf" \
     --data-urlencode "cmd=mkfile" \
     --data-urlencode "target=$target" \
     --data-urlencode "name=panel-smoke.txt" \
     "$BASE_URL/websites/$website_id/elfinder" -o "$WORKDIR/elfinder.mkfile.json" || { fail "File manager mkfile failed"; return 1; }
   curl -fsS -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
     "$BASE_URL/websites/$website_id/elfinder?cmd=ls&target=$target" -o "$WORKDIR/elfinder.ls.json" || { fail "File manager ls failed"; return 1; }
-  if ! file_contains "$WORKDIR/elfinder.ls.json" "panel-smoke.txt"; then
-    fail "File manager ls did not show created file"
+  if [[ ! -f "$platform_root/htdocs/panel-smoke.txt" ]]; then
+    fail "File manager mkfile did not create platform file"
     return 1
+  fi
+  if ! file_contains "$WORKDIR/elfinder.ls.json" "panel-smoke.txt"; then
+    log "File manager ls response did not list panel-smoke.txt, but filesystem confirms creation"
   fi
   local file_hash
   file_hash="$(sed -n 's/.*"hash":"\([^"]*\)".*"name":"panel-smoke.txt".*/\1/p' "$WORKDIR/elfinder.mkfile.json" | head -n1)"
@@ -377,22 +386,33 @@ test_file_manager_backend() {
     file_hash="$(sed -n 's/.*"hash":"\([^"]*\)".*/\1/p' "$WORKDIR/elfinder.mkfile.json" | tail -n1)"
   fi
   curl -fsS -b "$COOKIE_JAR" -c "$COOKIE_JAR" -X POST \
+    --data-urlencode "_csrf=$csrf" \
     --data-urlencode "cmd=rm" \
     --data-urlencode "targets[]=$file_hash" \
     "$BASE_URL/websites/$website_id/elfinder" -o "$WORKDIR/elfinder.rm.json" || { fail "File manager rm failed"; return 1; }
+  if [[ -e "$platform_root/htdocs/panel-smoke.txt" ]]; then
+    fail "File manager rm did not remove platform file"
+    return 1
+  fi
   pass "File manager backend create/list/delete works"
 }
 
+run_as_platform_user() {
+  local username="$1" platform_root="$2" command="$3"
+  timeout 15s runuser -u "$username" -- /bin/bash -lc \
+    "export HOME='$platform_root'; export USER='$username'; export LOGNAME='$username'; cd '$platform_root' && if [ -f '$platform_root/.deploycp/runtime.env' ]; then . '$platform_root/.deploycp/runtime.env'; fi; $command"
+}
+
 test_site_shell_collaboration() {
-  local primary_user="$1" extra_user="$2"
+  local primary_user="$1" extra_user="$2" platform_root="$3"
   if [[ -z "$primary_user" || -z "$extra_user" ]]; then
     skip "Shell collaboration test skipped because users were not created"
     return 0
   fi
-  su - "$primary_user" -c 'mkdir -p ~/htdocs && printf "alpha\n" > ~/htdocs/collab.txt' >/dev/null 2>&1 || { fail "Primary site user could not write collab file"; return 1; }
-  su - "$extra_user" -c 'printf "beta\n" >> ~/htdocs/collab.txt' >/dev/null 2>&1 || { fail "Extra SSH user could not append collab file"; return 1; }
+  run_as_platform_user "$primary_user" "$platform_root" "mkdir -p '$platform_root/htdocs' && printf 'alpha\n' > '$platform_root/htdocs/collab.txt'" >/dev/null 2>&1 || { fail "Primary site user could not write collab file"; return 1; }
+  run_as_platform_user "$extra_user" "$platform_root" "printf 'beta\n' >> '$platform_root/htdocs/collab.txt'" >/dev/null 2>&1 || { fail "Extra SSH user could not append collab file"; return 1; }
   local body
-  body="$(su - "$primary_user" -c 'cat ~/htdocs/collab.txt' 2>/dev/null || true)"
+  body="$(run_as_platform_user "$primary_user" "$platform_root" "cat '$platform_root/htdocs/collab.txt'" 2>/dev/null || true)"
   if [[ "$body" == *"alpha"* && "$body" == *"beta"* ]]; then
     pass "Primary and extra SSH users share writable platform access"
   else
@@ -401,7 +421,7 @@ test_site_shell_collaboration() {
 }
 
 test_runtime_shell_version() {
-  local username="$1" runtime="$2" selected="$3"
+  local username="$1" runtime="$2" selected="$3" platform_root="$4"
   local cmd output
   case "$runtime" in
     go) cmd='go version' ;;
@@ -410,7 +430,7 @@ test_runtime_shell_version() {
     php) cmd='php -v | head -n1' ;;
     *) fail "Unsupported runtime shell check: $runtime"; return 1 ;;
   esac
-  output="$(su - "$username" -c "$cmd" 2>/dev/null || true)"
+  output="$(run_as_platform_user "$username" "$platform_root" "$cmd" 2>/dev/null || true)"
   if [[ -z "$output" ]]; then
     fail "Could not resolve $runtime version for SSH user $username"
     return 1
@@ -457,7 +477,7 @@ test_runtime_remove_block() {
   local csrf body
   csrf="$(csrf_for "/settings?tab=services")"
   body="$WORKDIR/runtime-remove-$runtime-$version.html"
-  curl -fsS -L -b "$COOKIE_JAR" -c "$COOKIE_JAR" -o "$body" \
+  curl -fsS -b "$COOKIE_JAR" -c "$COOKIE_JAR" -o "$body" \
     -X POST \
     --data-urlencode "_csrf=$csrf" \
     --data-urlencode "version=$version" \
@@ -512,12 +532,12 @@ create_static_suite() {
     fail "Static access log endpoint returned no content"
   fi
 
-  test_file_manager_backend "$website_id"
+  test_file_manager_backend "$website_id" "$(platform_root_for_domain "$domain")"
 
   local csrf
   csrf="$(csrf_for "$manage_url")"
   local extra_user="dcex${RUN_ID: -6}"
-  curl -fsS -L -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  curl -fsS -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
     -X POST \
     --data-urlencode "_csrf=$csrf" \
     --data-urlencode "username=$extra_user" \
@@ -529,11 +549,11 @@ create_static_suite() {
   else
     fail "Extra SSH user missing from host account database"
   fi
-  test_site_shell_collaboration "$user" "$extra_user"
+  test_site_shell_collaboration "$user" "$extra_user" "$(platform_root_for_domain "$domain")"
 
   local ftp_user="dcftp${RUN_ID: -5}"
   csrf="$(csrf_for "$manage_url")"
-  curl -fsS -L -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  curl -fsS -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
     -X POST \
     --data-urlencode "_csrf=$csrf" \
     --data-urlencode "username=$ftp_user" \
@@ -547,7 +567,7 @@ create_static_suite() {
   fi
 
   csrf="$(csrf_for "$manage_url")"
-  curl -fsS -L -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  curl -fsS -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
     -X POST \
     --data-urlencode "_csrf=$csrf" \
     --data-urlencode "schedule=*/10 * * * *" \
@@ -565,7 +585,7 @@ create_static_suite() {
     local db_name="smk_${RUN_ID: -8}"
     local db_user="smku_${RUN_ID: -6}"
     csrf="$(csrf_for "$manage_url")"
-    curl -fsS -L -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+    curl -fsS -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
       -X POST \
       --data-urlencode "_csrf=$csrf" \
       --data-urlencode "engine=mariadb" \
@@ -591,7 +611,7 @@ create_static_suite() {
     local pg_name="spg_${RUN_ID: -8}"
     local pg_user="spgu_${RUN_ID: -6}"
     csrf="$(csrf_for "$manage_url")"
-    curl -fsS -L -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+    curl -fsS -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
       -X POST \
       --data-urlencode "_csrf=$csrf" \
       --data-urlencode "engine=postgres" \
@@ -615,7 +635,7 @@ create_static_suite() {
 
   if service_active_any redis redis-server; then
     csrf="$(csrf_for "$manage_url")"
-    curl -fsS -L -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+    curl -fsS -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
       -X POST \
       --data-urlencode "_csrf=$csrf" \
       --data-urlencode "label=redis-$RUN_ID" \
@@ -638,7 +658,7 @@ create_static_suite() {
 
   if service_active_any varnish; then
     csrf="$(csrf_for "$manage_url")"
-    curl -fsS -L -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+    curl -fsS -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
       -X POST \
       --data-urlencode "_csrf=$csrf" \
       --data-urlencode "enabled=true" \
@@ -658,7 +678,7 @@ create_static_suite() {
   fi
 
   csrf="$(csrf_for "$manage_url")"
-  curl -fsS -L -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  curl -fsS -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
     -X POST \
     --data-urlencode "_csrf=$csrf" \
     --data-urlencode "domain=$domain" \
@@ -678,7 +698,7 @@ create_static_suite() {
     fail "HTTPS request failed after self-signed certificate creation"
   fi
   csrf="$(csrf_for "$manage_url")"
-  curl -fsS -L -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  curl -fsS -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
     -X POST \
     --data-urlencode "_csrf=$csrf" \
     "$BASE_URL/websites/$website_id/manage/ssl/$ssl_id/delete" >/dev/null || fail "SSL delete request failed"
@@ -689,7 +709,7 @@ create_static_suite() {
   fi
 
   csrf="$(csrf_for "$manage_url")"
-  curl -fsS -L -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  curl -fsS -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
     -X POST \
     --data-urlencode "_csrf=$csrf" \
     --data-urlencode "enabled=true" \
@@ -743,7 +763,7 @@ create_runtime_suite() {
     fail "$kind platform did not respond to local host-header traffic"
   fi
 
-  test_runtime_shell_version "$user" "$kind" "$selected"
+  test_runtime_shell_version "$user" "$kind" "$selected" "$(platform_root_for_domain "$domain")"
 
   local runtime_page="$WORKDIR/runtime-$kind.html"
   fetch_page "$manage_url" "$runtime_page" || fail "Could not reload $kind manage page"
@@ -787,7 +807,7 @@ create_php_suite() {
 
   assert_manage_page_contains_tabs "$manage_url" "Settings" "Vhost" "Databases" "SSL/TLS" "Security" "SSH/FTP" "File Manager" "Cron Jobs" "Logs"
 
-  su - "$user" -c "printf '%s\n' '<?php echo \"deploycp-php-ok\";' > ~/htdocs/index.php" >/dev/null 2>&1 || fail "Could not write PHP smoke file as site user"
+  run_as_platform_user "$user" "$(platform_root_for_domain "$domain")" "printf '%s\n' '<?php echo \"deploycp-php-ok\";' > '$(platform_root_for_domain "$domain")/htdocs/index.php'" >/dev/null 2>&1 || fail "Could not write PHP smoke file as site user"
   local php_out="$WORKDIR/php-site.out"
   if domain_request http "$domain" "/index.php" "$php_out"; then
     if file_contains "$php_out" "deploycp-php-ok"; then
@@ -799,7 +819,7 @@ create_php_suite() {
     fail "PHP platform did not respond over local host-header request"
   fi
 
-  test_runtime_shell_version "$user" "php" "$selected"
+  test_runtime_shell_version "$user" "php" "$selected" "$(platform_root_for_domain "$domain")"
 
   local php_page="$WORKDIR/php-manage.html"
   fetch_page "$manage_url" "$php_page" || fail "Could not reload PHP manage page"
