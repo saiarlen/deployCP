@@ -97,3 +97,21 @@ func TestRuntimeVersionStatesMarkVerifiedWrappersReady(t *testing.T) {
 		t.Fatalf("unexpected runtime state: %+v", states[0])
 	}
 }
+
+func TestAddRuntimeVersionAcceptsFreshVerifiedInstall(t *testing.T) {
+	service, repos := testSettingsService(t)
+
+	writeRuntimeWrapper(t, service.cfg.Paths.RuntimeRoot, "go", "go1.26.2", `echo "go version go1.26.2 linux/amd64"`)
+
+	if err := service.AddRuntimeVersion("go", "go1.26.2", nil, ""); err != nil {
+		t.Fatalf("add runtime version: %v", err)
+	}
+
+	value, err := repos.Settings.Get("go_versions")
+	if err != nil {
+		t.Fatalf("get setting: %v", err)
+	}
+	if value != "go1.26.2" {
+		t.Fatalf("expected persisted runtime version, got %q", value)
+	}
+}

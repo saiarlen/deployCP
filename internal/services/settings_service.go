@@ -420,6 +420,16 @@ func (s *SettingsService) AddRuntimeVersion(runtime, version string, actor *uint
 	if !isValidRuntimeVersion(runtime, v) {
 		return fmt.Errorf("invalid %s version", strings.TrimSpace(runtime))
 	}
+	if s.runtimeWrapperExists(runtime, v) && s.verifyInstalledRuntimeVersion(runtime, v) {
+		configured := s.configuredRuntimeVersions(runtime)
+		for _, item := range configured {
+			if item == v {
+				return nil
+			}
+		}
+		versions := append([]string{v}, s.RuntimeVersions(runtime)...)
+		return s.saveRuntimeVersions(runtime, versions, actor, ip)
+	}
 	if available := s.AvailableRuntimeVersions(runtime); len(available) > 0 && !containsRuntimeVersion(available, v) {
 		return fmt.Errorf("%s is not available from the managed runtime catalog", v)
 	}

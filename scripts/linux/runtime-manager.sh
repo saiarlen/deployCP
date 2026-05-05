@@ -19,6 +19,7 @@ asdf_data_dir="${runtime_root}/_asdf_data"
 asdf_version="v0.15.0"
 catalog_cache_dir="${runtime_root}/_catalog_cache"
 catalog_cache_file="${catalog_cache_dir}/${runtime}.txt"
+git_config_global="${runtime_root}/_gitconfig"
 
 asdf_tool_name() {
   case "$runtime" in
@@ -61,6 +62,9 @@ requested_runtime_version() {
 if [[ "$action" != "list-remote" ]]; then
   mkdir -p "$bin_dir"
 fi
+mkdir -p "$runtime_root"
+touch "$git_config_global"
+export GIT_CONFIG_GLOBAL="$git_config_global"
 
 pkg_manager() {
   if command -v apt-get >/dev/null 2>&1; then echo apt; return; fi
@@ -183,7 +187,7 @@ install_runtime_build_deps() {
       ;;
     php)
       case "$manager" in
-        apt) install_packages "$manager" build-essential autoconf bison re2c pkg-config libxml2-dev libsqlite3-dev libssl-dev libcurl4-openssl-dev libonig-dev libzip-dev ;;
+        apt) install_packages "$manager" build-essential autoconf bison re2c pkg-config plocate libxml2-dev libsqlite3-dev libssl-dev libcurl4-openssl-dev libonig-dev libzip-dev libgd-dev libpng-dev libjpeg-dev libwebp-dev libfreetype6-dev ;;
         dnf|yum) install_packages "$manager" gcc gcc-c++ make autoconf bison re2c pkgconfig libxml2-devel sqlite-devel openssl-devel libcurl-devel oniguruma-devel libzip-devel ;;
         zypper) install_packages "$manager" gcc gcc-c++ make autoconf bison re2c pkg-config libxml2-devel sqlite3-devel libopenssl-devel libcurl-devel oniguruma-devel libzip-devel ;;
         pacman) install_packages "$manager" base-devel autoconf bison re2c pkgconf libxml2 sqlite openssl curl oniguruma libzip ;;
@@ -204,10 +208,28 @@ ensure_asdf() {
     rm -rf "$asdf_dir"
     git clone --branch "$asdf_version" https://github.com/asdf-vm/asdf.git "$asdf_dir"
   fi
+  mark_git_safe_dir "$asdf_dir"
+  mark_git_safe_tree "$asdf_data_dir"
   export ASDF_DIR="$asdf_dir"
   export ASDF_DATA_DIR="$asdf_data_dir"
   # shellcheck disable=SC1090
   . "${asdf_dir}/asdf.sh"
+}
+
+mark_git_safe_dir() {
+  local repo_dir="$1"
+  [[ -n "$repo_dir" && -d "$repo_dir" ]] || return 0
+  git config --global --add safe.directory "$(cd "$repo_dir" && pwd -P)" >/dev/null 2>&1 || true
+}
+
+mark_git_safe_tree() {
+  local root="$1"
+  [[ -n "$root" && -d "$root" ]] || return 0
+  mark_git_safe_dir "$root"
+  while IFS= read -r git_dir; do
+    [[ -n "$git_dir" ]] || continue
+    mark_git_safe_dir "$(dirname "$git_dir")"
+  done < <(find "$root" -type d -name .git -prune -print 2>/dev/null || true)
 }
 
 ensure_asdf_plugin() {
@@ -219,6 +241,8 @@ ensure_asdf_plugin() {
   if ! asdf plugin list | grep -qx "$tool"; then
     asdf plugin add "$tool" "$url"
   fi
+  mark_git_safe_dir "${ASDF_DATA_DIR}/plugins/${tool}"
+  mark_git_safe_tree "${ASDF_DATA_DIR}/plugins/${tool}"
   if [[ "$tool" == "nodejs" ]]; then
     local keyring_script="${ASDF_DATA_DIR}/plugins/nodejs/bin/import-release-team-keyring"
     if [[ -x "$keyring_script" ]]; then
@@ -231,6 +255,10 @@ asdf_install_version() {
   local tool="$1"
   local req="$2"
   [[ -n "$tool" && -n "$req" ]] || return 1
+  mark_git_safe_tree "${ASDF_DATA_DIR}/plugins/${tool}"
+  if [[ "$tool" == "nodejs" ]]; then
+    export ASDF_NODEJS_SKIP_NODEBUILD_UPDATE="yes"
+  fi
   asdf install "$tool" "$req"
 }
 
@@ -729,6 +757,7 @@ case "$action" in
       exit 1
     fi
     if ! prepare_runtime_binaries; then
+      asdf_uninstall_version "$tool_name" "$requested_version_value" >/dev/null 2>&1 || true
       rm -rf "$version_dir"
       exit 1
     fi
