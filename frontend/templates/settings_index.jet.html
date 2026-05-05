@@ -350,7 +350,7 @@
             <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
             <select class="field flex-1" name="version" required>
               <option value="" selected disabled>Select installed Go version</option>
-              {{ range _, v := GoRuntimeEntries }}<option value="{{ v.Version }}">{{ v.Version }}</option>{{ end }}
+              {{ range _, v := GoRuntimeEntries }}{{ if v.Verified }}<option value="{{ v.Version }}">{{ v.Version }}</option>{{ end }}{{ end }}
             </select>
             <button class="btn btn-primary" type="submit">Set Default</button>
           </form>
@@ -374,7 +374,7 @@
             <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
             <select class="field flex-1" name="version" required>
               <option value="" selected disabled>Select installed Node version</option>
-              {{ range _, v := NodeRuntimeEntries }}<option value="{{ v.Version }}">{{ v.Version }}</option>{{ end }}
+              {{ range _, v := NodeRuntimeEntries }}{{ if v.Verified }}<option value="{{ v.Version }}">{{ v.Version }}</option>{{ end }}{{ end }}
             </select>
             <button class="btn btn-primary" type="submit">Set Default</button>
           </form>
@@ -398,7 +398,7 @@
             <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
             <select class="field flex-1" name="version" required>
               <option value="" selected disabled>Select installed Python version</option>
-              {{ range _, v := PythonRuntimeEntries }}<option value="{{ v.Version }}">{{ v.Version }}</option>{{ end }}
+              {{ range _, v := PythonRuntimeEntries }}{{ if v.Verified }}<option value="{{ v.Version }}">{{ v.Version }}</option>{{ end }}{{ end }}
             </select>
             <button class="btn btn-primary" type="submit">Set Default</button>
           </form>
@@ -422,7 +422,7 @@
             <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
             <select class="field flex-1" name="version" required>
               <option value="" selected disabled>Select installed PHP CLI version</option>
-              {{ range _, v := PHPRuntimeEntries }}<option value="{{ v.Version }}">{{ v.Version }}</option>{{ end }}
+              {{ range _, v := PHPRuntimeEntries }}{{ if v.Verified }}<option value="{{ v.Version }}">{{ v.Version }}</option>{{ end }}{{ end }}
             </select>
             <button class="btn btn-primary" type="submit">Set Default</button>
           </form>
@@ -1187,15 +1187,18 @@ $(function () {
       if (payload && payload.stderr) runtimeLine(payload.stderr);
       if (payload && payload.ok) {
         runtimeLine(payload.message || 'Host operation completed. Refreshing service catalog...');
+        runtimeCloseReady();
+        window.setTimeout(function () {
+          window.location.href = (payload && payload.redirect) || '/settings?tab=services';
+        }, 700);
       } else {
         runtimeLine('Operation failed.');
         if (payload && payload.error) runtimeLine(payload.error);
         if (runtime === 'php') runtimeLine('If PHP failed, review missing build libraries and retry after the host packages are installed.');
+        if (submitButton) submitButton.disabled = false;
+        runtimeLine('The terminal will stay open so you can read the error. Close it after reviewing the output.');
+        runtimeCloseReady();
       }
-      runtimeCloseReady();
-      window.setTimeout(function () {
-        window.location.href = (payload && payload.redirect) || '/settings?tab=services';
-      }, 700);
     }).catch(function (err) {
       runtimeLine('Request failed: ' + (err && err.message ? err.message : 'unknown error'));
       runtimeLine('Close this window and retry once the server is reachable.');

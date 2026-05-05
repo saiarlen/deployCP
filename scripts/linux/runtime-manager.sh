@@ -721,9 +721,11 @@ case "$action" in
     rm -rf "$version_dir"
     ;;
   set-default)
-    ensure_asdf "$manager"
-    ensure_asdf_plugin "$tool_name" "$plugin_url"
-    prepare_runtime_binaries
+    if [[ ! -x "${bin_dir}/$(case "$runtime" in go) echo go ;; node) echo node ;; python) echo python3 ;; php) echo php ;; esac)" ]]; then
+      ensure_asdf "$manager"
+      ensure_asdf_plugin "$tool_name" "$plugin_url"
+      prepare_runtime_binaries
+    fi
     set_system_default_runtime
     ;;
   *)

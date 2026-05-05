@@ -556,6 +556,16 @@ func (h *SettingsHandler) RuntimeVersionDefault(c *fiber.Ctx) error {
 	if version == "" {
 		return h.runtimeActionError(c, fmt.Errorf("version is required"), services.RuntimeActionResult{})
 	}
+	ready := false
+	for _, item := range h.service.RuntimeVersionStates(runtime) {
+		if strings.TrimSpace(item.Version) == version && item.Verified {
+			ready = true
+			break
+		}
+	}
+	if !ready {
+		return h.runtimeActionError(c, fmt.Errorf("selected %s runtime %s is not ready; repair or reinstall it first", runtime, version), services.RuntimeActionResult{})
+	}
 	if h.runtimeService == nil {
 		return h.runtimeActionError(c, fmt.Errorf("runtime service not available"), services.RuntimeActionResult{})
 	}
