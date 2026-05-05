@@ -353,6 +353,9 @@ func (s *SettingsService) installedRuntimeVersions(runtime string) []string {
 			if version == "" || !isValidRuntimeVersion(runtime, version) {
 				continue
 			}
+			if !s.runtimeWrapperExists(runtime, version) {
+				continue
+			}
 			if _, ok := seen[version]; ok {
 				continue
 			}
@@ -365,16 +368,29 @@ func (s *SettingsService) installedRuntimeVersions(runtime string) []string {
 	return out
 }
 
+func (s *SettingsService) runtimeWrapperExists(runtime, version string) bool {
+	command := defaultRuntimeCommand(strings.ToLower(strings.TrimSpace(runtime)))
+	if command == "" || strings.TrimSpace(version) == "" {
+		return false
+	}
+	path := filepath.Join(s.cfg.Paths.RuntimeRoot, strings.ToLower(strings.TrimSpace(runtime)), strings.TrimSpace(version), "bin", command)
+	st, err := os.Stat(path)
+	return err == nil && !st.IsDir()
+}
+
 func (s *SettingsService) syncInstalledRuntimeCatalog(runtime string) error {
 	key := runtimeVersionKey(runtime)
 	if key == "" {
 		return nil
 	}
 	installed := s.installedRuntimeVersions(runtime)
-	if len(installed) == 0 {
-		return nil
-	}
 	configured := s.configuredRuntimeVersions(runtime)
+	if len(installed) == 0 {
+		if len(configured) == 0 {
+			return nil
+		}
+		return s.repo.Set(key, "", false)
+	}
 	merged := make([]string, 0, len(installed)+len(configured))
 	seen := map[string]struct{}{}
 	for _, version := range installed {
@@ -430,9 +446,6 @@ func (s *SettingsService) RemoveRuntimeVersion(runtime, version string, actor *u
 		}
 		filtered = append(filtered, item)
 	}
-	if len(filtered) == 0 {
-		return fmt.Errorf("at least one %s version is required", strings.TrimSpace(runtime))
-	}
 	return s.saveRuntimeVersions(runtime, filtered, actor, ip)
 }
 
@@ -455,7 +468,7 @@ func (s *SettingsService) saveRuntimeVersions(runtime string, versions []string,
 		clean = append(clean, v)
 	}
 	if len(clean) == 0 {
-		return fmt.Errorf("at least one %s version is required", strings.TrimSpace(runtime))
+		return s.Update(key, "", actor, ip)
 	}
 	return s.Update(key, strings.Join(clean, ","), actor, ip)
 }

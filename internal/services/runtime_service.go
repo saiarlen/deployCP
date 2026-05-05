@@ -68,6 +68,7 @@ func (s *RuntimeService) InstallVersion(ctx context.Context, runtime, version st
 	}
 	result, err := s.runRuntimeAction(ctx, "install", runtime, version, 15*time.Minute, "runtime.install", actor, ip)
 	if err != nil {
+		_ = os.RemoveAll(s.runtimeVersionDir(runtime, version))
 		return result, err
 	}
 	s.audit.Record(actor, "runtime.install", "runtime_version", runtime+":"+version, ip, nil)

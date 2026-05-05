@@ -16,7 +16,7 @@ bin_dir="${version_dir}/bin"
 global_bin_dir="/usr/local/bin"
 asdf_dir="${runtime_root}/_asdf"
 asdf_data_dir="${runtime_root}/_asdf_data"
-asdf_version="v0.18.0"
+asdf_version="v0.15.0"
 catalog_cache_dir="${runtime_root}/_catalog_cache"
 catalog_cache_file="${catalog_cache_dir}/${runtime}.txt"
 
@@ -196,7 +196,11 @@ ensure_asdf() {
   local manager="$1"
   install_manager_prereqs "$manager"
   mkdir -p "$runtime_root"
-  if [[ ! -f "${asdf_dir}/asdf.sh" ]]; then
+  local current_tag=""
+  if [[ -d "$asdf_dir/.git" ]]; then
+    current_tag="$(git -C "$asdf_dir" describe --tags --exact-match 2>/dev/null || true)"
+  fi
+  if [[ ! -f "${asdf_dir}/asdf.sh" || "$current_tag" != "$asdf_version" ]]; then
     rm -rf "$asdf_dir"
     git clone --branch "$asdf_version" https://github.com/asdf-vm/asdf.git "$asdf_dir"
   fi
@@ -214,6 +218,12 @@ ensure_asdf_plugin() {
   fi
   if ! asdf plugin list | grep -qx "$tool"; then
     asdf plugin add "$tool" "$url"
+  fi
+  if [[ "$tool" == "nodejs" ]]; then
+    local keyring_script="${ASDF_DATA_DIR}/plugins/nodejs/bin/import-release-team-keyring"
+    if [[ -x "$keyring_script" ]]; then
+      bash "$keyring_script" >/dev/null 2>&1 || true
+    fi
   fi
 }
 
@@ -521,6 +531,9 @@ prepare_runtime_binaries() {
     go)
       local go_bin=""
       go_bin="${install_dir}/bin/go"
+      if [[ ! -x "$go_bin" && -x "${install_dir}/go/bin/go" ]]; then
+        go_bin="${install_dir}/go/bin/go"
+      fi
       if ! is_executable_file "$go_bin"; then
         echo "failed to prepare strict Go runtime for ${version}" >&2
         exit 1
@@ -711,8 +724,14 @@ case "$action" in
     ensure_asdf "$manager"
     ensure_asdf_plugin "$tool_name" "$plugin_url"
     install_runtime_build_deps "$manager" || true
-    asdf_install_version "$tool_name" "$requested_version_value"
-    prepare_runtime_binaries
+    if ! asdf_install_version "$tool_name" "$requested_version_value"; then
+      rm -rf "$version_dir"
+      exit 1
+    fi
+    if ! prepare_runtime_binaries; then
+      rm -rf "$version_dir"
+      exit 1
+    fi
     ;;
   remove)
     ensure_asdf "$manager"
