@@ -479,6 +479,9 @@ func (s *AppService) installService(ctx context.Context, app *models.GoApp, env 
 	if !s.cfg.Features.EnableServiceManage {
 		return nil
 	}
+	if err := s.ensureServiceRuntimeStateDirs(app); err != nil {
+		return err
+	}
 	env = s.serviceRuntimeEnv(app, env)
 	if s.runtime != nil {
 		env = s.runtime.MergeRuntimeEnv(app.Runtime, env["RUNTIME_VERSION"], env)
@@ -504,7 +507,7 @@ func (s *AppService) installService(ctx context.Context, app *models.GoApp, env 
 }
 
 func (s *AppService) serviceRuntimeEnv(app *models.GoApp, env map[string]string) map[string]string {
-	out := make(map[string]string, len(env)+3)
+	out := make(map[string]string, len(env)+8)
 	for k, v := range env {
 		out[k] = v
 	}
@@ -514,7 +517,57 @@ func (s *AppService) serviceRuntimeEnv(app *models.GoApp, env map[string]string)
 	if strings.TrimSpace(out["HOST"]) == "" && strings.TrimSpace(app.Host) != "" {
 		out["HOST"] = strings.TrimSpace(app.Host)
 	}
+	stateRoot := s.serviceRuntimeStateRoot(app)
+	cacheRoot := filepath.Join(stateRoot, "cache")
+	dataRoot := filepath.Join(stateRoot, "data")
+	configRoot := filepath.Join(stateRoot, "config")
+	if strings.TrimSpace(out["HOME"]) == "" {
+		out["HOME"] = stateRoot
+	}
+	if strings.TrimSpace(out["XDG_CACHE_HOME"]) == "" {
+		out["XDG_CACHE_HOME"] = cacheRoot
+	}
+	if strings.TrimSpace(out["XDG_DATA_HOME"]) == "" {
+		out["XDG_DATA_HOME"] = dataRoot
+	}
+	if strings.TrimSpace(out["XDG_CONFIG_HOME"]) == "" {
+		out["XDG_CONFIG_HOME"] = configRoot
+	}
+	if strings.EqualFold(strings.TrimSpace(app.Runtime), "go") {
+		if strings.TrimSpace(out["GOCACHE"]) == "" {
+			out["GOCACHE"] = filepath.Join(cacheRoot, "go-build")
+		}
+		if strings.TrimSpace(out["GOPATH"]) == "" {
+			out["GOPATH"] = filepath.Join(dataRoot, "go")
+		}
+	}
 	return out
+}
+
+func (s *AppService) serviceRuntimeStateRoot(app *models.GoApp) string {
+	serviceName := "app"
+	if app != nil && strings.TrimSpace(app.ServiceName) != "" {
+		serviceName = strings.TrimSpace(app.ServiceName)
+	}
+	return filepath.Join(s.cfg.Paths.StorageRoot, "runtime-state", serviceName)
+}
+
+func (s *AppService) ensureServiceRuntimeStateDirs(app *models.GoApp) error {
+	root := s.serviceRuntimeStateRoot(app)
+	dirs := []string{
+		root,
+		filepath.Join(root, "cache"),
+		filepath.Join(root, "cache", "go-build"),
+		filepath.Join(root, "data"),
+		filepath.Join(root, "data", "go"),
+		filepath.Join(root, "config"),
+	}
+	for _, dir := range dirs {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *AppService) validate(in AppInput) error {
