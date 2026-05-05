@@ -151,9 +151,6 @@ func (s *RuntimeService) ApplyPlatformRuntime(rootPath, runtime, version string,
 		fmt.Sprintf("export DEPLOYCP_RUNTIME=%q", runtime),
 		fmt.Sprintf("export DEPLOYCP_RUNTIME_VERSION=%q", version),
 	}
-	if runtime == "go" {
-		lines = append(lines, fmt.Sprintf("export GOROOT=%q", s.runtimeVersionDir(runtime, version)))
-	}
 	lines = append(lines, fmt.Sprintf("export PATH=%q:$PATH", binDir))
 	if err := utils.WriteFileAtomic(runtimeEnvPath, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
 		return err
@@ -332,9 +329,6 @@ func (s *RuntimeService) MergeRuntimeEnv(runtime, version string, env map[string
 	}
 	out["DEPLOYCP_RUNTIME"] = runtime
 	out["DEPLOYCP_RUNTIME_VERSION"] = version
-	if runtime == "go" {
-		out["GOROOT"] = s.runtimeVersionDir(runtime, version)
-	}
 	return out
 }
 
