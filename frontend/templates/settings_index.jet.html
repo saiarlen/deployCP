@@ -388,9 +388,7 @@
             {{ if PythonRuntimeDefault.Binary }}<span class="badge badge-neutral">{{ if PythonRuntimeDefault.Managed }}deploycp managed{{ else }}host binary{{ end }}</span>{{ end }}
           </div>
           {{ if PythonRuntimeDefault.Binary }}<p class="text-xs opacity-70 font-mono break-all mb-3">{{ PythonRuntimeDefault.Binary }}</p>{{ end }}
-          <div class="mb-3 rounded-lg border border-red-300 bg-red-100 px-3 py-2 text-xs font-medium text-red-900 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200">
-            Changing the system-wide Python default can break Linux OS and desktop dependencies. Proceed on your own risk. DeployCP keeps this action disabled intentionally.
-          </div>
+        
           <div class="runtime-summary-grid mb-3">
             <span class="runtime-summary-pill">catalog: {{ PythonRuntimeSummary.SourceLabel }}</span>
             <span class="runtime-summary-pill">installed: {{ PythonRuntimeSummary.Installed }}</span>
@@ -399,7 +397,7 @@
           </div>
           <div class="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-3 text-sm">
             <div class="font-medium">Host safety lock</div>
-            <p class="mt-1 text-xs opacity-70">DeployCP keeps Python default changes disabled. Use per-platform Python runtimes instead of changing the host interpreter.</p>
+            <p class="mt-1 text-xs opacity-70">DeployCP keeps Python default changes disabled because changing the system-wide Python default can break Linux OS and desktop dependencies. Use per-platform Python runtimes instead of changing the host interpreter.</p>
           </div>
         </div>
         <div class="rounded-lg border border-[var(--border)] p-4">
