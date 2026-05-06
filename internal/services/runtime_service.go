@@ -132,6 +132,18 @@ func (s *RuntimeService) SystemDefaultVersion(runtime string) RuntimeDefaultStat
 	return status
 }
 
+func (s *RuntimeService) ImportSystemDefaultRuntime(runtime string) (string, error) {
+	runtime = strings.ToLower(strings.TrimSpace(runtime))
+	status := s.SystemDefaultVersion(runtime)
+	if status.Version == "" || status.Binary == "" || status.Managed {
+		return status.Version, nil
+	}
+	if managed := s.runtimeManagedBinary(runtime, status.Version); managed != "" {
+		return status.Version, nil
+	}
+	return status.Version, s.importHostRuntimeBinary(runtime, status.Version, status.Binary)
+}
+
 func (s *RuntimeService) ApplyPlatformRuntime(rootPath, runtime, version string, actor *uint, ip string) error {
 	rootPath = filepath.Clean(strings.TrimSpace(rootPath))
 	runtime = strings.ToLower(strings.TrimSpace(runtime))
@@ -506,6 +518,63 @@ func (s *RuntimeService) runtimeManagedBinary(runtime, version string) string {
 		return candidate
 	}
 	return ""
+}
+
+func (s *RuntimeService) importHostRuntimeBinary(runtime, version, binary string) error {
+	runtime = strings.ToLower(strings.TrimSpace(runtime))
+	version = strings.TrimSpace(version)
+	binary = strings.TrimSpace(binary)
+	command := defaultRuntimeCommand(runtime)
+	if runtime == "" || version == "" || binary == "" || command == "" {
+		return nil
+	}
+	versionDir := s.runtimeVersionDir(runtime, version)
+	binDir := filepath.Join(versionDir, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		return err
+	}
+	writeWrapper := func(name string) error {
+		path := filepath.Join(binDir, name)
+		script := fmt.Sprintf("#!/bin/sh\nexec %q \"$@\"\n", binary)
+		return utils.WriteFileAtomic(path, []byte(script), 0o755)
+	}
+	switch runtime {
+	case "go":
+		if err := writeWrapper("go"); err != nil {
+			return err
+		}
+		if sibling := filepath.Join(filepath.Dir(binary), "gofmt"); sibling != "" {
+			if st, err := os.Stat(sibling); err == nil && !st.IsDir() {
+				if err := utils.WriteFileAtomic(filepath.Join(binDir, "gofmt"), []byte(fmt.Sprintf("#!/bin/sh\nexec %q \"$@\"\n", sibling)), 0o755); err != nil {
+					return err
+				}
+			}
+		}
+	case "node":
+		if err := writeWrapper("node"); err != nil {
+			return err
+		}
+		_ = writeWrapper("nodejs")
+	case "python":
+		if err := writeWrapper("python3"); err != nil {
+			return err
+		}
+		_ = writeWrapper("python")
+	case "php":
+		if err := writeWrapper("php"); err != nil {
+			return err
+		}
+	}
+	meta := strings.Join([]string{
+		"mode=host-import",
+		"binary=" + binary,
+		"runtime=" + runtime,
+		"version=" + version,
+	}, "\n") + "\n"
+	if err := utils.WriteFileAtomic(filepath.Join(versionDir, ".deploycp-origin"), []byte(meta), 0o644); err != nil {
+		return err
+	}
+	return nil
 }
 
 func parseRuntimeEnvBinary(path string) string {

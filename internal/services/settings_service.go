@@ -26,6 +26,8 @@ type RuntimeVersionState struct {
 	Version   string
 	Installed bool
 	Verified  bool
+	Imported  bool
+	Protected bool
 }
 
 var (
@@ -236,7 +238,14 @@ func (s *SettingsService) RuntimeVersionStates(runtime string) []RuntimeVersionS
 	installed := s.installedRuntimeVersions(runtime)
 	out := make([]RuntimeVersionState, 0, len(installed))
 	for _, v := range installed {
-		out = append(out, RuntimeVersionState{Version: v, Installed: true, Verified: s.verifyInstalledRuntimeVersion(runtime, v)})
+		protected := s.ProtectedRuntimeVersion(runtime, v)
+		out = append(out, RuntimeVersionState{
+			Version:   v,
+			Installed: true,
+			Verified:  s.verifyInstalledRuntimeVersion(runtime, v),
+			Imported:  protected,
+			Protected: protected,
+		})
 	}
 	return out
 }
@@ -378,6 +387,18 @@ func (s *SettingsService) runtimeWrapperExists(runtime, version string) bool {
 	return err == nil && !st.IsDir()
 }
 
+func (s *SettingsService) runtimeVersionMetaPath(runtime, version string) string {
+	return filepath.Join(s.cfg.Paths.RuntimeRoot, strings.ToLower(strings.TrimSpace(runtime)), strings.TrimSpace(version), ".deploycp-origin")
+}
+
+func (s *SettingsService) ProtectedRuntimeVersion(runtime, version string) bool {
+	data, err := os.ReadFile(s.runtimeVersionMetaPath(runtime, version))
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(data), "host-import")
+}
+
 func (s *SettingsService) syncInstalledRuntimeCatalog(runtime string) error {
 	key := runtimeVersionKey(runtime)
 	if key == "" {
@@ -447,6 +468,9 @@ func (s *SettingsService) RemoveRuntimeVersion(runtime, version string, actor *u
 	v := strings.TrimSpace(version)
 	if v == "" {
 		return fmt.Errorf("version is required")
+	}
+	if s.ProtectedRuntimeVersion(runtime, v) {
+		return fmt.Errorf("%s is a protected host-imported runtime and cannot be removed", v)
 	}
 	versions := s.RuntimeVersions(runtime)
 	filtered := make([]string, 0, len(versions))

@@ -115,3 +115,24 @@ func TestAddRuntimeVersionAcceptsFreshVerifiedInstall(t *testing.T) {
 		t.Fatalf("expected persisted runtime version, got %q", value)
 	}
 }
+
+func TestProtectedRuntimeVersionCannotBeRemoved(t *testing.T) {
+	service, _ := testSettingsService(t)
+
+	writeRuntimeWrapper(t, service.cfg.Paths.RuntimeRoot, "python", "python3.12.3", `echo "Python 3.12.3"`)
+	metaPath := filepath.Join(service.cfg.Paths.RuntimeRoot, "python", "python3.12.3", ".deploycp-origin")
+	if err := os.WriteFile(metaPath, []byte("mode=host-import\n"), 0o644); err != nil {
+		t.Fatalf("write meta: %v", err)
+	}
+
+	if !service.ProtectedRuntimeVersion("python", "python3.12.3") {
+		t.Fatalf("expected runtime version to be protected")
+	}
+	if err := service.RemoveRuntimeVersion("python", "python3.12.3", nil, ""); err == nil {
+		t.Fatalf("expected protected runtime removal to be blocked")
+	}
+	states := service.RuntimeVersionStates("python")
+	if len(states) != 1 || !states[0].Protected || !states[0].Imported || !states[0].Verified {
+		t.Fatalf("unexpected runtime state: %+v", states)
+	}
+}

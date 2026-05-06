@@ -388,6 +388,9 @@
             {{ if PythonRuntimeDefault.Binary }}<span class="badge badge-neutral">{{ if PythonRuntimeDefault.Managed }}deploycp managed{{ else }}host binary{{ end }}</span>{{ end }}
           </div>
           {{ if PythonRuntimeDefault.Binary }}<p class="text-xs opacity-70 font-mono break-all mb-3">{{ PythonRuntimeDefault.Binary }}</p>{{ end }}
+          <div class="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200">
+            Changing the system-wide Python default can break Linux OS and desktop dependencies. Proceed on your own risk. DeployCP keeps this action disabled intentionally.
+          </div>
           <div class="runtime-summary-grid mb-3">
             <span class="runtime-summary-pill">catalog: {{ PythonRuntimeSummary.SourceLabel }}</span>
             <span class="runtime-summary-pill">installed: {{ PythonRuntimeSummary.Installed }}</span>
@@ -396,11 +399,11 @@
           </div>
           <form action="/settings/runtime-versions/python/default" method="post" class="flex gap-2 runtime-version-action-form" data-runtime-action="set-default" data-runtime-kind="python">
             <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
-            <select class="field flex-1" name="version" required>
+            <select class="field flex-1" name="version" required disabled>
               <option value="" selected disabled>Select installed Python version</option>
               {{ range _, v := PythonRuntimeEntries }}{{ if v.Verified }}<option value="{{ v.Version }}">{{ v.Version }}</option>{{ end }}{{ end }}
             </select>
-            <button class="btn btn-primary" type="submit">Set Default</button>
+            <button class="btn btn-primary" type="submit" disabled>Set Default</button>
           </form>
         </div>
         <div class="rounded-lg border border-[var(--border)] p-4">
@@ -440,7 +443,9 @@
             {{ range _, v := GoRuntimeEntries }}
             <div class="runtime-version-chip">
               <span class="badge badge-neutral runtime-version-badge">{{ v.Version }}</span>
+              {{ if v.Imported }}<span class="badge badge-neutral runtime-version-state">host import</span>{{ end }}
               {{ if v.Verified }}<span class="badge badge-ok runtime-version-state">ready</span>{{ else }}<span class="badge badge-danger runtime-version-state">needs repair</span>{{ end }}
+              {{ if !v.Protected }}
               <form action="/settings/runtime-versions/go/remove" method="post" class="runtime-version-remove-form runtime-version-action-form" data-confirm-message="Remove {{ v.Version }} from Go versions? If any platform uses this version, removal will be blocked." data-runtime-action="remove" data-runtime-kind="go" data-runtime-version="{{ v.Version }}">
                 <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
                 <input type="hidden" name="version" value="{{ v.Version }}">
@@ -448,6 +453,7 @@
                   <i data-lucide="x"></i>
                 </button>
               </form>
+              {{ end }}
             </div>
             {{ end }}
           </div>
@@ -472,7 +478,9 @@
             {{ range _, v := NodeRuntimeEntries }}
             <div class="runtime-version-chip">
               <span class="badge badge-neutral runtime-version-badge">{{ v.Version }}</span>
+              {{ if v.Imported }}<span class="badge badge-neutral runtime-version-state">host import</span>{{ end }}
               {{ if v.Verified }}<span class="badge badge-ok runtime-version-state">ready</span>{{ else }}<span class="badge badge-danger runtime-version-state">needs repair</span>{{ end }}
+              {{ if !v.Protected }}
               <form action="/settings/runtime-versions/node/remove" method="post" class="runtime-version-remove-form runtime-version-action-form" data-confirm-message="Remove {{ v.Version }} from Node versions? If any platform uses this version, removal will be blocked." data-runtime-action="remove" data-runtime-kind="node" data-runtime-version="{{ v.Version }}">
                 <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
                 <input type="hidden" name="version" value="{{ v.Version }}">
@@ -480,6 +488,7 @@
                   <i data-lucide="x"></i>
                 </button>
               </form>
+              {{ end }}
             </div>
             {{ end }}
           </div>
@@ -504,7 +513,9 @@
             {{ range _, v := PythonRuntimeEntries }}
             <div class="runtime-version-chip">
               <span class="badge badge-neutral runtime-version-badge">{{ v.Version }}</span>
+              {{ if v.Imported }}<span class="badge badge-neutral runtime-version-state">host import</span>{{ end }}
               {{ if v.Verified }}<span class="badge badge-ok runtime-version-state">ready</span>{{ else }}<span class="badge badge-danger runtime-version-state">needs repair</span>{{ end }}
+              {{ if !v.Protected }}
               <form action="/settings/runtime-versions/python/remove" method="post" class="runtime-version-remove-form runtime-version-action-form" data-confirm-message="Remove {{ v.Version }} from Python versions? If any platform uses this version, removal will be blocked." data-runtime-action="remove" data-runtime-kind="python" data-runtime-version="{{ v.Version }}">
                 <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
                 <input type="hidden" name="version" value="{{ v.Version }}">
@@ -512,6 +523,7 @@
                   <i data-lucide="x"></i>
                 </button>
               </form>
+              {{ end }}
             </div>
             {{ end }}
           </div>
@@ -536,7 +548,9 @@
             {{ range _, v := PHPRuntimeEntries }}
             <div class="runtime-version-chip">
               <span class="badge badge-neutral runtime-version-badge">{{ v.Version }}</span>
+              {{ if v.Imported }}<span class="badge badge-neutral runtime-version-state">host import</span>{{ end }}
               {{ if v.Verified }}<span class="badge badge-ok runtime-version-state">ready</span>{{ else }}<span class="badge badge-danger runtime-version-state">needs repair</span>{{ end }}
+              {{ if !v.Protected }}
               <form action="/settings/runtime-versions/php/remove" method="post" class="runtime-version-remove-form runtime-version-action-form" data-confirm-message="Remove {{ v.Version }} from PHP versions? If any platform uses this version, removal will be blocked." data-runtime-action="remove" data-runtime-kind="php" data-runtime-version="{{ v.Version }}">
                 <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
                 <input type="hidden" name="version" value="{{ v.Version }}">
@@ -544,6 +558,7 @@
                   <i data-lucide="x"></i>
                 </button>
               </form>
+              {{ end }}
             </div>
             {{ end }}
           </div>

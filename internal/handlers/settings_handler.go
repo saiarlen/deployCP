@@ -244,6 +244,13 @@ func (h *SettingsHandler) Index(c *fiber.Ctx) error {
 	if h.updateService != nil {
 		updateView = h.updateService.FooterView()
 	}
+	if h.runtimeService != nil {
+		for _, runtime := range []string{"go", "node", "python", "php"} {
+			if _, err := h.runtimeService.ImportSystemDefaultRuntime(runtime); err == nil {
+				_ = h.service.SyncInstalledRuntimeCatalogs()
+			}
+		}
+	}
 
 	goEntries := h.service.RuntimeVersionStates("go")
 	nodeEntries := h.service.RuntimeVersionStates("node")
@@ -512,6 +519,9 @@ func (h *SettingsHandler) RuntimeVersionAdd(c *fiber.Ctx) error {
 func (h *SettingsHandler) RuntimeVersionRemove(c *fiber.Ctx) error {
 	runtime := strings.ToLower(strings.TrimSpace(c.Params("runtime")))
 	version := strings.TrimSpace(c.FormValue("version"))
+	if h.service.ProtectedRuntimeVersion(runtime, version) {
+		return h.runtimeActionError(c, fmt.Errorf("%s is a protected host-imported runtime and cannot be removed", version), services.RuntimeActionResult{})
+	}
 	if current := h.runtimeDefaultStatus(runtime); strings.TrimSpace(current.Version) == version {
 		return h.runtimeActionError(c, fmt.Errorf("cannot remove %s while it is the current system default for %s", version, runtime), services.RuntimeActionResult{})
 	}
@@ -553,6 +563,9 @@ func (h *SettingsHandler) RuntimeVersionRemove(c *fiber.Ctx) error {
 func (h *SettingsHandler) RuntimeVersionDefault(c *fiber.Ctx) error {
 	runtime := strings.ToLower(strings.TrimSpace(c.Params("runtime")))
 	version := strings.TrimSpace(c.FormValue("version"))
+	if runtime == "python" {
+		return h.runtimeActionError(c, fmt.Errorf("changing the system-wide Python default is disabled because it can break Linux OS and desktop dependencies"), services.RuntimeActionResult{})
+	}
 	if version == "" {
 		return h.runtimeActionError(c, fmt.Errorf("version is required"), services.RuntimeActionResult{})
 	}

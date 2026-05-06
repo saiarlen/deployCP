@@ -187,10 +187,10 @@ install_runtime_build_deps() {
       ;;
     php)
       case "$manager" in
-        apt) install_packages "$manager" build-essential autoconf bison re2c pkg-config plocate libxml2-dev libsqlite3-dev libssl-dev libcurl4-openssl-dev libonig-dev libzip-dev libgd-dev libpng-dev libjpeg-dev libwebp-dev libfreetype6-dev ;;
-        dnf|yum) install_packages "$manager" gcc gcc-c++ make autoconf bison re2c pkgconfig libxml2-devel sqlite-devel openssl-devel libcurl-devel oniguruma-devel libzip-devel ;;
-        zypper) install_packages "$manager" gcc gcc-c++ make autoconf bison re2c pkg-config libxml2-devel sqlite3-devel libopenssl-devel libcurl-devel oniguruma-devel libzip-devel ;;
-        pacman) install_packages "$manager" base-devel autoconf bison re2c pkgconf libxml2 sqlite openssl curl oniguruma libzip ;;
+        apt) install_packages "$manager" build-essential autoconf bison re2c pkg-config plocate libxml2-dev libsqlite3-dev libssl-dev libcurl4-openssl-dev libonig-dev libzip-dev libgd-dev libpng-dev libjpeg-dev libwebp-dev libfreetype6-dev libpq-dev ;;
+        dnf|yum) install_packages "$manager" gcc gcc-c++ make autoconf bison re2c pkgconfig libxml2-devel sqlite-devel openssl-devel libcurl-devel oniguruma-devel libzip-devel postgresql-devel ;;
+        zypper) install_packages "$manager" gcc gcc-c++ make autoconf bison re2c pkg-config libxml2-devel sqlite3-devel libopenssl-devel libcurl-devel oniguruma-devel libzip-devel postgresql-devel ;;
+        pacman) install_packages "$manager" base-devel autoconf bison re2c pkgconf libxml2 sqlite openssl curl oniguruma libzip postgresql-libs ;;
       esac
       ;;
   esac
@@ -371,7 +371,7 @@ binary_matches_version() {
       ;;
     node)
       output="$("$candidate" --version 2>/dev/null || true)"
-      [[ "$output" == v${expected}.* || "$output" == "${expected}."* || "$output" == "$expected" ]]
+      [[ "$output" == "v${expected}" || "$output" == v${expected}.* || "$output" == "${expected}" || "$output" == "${expected}."* ]]
       ;;
     python)
       output="$("$candidate" --version 2>&1 || true)"
@@ -486,7 +486,7 @@ case $(printf '%q' "$kind") in
   node)
     output="\$("\$target" --version 2>/dev/null || true)"
     case "\$output" in
-      v$(printf '%q' "$expected").*|$(printf '%q' "$expected").*|$(printf '%q' "$expected")) ;;
+      v$(printf '%q' "$expected")|v$(printf '%q' "$expected").*|$(printf '%q' "$expected")|$(printf '%q' "$expected").*) ;;
       *) echo "DeployCP runtime mismatch for ${name}: expected $(printf '%q' "$expected"), got \$output" >&2; exit 1 ;;
     esac
     ;;

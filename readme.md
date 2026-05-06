@@ -71,9 +71,12 @@ After install, open `http://your-server-ip:2024` to create your admin account an
 Runtime behavior on live Linux:
 
 - runtime selectors and Settings runtime lists only show versions actually installed on the host
+- detected host default runtimes for Go, Node, Python, and PHP CLI are auto-imported into DeployCP's managed runtime list
+- host-imported runtime entries are marked as protected and cannot be removed from Runtime Version Management
 - fresh install attempts to install at least one real PHP-FPM version by default
 - runtime add/remove actions are real host operations
 - runtime removal is blocked if a platform is still using that version
+- changing the system-wide Python default is intentionally disabled because it can break Linux OS and desktop dependencies
 - per-platform runtime selection is applied through `<platform-root>/.deploycp/runtime.env`
 - site-user SSH and extra SSH users for the same platform read the same platform runtime env
 - PHP websites use real host `php-fpm`; PHP CLI/runtime management is separate from PHP-FPM service management
