@@ -718,7 +718,7 @@ function adminer_object() {
     }
 
     class DeployCPAdminer extends DeployCPAdminerBase {
-        function permanentLogin() {
+        function permanentLogin($i = false) {
             return hash('sha256', '%s');
         }
     }
