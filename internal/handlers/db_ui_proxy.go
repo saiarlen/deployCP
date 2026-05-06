@@ -203,6 +203,7 @@ func proxyBasePath(c *fiber.Ctx) string {
 
 func renderAdminerAutoLogin(c *fiber.Ctx, title string, actionPath string, fields url.Values) error {
 	c.Type("html", "utf-8")
+	csrfToken := csrfTokenFromContext(c)
 	var body strings.Builder
 	body.WriteString("<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">")
 	body.WriteString("<title>")
@@ -215,6 +216,11 @@ func renderAdminerAutoLogin(c *fiber.Ctx, title string, actionPath string, field
 	body.WriteString("<form id=\"db-ui-login\" method=\"post\" action=\"")
 	body.WriteString(ht.HTMLEscapeString(actionPath))
 	body.WriteString("\">")
+	if strings.TrimSpace(csrfToken) != "" {
+		body.WriteString("<input type=\"hidden\" name=\"_csrf\" value=\"")
+		body.WriteString(ht.HTMLEscapeString(csrfToken))
+		body.WriteString("\">")
+	}
 	for key, values := range fields {
 		escapedKey := ht.HTMLEscapeString(key)
 		for _, value := range values {
