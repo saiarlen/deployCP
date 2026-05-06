@@ -755,7 +755,7 @@ func (h *WebsiteHandler) ManageAdminerDB(c *fiber.Ctx) error {
 		h.base.Sessions.SetFlash(c, err.Error())
 		return c.Redirect(platformURLWithTab("website", id, "databases"))
 	}
-	if c.Method() == fiber.MethodGet && strings.TrimSpace(c.Params("*")) == "" {
+	if c.Method() == fiber.MethodGet && strings.TrimSpace(c.Params("*")) == "" && strings.TrimSpace(c.Context().QueryArgs().String()) == "" {
 		form, err := h.databaseService.AdminerLoginForm(dbid)
 		if err != nil {
 			h.base.Sessions.SetFlash(c, err.Error())
@@ -793,7 +793,7 @@ func (h *WebsiteHandler) ManageOpenPostgresGUI(c *fiber.Ctx) error {
 		h.base.Sessions.SetFlash(c, err.Error())
 		return c.Redirect(platformURLWithTab("website", id, "databases"))
 	}
-	if c.Method() == fiber.MethodGet && strings.TrimSpace(c.Params("*")) == "" {
+	if c.Method() == fiber.MethodGet && strings.TrimSpace(c.Params("*")) == "" && strings.TrimSpace(c.Context().QueryArgs().String()) == "" {
 		form, err := h.databaseService.PostgresAdminerLoginForm(item.ID)
 		if err != nil {
 			h.base.Sessions.SetFlash(c, err.Error())
