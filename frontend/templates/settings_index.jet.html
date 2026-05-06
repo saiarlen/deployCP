@@ -388,7 +388,7 @@
             {{ if PythonRuntimeDefault.Binary }}<span class="badge badge-neutral">{{ if PythonRuntimeDefault.Managed }}deploycp managed{{ else }}host binary{{ end }}</span>{{ end }}
           </div>
           {{ if PythonRuntimeDefault.Binary }}<p class="text-xs opacity-70 font-mono break-all mb-3">{{ PythonRuntimeDefault.Binary }}</p>{{ end }}
-          <div class="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200">
+          <div class="mb-3 rounded-lg border border-red-300 bg-red-100 px-3 py-2 text-xs font-medium text-red-900 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200">
             Changing the system-wide Python default can break Linux OS and desktop dependencies. Proceed on your own risk. DeployCP keeps this action disabled intentionally.
           </div>
           <div class="runtime-summary-grid mb-3">
@@ -405,6 +405,7 @@
             </select>
             <button class="btn btn-primary" type="submit" disabled>Set Default</button>
           </form>
+          <p class="mt-2 text-xs opacity-70">Disabled intentionally for host safety.</p>
         </div>
         <div class="rounded-lg border border-[var(--border)] p-4">
           <div class="flex items-start justify-between gap-3 mb-3">
@@ -664,6 +665,10 @@
       <div class="update-terminal-head">
         <span id="runtime-terminal-title">Runtime operation</span>
         <button type="button" class="btn btn-ghost" id="runtime-terminal-close" disabled>Close</button>
+      </div>
+      <div id="runtime-terminal-progress" class="flex items-center gap-2 border-b border-[var(--border)] px-4 py-3 text-sm">
+        <span class="app-update-check-spinner" id="runtime-terminal-spinner" style="display:inline-block" aria-hidden="true"></span>
+        <span id="runtime-terminal-progress-text">Preparing runtime operation...</span>
       </div>
       <div class="update-terminal-wrap runtime-terminal-wrap">
         <pre class="update-terminal runtime-terminal" id="runtime-terminal-output"></pre>
@@ -1099,7 +1104,11 @@ $(function () {
   var runtimeTerminalOutput = document.getElementById('runtime-terminal-output');
   var runtimeTerminalTitle = document.getElementById('runtime-terminal-title');
   var runtimeTerminalClose = document.getElementById('runtime-terminal-close');
+  var runtimeTerminalProgress = document.getElementById('runtime-terminal-progress');
+  var runtimeTerminalProgressText = document.getElementById('runtime-terminal-progress-text');
+  var runtimeTerminalSpinner = document.getElementById('runtime-terminal-spinner');
   var runtimeTerminalTimer = null;
+  var runtimeActionButtonState = null;
 
   function runtimeLine(text) {
     if (!runtimeTerminalOutput) return;
@@ -1110,12 +1119,17 @@ $(function () {
   function runtimeCloseReady() {
     if (!runtimeTerminalClose) return;
     runtimeTerminalClose.disabled = false;
+    if (runtimeTerminalProgressText) runtimeTerminalProgressText.textContent = 'Operation finished. Review the output below.';
+    if (runtimeTerminalSpinner) runtimeTerminalSpinner.classList.add('hidden');
   }
 
   function runtimeOpenModal(title) {
     if (!runtimeTerminalModal || !runtimeTerminalOutput) return;
     runtimeTerminalTitle.textContent = title;
     runtimeTerminalOutput.textContent = '';
+    if (runtimeTerminalProgressText) runtimeTerminalProgressText.textContent = 'Starting runtime operation...';
+    if (runtimeTerminalSpinner) runtimeTerminalSpinner.classList.remove('hidden');
+    if (runtimeTerminalProgress) runtimeTerminalProgress.classList.remove('hidden');
     runtimeTerminalModal.classList.remove('hidden');
     runtimeTerminalModal.setAttribute('aria-hidden', 'false');
     document.body.classList.add('confirm-modal-active');
@@ -1158,6 +1172,11 @@ $(function () {
     ];
   }
 
+  function runtimeSetProgress(text) {
+    if (!runtimeTerminalProgressText) return;
+    runtimeTerminalProgressText.textContent = text || 'Running runtime operation...';
+  }
+
   $(document).on('click', '#runtime-terminal-close, [data-runtime-terminal-close]', function () {
     if (!runtimeTerminalClose || runtimeTerminalClose.disabled) return;
     runtimeCloseModal();
@@ -1175,18 +1194,29 @@ $(function () {
     var lines = runtimeProgressScript(action, runtime, version);
     var idx = 0;
     runtimeLine('$ ' + (action === 'remove' ? 'remove' : action === 'set-default' ? 'set-default' : 'install') + ' ' + runtime + ' ' + version);
-    runtimeLine(lines[idx++]);
+    runtimeLine(lines[idx]);
+    runtimeSetProgress(lines[idx]);
+    idx++;
     runtimeTerminalTimer = window.setInterval(function () {
       if (idx >= lines.length) {
         window.clearInterval(runtimeTerminalTimer);
         runtimeTerminalTimer = null;
         return;
       }
-      runtimeLine(lines[idx++]);
+      runtimeLine(lines[idx]);
+      runtimeSetProgress(lines[idx]);
+      idx++;
     }, 1200);
 
     var submitButton = form.querySelector('button[type="submit"]');
-    if (submitButton) submitButton.disabled = true;
+    if (submitButton) {
+      runtimeActionButtonState = {
+        button: submitButton,
+        html: submitButton.innerHTML
+      };
+      submitButton.disabled = true;
+      submitButton.innerHTML = '<span class="app-update-check-spinner" style="display:inline-block;margin-right:8px" aria-hidden="true"></span><span>Working...</span>';
+    }
 
     fetch(form.action, {
       method: (form.method || 'POST').toUpperCase(),
@@ -1201,24 +1231,33 @@ $(function () {
       if (payload && payload.stdout) runtimeLine(payload.stdout);
       if (payload && payload.stderr) runtimeLine(payload.stderr);
       if (payload && payload.ok) {
+        runtimeSetProgress('Finalizing and refreshing the settings view...');
         runtimeLine(payload.message || 'Host operation completed. Refreshing service catalog...');
         runtimeCloseReady();
         window.setTimeout(function () {
           window.location.href = (payload && payload.redirect) || '/settings?tab=services';
         }, 700);
       } else {
+        runtimeSetProgress('Runtime operation failed.');
         runtimeLine('Operation failed.');
         if (payload && payload.error) runtimeLine(payload.error);
         if (runtime === 'php') runtimeLine('If PHP failed, review missing build libraries and retry after the host packages are installed.');
-        if (submitButton) submitButton.disabled = false;
+        if (runtimeActionButtonState && runtimeActionButtonState.button) {
+          runtimeActionButtonState.button.disabled = false;
+          runtimeActionButtonState.button.innerHTML = runtimeActionButtonState.html;
+        }
         runtimeLine('The terminal will stay open so you can read the error. Close it after reviewing the output.');
         runtimeCloseReady();
       }
     }).catch(function (err) {
+      runtimeSetProgress('Runtime request failed.');
       runtimeLine('Request failed: ' + (err && err.message ? err.message : 'unknown error'));
       runtimeLine('Close this window and retry once the server is reachable.');
       runtimeCloseReady();
-      if (submitButton) submitButton.disabled = false;
+      if (runtimeActionButtonState && runtimeActionButtonState.button) {
+        runtimeActionButtonState.button.disabled = false;
+        runtimeActionButtonState.button.innerHTML = runtimeActionButtonState.html;
+      }
     });
   });
 });

@@ -264,6 +264,10 @@ func (h *SettingsHandler) Index(c *fiber.Ctx) error {
 	nodeDefault := h.runtimeDefaultStatus("node")
 	pythonDefault := h.runtimeDefaultStatus("python")
 	phpDefault := h.runtimeDefaultStatus("php")
+	goEntries = ensureDefaultRuntimeEntry(goEntries, goDefault)
+	nodeEntries = ensureDefaultRuntimeEntry(nodeEntries, nodeDefault)
+	pythonEntries = ensureDefaultRuntimeEntry(pythonEntries, pythonDefault)
+	phpEntries = ensureDefaultRuntimeEntry(phpEntries, phpDefault)
 
 	return h.base.Render(c, "settings_index", fiber.Map{
 		"Title":                    "Settings",
@@ -316,6 +320,24 @@ func (h *SettingsHandler) Index(c *fiber.Ctx) error {
 		"ActiveTab":                activeTab,
 		"UpdateView":               updateView,
 	})
+}
+
+func ensureDefaultRuntimeEntry(entries []services.RuntimeVersionState, def services.RuntimeDefaultStatus) []services.RuntimeVersionState {
+	if strings.TrimSpace(def.Version) == "" {
+		return entries
+	}
+	for _, item := range entries {
+		if strings.TrimSpace(item.Version) == strings.TrimSpace(def.Version) {
+			return entries
+		}
+	}
+	return append([]services.RuntimeVersionState{{
+		Version:   strings.TrimSpace(def.Version),
+		Installed: true,
+		Verified:  true,
+		Imported:  !def.Managed,
+		Protected: !def.Managed,
+	}}, entries...)
 }
 
 func (h *SettingsHandler) Update(c *fiber.Ctx) error {

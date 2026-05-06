@@ -101,9 +101,11 @@ func (s *RuntimeService) SetSystemDefaultVersion(ctx context.Context, runtime, v
 	if s.cfg.Features.PlatformMode == "dryrun" {
 		return RuntimeActionResult{}, nil
 	}
-	result, err := s.runRuntimeAction(ctx, "set-default", runtime, version, 2*time.Minute, "runtime.default.set", actor, ip)
-	if err != nil {
-		return result, err
+	if err := s.setSystemDefaultRuntime(runtime, version); err != nil {
+		return RuntimeActionResult{}, err
+	}
+	result := RuntimeActionResult{
+		Stdout: fmt.Sprintf("Set system default %s to %s", runtime, version),
 	}
 	s.audit.Record(actor, "runtime.default.set", "runtime_default", runtime+":"+version, ip, nil)
 	return result, nil
@@ -575,6 +577,58 @@ func (s *RuntimeService) importHostRuntimeBinary(runtime, version, binary string
 		return err
 	}
 	return nil
+}
+
+func (s *RuntimeService) setSystemDefaultRuntime(runtime, version string) error {
+	globalBinDir := "/usr/local/bin"
+	versionDir := s.runtimeVersionDir(runtime, version)
+	switch runtime {
+	case "go":
+		if err := s.linkDefaultBinary(globalBinDir, filepath.Join(versionDir, "bin", "go"), "go"); err != nil {
+			return err
+		}
+		_ = s.linkDefaultBinary(globalBinDir, filepath.Join(versionDir, "bin", "gofmt"), "gofmt")
+	case "node":
+		if err := s.linkDefaultBinary(globalBinDir, filepath.Join(versionDir, "bin", "node"), "node"); err != nil {
+			return err
+		}
+		_ = s.linkDefaultBinary(globalBinDir, filepath.Join(versionDir, "bin", "nodejs"), "nodejs")
+		_ = s.linkDefaultBinary(globalBinDir, filepath.Join(versionDir, "bin", "npm"), "npm")
+		_ = s.linkDefaultBinary(globalBinDir, filepath.Join(versionDir, "bin", "npx"), "npx")
+		_ = s.linkDefaultBinary(globalBinDir, filepath.Join(versionDir, "bin", "pm2"), "pm2")
+	case "python":
+		if err := s.linkDefaultBinary(globalBinDir, filepath.Join(versionDir, "bin", "python3"), "python3"); err != nil {
+			return err
+		}
+		_ = s.linkDefaultBinary(globalBinDir, filepath.Join(versionDir, "bin", "python"), "python")
+		_ = s.linkDefaultBinary(globalBinDir, filepath.Join(versionDir, "bin", "pip3"), "pip3")
+		_ = s.linkDefaultBinary(globalBinDir, filepath.Join(versionDir, "bin", "pip"), "pip")
+	case "php":
+		if err := s.linkDefaultBinary(globalBinDir, filepath.Join(versionDir, "bin", "php"), "php"); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("unsupported runtime %s", runtime)
+	}
+	return nil
+}
+
+func (s *RuntimeService) linkDefaultBinary(globalBinDir, source, name string) error {
+	source = filepath.Clean(strings.TrimSpace(source))
+	name = strings.TrimSpace(name)
+	if source == "" || name == "" {
+		return fmt.Errorf("invalid default runtime link target")
+	}
+	st, err := os.Stat(source)
+	if err != nil || st.IsDir() {
+		return fmt.Errorf("runtime wrapper %s is not prepared; reinstall or repair it first", source)
+	}
+	if err := os.MkdirAll(globalBinDir, 0o755); err != nil {
+		return err
+	}
+	target := filepath.Join(globalBinDir, name)
+	_ = os.Remove(target)
+	return os.Symlink(source, target)
 }
 
 func parseRuntimeEnvBinary(path string) string {
