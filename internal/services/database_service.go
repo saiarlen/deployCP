@@ -2,6 +2,11 @@ package services
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -63,6 +68,15 @@ type DatabaseService struct {
 	services  *repositories.ManagedServiceRepository
 	adapter   platform.Adapter
 	audit     *AuditService
+}
+
+type adminerTokenPayload struct {
+	Engine   string `json:"engine"`
+	Server   string `json:"server"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+	Database string `json:"database"`
+	Expires  int64  `json:"expires"`
 }
 
 var managedDBIdentRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,62}$`)
@@ -309,7 +323,7 @@ func (s *DatabaseService) AdminerDBURL(id uint) (string, error) {
 	return u.String(), nil
 }
 
-func (s *DatabaseService) AdminerLoginForm(id uint) (url.Values, error) {
+func (s *DatabaseService) AdminerProxyQuery(id uint) (url.Values, error) {
 	item, err := s.dbRepo.Find(id)
 	if err != nil {
 		return nil, err
@@ -325,13 +339,23 @@ func (s *DatabaseService) AdminerLoginForm(id uint) (url.Values, error) {
 	if item.Port > 0 && item.Port != 3306 {
 		server = fmt.Sprintf("%s:%d", item.Host, item.Port)
 	}
-	form := url.Values{}
-	form.Set("auth[server]", server)
-	form.Set("auth[username]", item.Username)
-	form.Set("auth[password]", password)
-	form.Set("auth[db]", item.Database)
-	form.Set("auth[permanent]", "1")
-	return form, nil
+	token, err := s.signAdminerToken(adminerTokenPayload{
+		Engine:   "mariadb",
+		Server:   server,
+		Username: item.Username,
+		Password: password,
+		Database: item.Database,
+		Expires:  time.Now().Add(2 * time.Minute).Unix(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	q := url.Values{}
+	q.Add("", server)
+	q.Set("username", item.Username)
+	q.Set("db", item.Database)
+	q.Set("deploycp_token", token)
+	return q, nil
 }
 
 // UpdateDatabasePassword changes the password for a managed database user and
@@ -442,7 +466,7 @@ func (s *DatabaseService) PostgresAdminerURL(id uint) (string, error) {
 	return u.String(), nil
 }
 
-func (s *DatabaseService) PostgresAdminerLoginForm(id uint) (url.Values, error) {
+func (s *DatabaseService) PostgresAdminerProxyQuery(id uint) (url.Values, error) {
 	item, err := s.dbRepo.Find(id)
 	if err != nil {
 		return nil, err
@@ -458,14 +482,23 @@ func (s *DatabaseService) PostgresAdminerLoginForm(id uint) (url.Values, error) 
 	if item.Port > 0 && item.Port != 5432 {
 		server = fmt.Sprintf("%s:%d", item.Host, item.Port)
 	}
-	form := url.Values{}
-	form.Set("auth[driver]", "pgsql")
-	form.Set("auth[server]", server)
-	form.Set("auth[username]", item.Username)
-	form.Set("auth[password]", password)
-	form.Set("auth[db]", item.Database)
-	form.Set("auth[permanent]", "1")
-	return form, nil
+	token, err := s.signAdminerToken(adminerTokenPayload{
+		Engine:   "postgres",
+		Server:   server,
+		Username: item.Username,
+		Password: password,
+		Database: item.Database,
+		Expires:  time.Now().Add(2 * time.Minute).Unix(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	q := url.Values{}
+	q.Set("pgsql", server)
+	q.Set("username", item.Username)
+	q.Set("db", item.Database)
+	q.Set("deploycp_token", token)
+	return q, nil
 }
 
 func (s *DatabaseService) ensureLoopbackUIReady(baseURL string, starter func(port int) error) error {
@@ -578,12 +611,16 @@ func (s *DatabaseService) startAdminerHelper(port int) error {
 	if err := os.MkdirAll(helperRoot, 0o755); err != nil {
 		return err
 	}
-	entrypoint := filepath.Join(helperRoot, "index.php")
 	src, err := os.ReadFile(adminerSource)
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(entrypoint, src, 0o644); err != nil {
+	adminerCopy := filepath.Join(helperRoot, "adminer.php")
+	if err := os.WriteFile(adminerCopy, src, 0o644); err != nil {
+		return err
+	}
+	entrypoint := filepath.Join(helperRoot, "index.php")
+	if err := os.WriteFile(entrypoint, []byte(s.adminerWrapperPHP()), 0o644); err != nil {
 		return err
 	}
 	logFile, err := s.helperLogFile("adminer")
@@ -599,6 +636,124 @@ func (s *DatabaseService) startAdminerHelper(port int) error {
 	}
 	_ = cmd.Process.Release()
 	return logFile.Close()
+}
+
+func (s *DatabaseService) signAdminerToken(payload adminerTokenPayload) (string, error) {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	payloadPart := base64.RawURLEncoding.EncodeToString(body)
+	mac := hmac.New(sha256.New, []byte(s.cfg.Security.SessionSecret))
+	_, _ = mac.Write([]byte(payloadPart))
+	return payloadPart + "." + hex.EncodeToString(mac.Sum(nil)), nil
+}
+
+func (s *DatabaseService) adminerWrapperPHP() string {
+	secret := strings.ReplaceAll(s.cfg.Security.SessionSecret, `'`, `\'`)
+	return fmt.Sprintf(`<?php
+function deploycp_adminer_payload() {
+    $token = isset($_GET['deploycp_token']) ? trim((string) $_GET['deploycp_token']) : '';
+    if ($token === '' || strpos($token, '.') === false) {
+        return null;
+    }
+    [$payloadPart, $sigPart] = explode('.', $token, 2);
+    $expected = hash_hmac('sha256', $payloadPart, '%s');
+    if (!hash_equals($expected, $sigPart)) {
+        return null;
+    }
+    $normalized = strtr($payloadPart, '-_', '+/');
+    $padding = strlen($normalized) %% 4;
+    if ($padding > 0) {
+        $normalized .= str_repeat('=', 4 - $padding);
+    }
+    $decoded = base64_decode($normalized, true);
+    if ($decoded === false) {
+        return null;
+    }
+    $payload = json_decode($decoded, true);
+    if (!is_array($payload)) {
+        return null;
+    }
+    if (!isset($payload['expires']) || (int) $payload['expires'] < time()) {
+        return null;
+    }
+    return $payload;
+}
+
+function deploycp_seed_auth() {
+    $payload = deploycp_adminer_payload();
+    if (!is_array($payload)) {
+        return;
+    }
+    if (!isset($_POST['auth']) || !is_array($_POST['auth'])) {
+        $_POST['auth'] = array();
+    }
+    if ($payload['engine'] === 'postgres') {
+        $_POST['auth']['driver'] = 'pgsql';
+        $_GET['pgsql'] = $payload['server'];
+    } else {
+        $_GET['server'] = $payload['server'];
+    }
+    $_POST['auth']['server'] = $payload['server'];
+    $_POST['auth']['username'] = $payload['username'];
+    $_POST['auth']['password'] = $payload['password'];
+    $_POST['auth']['db'] = $payload['database'];
+    $_POST['auth']['permanent'] = '1';
+    $_GET['username'] = $payload['username'];
+    $_GET['db'] = $payload['database'];
+}
+
+deploycp_seed_auth();
+
+function adminer_object() {
+    if (class_exists('Adminer\\Adminer')) {
+        abstract class DeployCPAdminerBase extends Adminer\Adminer {}
+    } else {
+        abstract class DeployCPAdminerBase extends Adminer {}
+    }
+
+    class DeployCPAdminer extends DeployCPAdminerBase {
+        private function deploycpPayload() {
+            static $payload;
+            static $resolved = false;
+            if (!$resolved) {
+                $payload = deploycp_adminer_payload();
+                $resolved = true;
+            }
+            return $payload;
+        }
+
+        function credentials() {
+            $payload = $this->deploycpPayload();
+            if (is_array($payload)) {
+                return array($payload['server'], $payload['username'], $payload['password']);
+            }
+            return parent::credentials();
+        }
+
+        function database() {
+            $payload = $this->deploycpPayload();
+            if (is_array($payload) && !empty($payload['database'])) {
+                return $payload['database'];
+            }
+            return parent::database();
+        }
+
+        function login($login, $password) {
+            $payload = $this->deploycpPayload();
+            if (is_array($payload) && isset($payload['username']) && $login === $payload['username']) {
+                return true;
+            }
+            return parent::login($login, $password);
+        }
+    }
+
+    return new DeployCPAdminer();
+}
+
+include './adminer.php';
+`, secret)
 }
 
 func (s *DatabaseService) helperLogFile(name string) (*os.File, error) {

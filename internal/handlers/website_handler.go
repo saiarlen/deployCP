@@ -756,12 +756,12 @@ func (h *WebsiteHandler) ManageAdminerDB(c *fiber.Ctx) error {
 		return c.Redirect(platformURLWithTab("website", id, "databases"))
 	}
 	if c.Method() == fiber.MethodGet && strings.TrimSpace(c.Params("*")) == "" && strings.TrimSpace(c.Context().QueryArgs().String()) == "" {
-		form, err := h.databaseService.AdminerLoginForm(dbid)
+		query, err := h.databaseService.AdminerProxyQuery(dbid)
 		if err != nil {
 			h.base.Sessions.SetFlash(c, err.Error())
 			return c.Redirect(platformURLWithTab("website", id, "databases"))
 		}
-		return proxyToolFormRequest(c, h.databaseService.AdminerURL(), nil, form)
+		return proxyToolRequest(c, h.databaseService.AdminerURL(), query)
 	}
 	return proxyToolRequest(c, h.databaseService.AdminerURL(), nil)
 }
@@ -794,12 +794,12 @@ func (h *WebsiteHandler) ManageOpenPostgresGUI(c *fiber.Ctx) error {
 		return c.Redirect(platformURLWithTab("website", id, "databases"))
 	}
 	if c.Method() == fiber.MethodGet && strings.TrimSpace(c.Params("*")) == "" && strings.TrimSpace(c.Context().QueryArgs().String()) == "" {
-		form, err := h.databaseService.PostgresAdminerLoginForm(item.ID)
+		query, err := h.databaseService.PostgresAdminerProxyQuery(item.ID)
 		if err != nil {
 			h.base.Sessions.SetFlash(c, err.Error())
 			return c.Redirect(platformURLWithTab("website", id, "databases"))
 		}
-		return proxyToolFormRequest(c, h.databaseService.AdminerURL(), nil, form)
+		return proxyToolRequest(c, h.databaseService.AdminerURL(), query)
 	}
 	return proxyToolRequest(c, h.databaseService.AdminerURL(), nil)
 }

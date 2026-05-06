@@ -25,29 +25,15 @@ var hopByHopHeaders = map[string]struct{}{
 }
 
 func proxyToolRequest(c *fiber.Ctx, baseURL string, fallbackQuery url.Values) error {
-	return proxyToolCustomRequest(c, baseURL, fallbackQuery, c.Method(), c.Body(), "")
-}
-
-func proxyToolFormRequest(c *fiber.Ctx, baseURL string, fallbackQuery url.Values, form url.Values) error {
-	if form == nil {
-		form = url.Values{}
-	}
-	return proxyToolCustomRequest(c, baseURL, fallbackQuery, http.MethodPost, []byte(form.Encode()), "application/x-www-form-urlencoded")
-}
-
-func proxyToolCustomRequest(c *fiber.Ctx, baseURL string, fallbackQuery url.Values, method string, body []byte, contentType string) error {
 	target, err := buildProxyTarget(c, baseURL, fallbackQuery)
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequest(method, target.String(), bytes.NewReader(body))
+	req, err := http.NewRequest(c.Method(), target.String(), bytes.NewReader(c.Body()))
 	if err != nil {
 		return fiber.NewError(fiber.StatusBadGateway, err.Error())
 	}
 	copyRequestHeaders(c, req)
-	if strings.TrimSpace(contentType) != "" {
-		req.Header.Set("Content-Type", contentType)
-	}
 	req.Close = true
 	req.Host = target.Host
 
