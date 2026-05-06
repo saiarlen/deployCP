@@ -260,6 +260,10 @@ func (h *SettingsHandler) Index(c *fiber.Ctx) error {
 	nodeChoices := h.service.AvailableRuntimeVersions("node")
 	pythonChoices := h.service.AvailableRuntimeVersions("python")
 	phpChoices := h.service.AvailableRuntimeVersions("php")
+	goOlderChoices := h.service.OlderRuntimeVersions("go")
+	nodeOlderChoices := h.service.OlderRuntimeVersions("node")
+	pythonOlderChoices := h.service.OlderRuntimeVersions("python")
+	phpOlderChoices := h.service.OlderRuntimeVersions("php")
 	goDefault := h.runtimeDefaultStatus("go")
 	nodeDefault := h.runtimeDefaultStatus("node")
 	pythonDefault := h.runtimeDefaultStatus("python")
@@ -270,56 +274,82 @@ func (h *SettingsHandler) Index(c *fiber.Ctx) error {
 	phpEntries = ensureDefaultRuntimeEntry(phpEntries, phpDefault)
 
 	return h.base.Render(c, "settings_index", fiber.Map{
-		"Title":                    "Settings",
-		"Items":                    items,
-		"SvcItems":                 svcItems,
-		"Types":                    h.svcService.Types(),
-		"PlatformName":             h.svcService.PlatformName(),
-		"TotalCount":               total,
-		"RunningCount":             running,
-		"StoppedCount":             total - running,
-		"EnabledCount":             enabled,
-		"DisabledCount":            total - enabled,
-		"Users":                    userRows,
-		"PlatformOptions":          platformOptions,
-		"Events":                   events,
-		"EventsPage":               eventsPage,
-		"EventsPages":              eventsPages,
-		"EventsTotal":              eventsTotal,
-		"EventsStart":              eventsStart,
-		"EventsEnd":                eventsEnd,
-		"FirewallRules":            firewallRules,
-		"FirewallBackend":          firewallBackend,
-		"FirewallHostActive":       firewallHostActive,
-		"CustomDomain":             customDomain,
-		"ProftpdMasqueradeAddress": proftpdMasqueradeAddress,
-		"PanelTimezone":            panelTimezone,
-		"SupportedTimezones":       h.service.SupportedTimezones(),
-		"PanelBasicEnabled":        basicAuthEnabled,
-		"PanelBasicUser":           basicAuthUsername,
-		"GoRuntimeEntries":         goEntries,
-		"NodeRuntimeEntries":       nodeEntries,
-		"PythonRuntimeEntries":     pythonEntries,
-		"PHPRuntimeEntries":        phpEntries,
-		"GoRuntimeChoices":         goChoices,
-		"NodeRuntimeChoices":       nodeChoices,
-		"PythonRuntimeChoices":     pythonChoices,
-		"PHPRuntimeChoices":        phpChoices,
-		"GoVersions":               h.service.RuntimeVersions("go"),
-		"NodeVersions":             h.service.RuntimeVersions("node"),
-		"PythonVersions":           h.service.RuntimeVersions("python"),
-		"PHPVersions":              h.service.RuntimeVersions("php"),
-		"GoRuntimeDefault":         goDefault,
-		"NodeRuntimeDefault":       nodeDefault,
-		"PythonRuntimeDefault":     pythonDefault,
-		"PHPRuntimeDefault":        phpDefault,
-		"GoRuntimeSummary":         buildRuntimeSummary("go", goEntries, goChoices, goDefault),
-		"NodeRuntimeSummary":       buildRuntimeSummary("node", nodeEntries, nodeChoices, nodeDefault),
-		"PythonRuntimeSummary":     buildRuntimeSummary("python", pythonEntries, pythonChoices, pythonDefault),
-		"PHPRuntimeSummary":        buildRuntimeSummary("php", phpEntries, phpChoices, phpDefault),
-		"ActiveTab":                activeTab,
-		"UpdateView":               updateView,
+		"Title":                     "Settings",
+		"Items":                     items,
+		"SvcItems":                  svcItems,
+		"Types":                     h.svcService.Types(),
+		"PlatformName":              h.svcService.PlatformName(),
+		"TotalCount":                total,
+		"RunningCount":              running,
+		"StoppedCount":              total - running,
+		"EnabledCount":              enabled,
+		"DisabledCount":             total - enabled,
+		"Users":                     userRows,
+		"PlatformOptions":           platformOptions,
+		"Events":                    events,
+		"EventsPage":                eventsPage,
+		"EventsPages":               eventsPages,
+		"EventsTotal":               eventsTotal,
+		"EventsStart":               eventsStart,
+		"EventsEnd":                 eventsEnd,
+		"FirewallRules":             firewallRules,
+		"FirewallBackend":           firewallBackend,
+		"FirewallHostActive":        firewallHostActive,
+		"CustomDomain":              customDomain,
+		"ProftpdMasqueradeAddress":  proftpdMasqueradeAddress,
+		"PanelTimezone":             panelTimezone,
+		"SupportedTimezones":        h.service.SupportedTimezones(),
+		"PanelBasicEnabled":         basicAuthEnabled,
+		"PanelBasicUser":            basicAuthUsername,
+		"GoRuntimeEntries":          goEntries,
+		"NodeRuntimeEntries":        nodeEntries,
+		"PythonRuntimeEntries":      pythonEntries,
+		"PHPRuntimeEntries":         phpEntries,
+		"GoRuntimeChoices":          goChoices,
+		"NodeRuntimeChoices":        nodeChoices,
+		"PythonRuntimeChoices":      pythonChoices,
+		"PHPRuntimeChoices":         phpChoices,
+		"GoRuntimeOlderChoices":     subtractRuntimeChoices(goOlderChoices, goChoices),
+		"NodeRuntimeOlderChoices":   subtractRuntimeChoices(nodeOlderChoices, nodeChoices),
+		"PythonRuntimeOlderChoices": subtractRuntimeChoices(pythonOlderChoices, pythonChoices),
+		"PHPRuntimeOlderChoices":    subtractRuntimeChoices(phpOlderChoices, phpChoices),
+		"GoVersions":                h.service.RuntimeVersions("go"),
+		"NodeVersions":              h.service.RuntimeVersions("node"),
+		"PythonVersions":            h.service.RuntimeVersions("python"),
+		"PHPVersions":               h.service.RuntimeVersions("php"),
+		"GoRuntimeDefault":          goDefault,
+		"NodeRuntimeDefault":        nodeDefault,
+		"PythonRuntimeDefault":      pythonDefault,
+		"PHPRuntimeDefault":         phpDefault,
+		"GoRuntimeSummary":          buildRuntimeSummary("go", goEntries, goChoices, goDefault),
+		"NodeRuntimeSummary":        buildRuntimeSummary("node", nodeEntries, nodeChoices, nodeDefault),
+		"PythonRuntimeSummary":      buildRuntimeSummary("python", pythonEntries, pythonChoices, pythonDefault),
+		"PHPRuntimeSummary":         buildRuntimeSummary("php", phpEntries, phpChoices, phpDefault),
+		"ActiveTab":                 activeTab,
+		"UpdateView":                updateView,
 	})
+}
+
+func subtractRuntimeChoices(all, current []string) []string {
+	if len(all) == 0 {
+		return []string{}
+	}
+	seen := map[string]struct{}{}
+	for _, item := range current {
+		seen[strings.TrimSpace(item)] = struct{}{}
+	}
+	out := make([]string, 0, len(all))
+	for _, item := range all {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		if _, ok := seen[item]; ok {
+			continue
+		}
+		out = append(out, item)
+	}
+	return out
 }
 
 func ensureDefaultRuntimeEntry(entries []services.RuntimeVersionState, def services.RuntimeDefaultStatus) []services.RuntimeVersionState {

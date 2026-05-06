@@ -5,6 +5,7 @@ action="${1:-}"
 runtime="${2:-}"
 version="${3:-}"
 runtime_root="${4:-}"
+catalog_profile="${5:-recent}"
 
 if [[ -z "$action" || -z "$runtime" || -z "$version" || -z "$runtime_root" ]]; then
   echo "usage: runtime-manager.sh <install|remove|set-default|list-remote> <runtime> <version> <runtime_root>" >&2
@@ -18,7 +19,7 @@ asdf_dir="${runtime_root}/_asdf"
 asdf_data_dir="${runtime_root}/_asdf_data"
 asdf_version="v0.15.0"
 catalog_cache_dir="${runtime_root}/_catalog_cache"
-catalog_cache_file="${catalog_cache_dir}/${runtime}.txt"
+catalog_cache_file="${catalog_cache_dir}/${runtime}-${catalog_profile}.txt"
 git_config_global="${runtime_root}/_gitconfig"
 
 asdf_tool_name() {
@@ -275,23 +276,68 @@ asdf_install_path() {
   asdf where "$tool" "$req"
 }
 
+filter_semver_min_minor() {
+  local min_major="$1"
+  local min_minor="$2"
+  awk -v min_major="$min_major" -v min_minor="$min_minor" '
+    {
+      split($0, parts, ".");
+      major = parts[1] + 0;
+      minor = parts[2] + 0;
+      if (major > min_major || (major == min_major && minor >= min_minor)) {
+        print $0;
+      }
+    }
+  '
+}
+
+filter_semver_min_major() {
+  local min_major="$1"
+  awk -v min_major="$min_major" '
+    {
+      split($0, parts, ".");
+      major = parts[1] + 0;
+      if (major >= min_major) {
+        print $0;
+      }
+    }
+  '
+}
+
 list_remote_versions() {
   local tool="$1"
+  local profile="${2:-recent}"
   local raw
   raw="$(asdf list all "$tool" 2>/dev/null || true)"
   [[ -n "$raw" ]] || return 1
   case "$runtime" in
     go)
-      printf '%s\n' "$raw" | curated_latest_patch_per_minor "go" 6
+      if [[ "$profile" == "maintained" ]]; then
+        printf '%s\n' "$raw" | stable_semver_lines | filter_semver_min_minor 1 20 | curated_latest_patch_per_minor "go" 10
+      else
+        printf '%s\n' "$raw" | curated_latest_patch_per_minor "go" 6
+      fi
       ;;
     node)
-      printf '%s\n' "$raw" | curated_latest_patch_per_major "node" 6
+      if [[ "$profile" == "maintained" ]]; then
+        printf '%s\n' "$raw" | stable_semver_lines | filter_semver_min_major 18 | curated_latest_patch_per_major "node" 10
+      else
+        printf '%s\n' "$raw" | curated_latest_patch_per_major "node" 6
+      fi
       ;;
     python)
-      printf '%s\n' "$raw" | curated_latest_patch_per_minor "python" 6
+      if [[ "$profile" == "maintained" ]]; then
+        printf '%s\n' "$raw" | stable_semver_lines | filter_semver_min_minor 3 10 | curated_latest_patch_per_minor "python" 8
+      else
+        printf '%s\n' "$raw" | curated_latest_patch_per_minor "python" 6
+      fi
       ;;
     php)
-      printf '%s\n' "$raw" | curated_latest_patch_per_minor "php" 6
+      if [[ "$profile" == "maintained" ]]; then
+        printf '%s\n' "$raw" | stable_semver_lines | filter_semver_min_minor 8 1 | curated_latest_patch_per_minor "php" 6
+      else
+        printf '%s\n' "$raw" | curated_latest_patch_per_minor "php" 6
+      fi
       ;;
   esac
 }
@@ -746,7 +792,7 @@ case "$action" in
     fi
     ensure_asdf "$manager"
     ensure_asdf_plugin "$tool_name" "$plugin_url"
-    list_remote_versions "$tool_name" | tee "$catalog_cache_file"
+    list_remote_versions "$tool_name" "$catalog_profile" | tee "$catalog_cache_file"
     ;;
   install)
     ensure_asdf "$manager"

@@ -251,6 +251,14 @@ func (s *SettingsService) RuntimeVersionStates(runtime string) []RuntimeVersionS
 }
 
 func (s *SettingsService) AvailableRuntimeVersions(runtime string) []string {
+	return s.availableRuntimeVersions(runtime, "recent")
+}
+
+func (s *SettingsService) OlderRuntimeVersions(runtime string) []string {
+	return s.availableRuntimeVersions(runtime, "maintained")
+}
+
+func (s *SettingsService) availableRuntimeVersions(runtime, profile string) []string {
 	runtime = strings.ToLower(strings.TrimSpace(runtime))
 	if runtime == "" {
 		return []string{}
@@ -262,7 +270,7 @@ func (s *SettingsService) AvailableRuntimeVersions(runtime string) []string {
 	if strings.EqualFold(strings.TrimSpace(s.cfg.Features.PlatformMode), "dryrun") {
 		return filterOutInstalledVersions(s.configuredRuntimeVersions(runtime), installedSet)
 	}
-	if managed := s.managedAvailableRuntimeVersions(runtime); len(managed) > 0 {
+	if managed := s.managedAvailableRuntimeVersions(runtime, profile); len(managed) > 0 {
 		return filterOutInstalledVersions(managed, installedSet)
 	}
 	switch s.detectPackageManager() {
@@ -275,10 +283,14 @@ func (s *SettingsService) AvailableRuntimeVersions(runtime string) []string {
 	}
 }
 
-func (s *SettingsService) managedAvailableRuntimeVersions(runtime string) []string {
+func (s *SettingsService) managedAvailableRuntimeVersions(runtime, profile string) []string {
 	script := filepath.Join(".", "scripts", "linux", "runtime-manager.sh")
 	if st, err := os.Stat(script); err != nil || st.IsDir() {
 		return []string{}
+	}
+	profile = strings.ToLower(strings.TrimSpace(profile))
+	if profile == "" {
+		profile = "recent"
 	}
 	out, err := exec.Command(
 		"/bin/bash",
@@ -287,6 +299,7 @@ func (s *SettingsService) managedAvailableRuntimeVersions(runtime string) []stri
 		runtime,
 		"-",
 		s.cfg.Paths.RuntimeRoot,
+		profile,
 	).Output()
 	if err != nil {
 		return []string{}
