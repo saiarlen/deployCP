@@ -414,7 +414,7 @@
             </div>
           </div>
           <div class="db-card-actions">
-            <a class="btn btn-sm btn-ghost" href="/apps/{{ Status.App.ID }}/manage/database/{{ db.ID }}/postgres-gui" target="_blank" title="Open in pgAdmin / Postgres GUI"><i data-lucide="layout-dashboard"></i> pgAdmin</a>
+            <a class="btn btn-sm btn-ghost" href="/apps/{{ Status.App.ID }}/manage/database/{{ db.ID }}/postgres-adminer" target="_blank" title="Open this PostgreSQL connection directly in Adminer"><i data-lucide="layout-dashboard"></i> Adminer</a>
             <form action="/apps/{{ Status.App.ID }}/manage/database/{{ db.ID }}/delete" method="post" data-confirm-message="Delete this database connection?">
               <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
               <button class="btn btn-sm btn-danger" type="submit" title="Delete"><i data-lucide="trash-2"></i></button>
@@ -1702,7 +1702,7 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
             </div>
           </div>
           <div class="db-card-actions">
-            <a class="btn btn-sm btn-ghost" href="/websites/{{ Item.ID }}/manage/database/{{ db.ID }}/postgres-gui" target="_blank" title="Open in pgAdmin / Postgres GUI"><i data-lucide="layout-dashboard"></i> pgAdmin</a>
+            <a class="btn btn-sm btn-ghost" href="/websites/{{ Item.ID }}/manage/database/{{ db.ID }}/postgres-adminer" target="_blank" title="Open this PostgreSQL connection directly in Adminer"><i data-lucide="layout-dashboard"></i> Adminer</a>
             <form action="/websites/{{ Item.ID }}/manage/database/{{ db.ID }}/delete" method="post" data-confirm-message="Delete this database connection?">
               <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
               <button class="btn btn-sm btn-danger" type="submit" title="Delete"><i data-lucide="trash-2"></i></button>

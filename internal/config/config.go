@@ -71,7 +71,6 @@ type PathsConfig struct {
 
 type IntegrationConfig struct {
 	AdminerURL          string
-	PostgresGUIURL      string
 	RedisInfoTimeoutSec int
 }
 
@@ -134,7 +133,6 @@ func Load() (*Config, error) {
 		Paths: defaultPaths(),
 		Integrations: IntegrationConfig{
 			AdminerURL:          getEnv("ADMINER_URL", "http://127.0.0.1:8081"),
-			PostgresGUIURL:      getEnv("POSTGRES_GUI_URL", "http://127.0.0.1:8082"),
 			RedisInfoTimeoutSec: getEnvInt("REDIS_INFO_TIMEOUT_SEC", 3),
 		},
 		Features: FeatureConfig{

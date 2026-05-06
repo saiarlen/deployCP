@@ -275,21 +275,10 @@ func (s *DatabaseService) AdminerURL() string {
 	return s.cfg.Integrations.AdminerURL
 }
 
-func (s *DatabaseService) PostgresGUIBaseURL() string {
-	return s.cfg.Integrations.PostgresGUIURL
-}
-
 func (s *DatabaseService) EnsureAdminerReady() error {
 	return s.ensureLoopbackUIReady(
 		s.cfg.Integrations.AdminerURL,
 		func(port int) error { return s.startAdminerHelper(port) },
-	)
-}
-
-func (s *DatabaseService) EnsurePostgresGUIReady() error {
-	return s.ensureLoopbackUIReady(
-		s.cfg.Integrations.PostgresGUIURL,
-		func(port int) error { return s.startPgwebHelper(port) },
 	)
 }
 
@@ -318,6 +307,31 @@ func (s *DatabaseService) AdminerDBURL(id uint) (string, error) {
 	q.Set("db", item.Database)
 	u.RawQuery = q.Encode()
 	return u.String(), nil
+}
+
+func (s *DatabaseService) AdminerLoginForm(id uint) (url.Values, error) {
+	item, err := s.dbRepo.Find(id)
+	if err != nil {
+		return nil, err
+	}
+	if !strings.EqualFold(strings.TrimSpace(item.Engine), "mariadb") {
+		return nil, fmt.Errorf("adminer is only for MariaDB connections")
+	}
+	password, err := utils.DecryptString(s.cfg.Security.SessionSecret, item.PasswordEnc)
+	if err != nil {
+		return nil, err
+	}
+	server := item.Host
+	if item.Port > 0 && item.Port != 3306 {
+		server = fmt.Sprintf("%s:%d", item.Host, item.Port)
+	}
+	form := url.Values{}
+	form.Set("auth[server]", server)
+	form.Set("auth[username]", item.Username)
+	form.Set("auth[password]", password)
+	form.Set("auth[db]", item.Database)
+	form.Set("auth[permanent]", "1")
+	return form, nil
 }
 
 // UpdateDatabasePassword changes the password for a managed database user and
@@ -399,29 +413,6 @@ func (s *DatabaseService) changePostgresPassword(item *models.DatabaseConnection
 	return db.Exec(fmt.Sprintf("ALTER ROLE \"%s\" PASSWORD '%s'", item.Username, escapePostgresString(newPassword))).Error
 }
 
-func (s *DatabaseService) PostgresGUIURL(id uint) (string, error) {
-	item, err := s.dbRepo.Find(id)
-	if err != nil {
-		return "", err
-	}
-	if item.Engine != "postgres" {
-		return "", fmt.Errorf("connection is not postgres")
-	}
-	password, err := utils.DecryptString(s.cfg.Security.SessionSecret, item.PasswordEnc)
-	if err != nil {
-		return "", err
-	}
-	pgURL := fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable", url.QueryEscape(item.Username), url.QueryEscape(password), item.Host, item.Port, item.Database)
-	base, err := url.Parse(s.cfg.Integrations.PostgresGUIURL)
-	if err != nil {
-		return "", err
-	}
-	q := base.Query()
-	q.Set("url", pgURL)
-	base.RawQuery = q.Encode()
-	return base.String(), nil
-}
-
 func (s *DatabaseService) PostgresAdminerURL(id uint) (string, error) {
 	item, err := s.dbRepo.Find(id)
 	if err != nil {
@@ -449,6 +440,32 @@ func (s *DatabaseService) PostgresAdminerURL(id uint) (string, error) {
 	q.Set("db", item.Database)
 	u.RawQuery = q.Encode()
 	return u.String(), nil
+}
+
+func (s *DatabaseService) PostgresAdminerLoginForm(id uint) (url.Values, error) {
+	item, err := s.dbRepo.Find(id)
+	if err != nil {
+		return nil, err
+	}
+	if !strings.EqualFold(strings.TrimSpace(item.Engine), "postgres") {
+		return nil, fmt.Errorf("connection is not postgres")
+	}
+	password, err := utils.DecryptString(s.cfg.Security.SessionSecret, item.PasswordEnc)
+	if err != nil {
+		return nil, err
+	}
+	server := item.Host
+	if item.Port > 0 && item.Port != 5432 {
+		server = fmt.Sprintf("%s:%d", item.Host, item.Port)
+	}
+	form := url.Values{}
+	form.Set("auth[driver]", "pgsql")
+	form.Set("auth[server]", server)
+	form.Set("auth[username]", item.Username)
+	form.Set("auth[password]", password)
+	form.Set("auth[db]", item.Database)
+	form.Set("auth[permanent]", "1")
+	return form, nil
 }
 
 func (s *DatabaseService) ensureLoopbackUIReady(baseURL string, starter func(port int) error) error {
@@ -542,25 +559,6 @@ func parseHelperTarget(baseURL string) (string, int, bool, error) {
 	ip := net.ParseIP(host)
 	loopback := host == "localhost" || (ip != nil && ip.IsLoopback())
 	return net.JoinHostPort(host, portStr), port, loopback, nil
-}
-
-func (s *DatabaseService) startPgwebHelper(port int) error {
-	if _, err := exec.LookPath("pgweb"); err != nil {
-		return fmt.Errorf("pgweb is not installed on the server; rerun the DeployCP update/install flow to provision the PostgreSQL UI helper")
-	}
-	logFile, err := s.helperLogFile("pgweb")
-	if err != nil {
-		return err
-	}
-	cmd := exec.Command("pgweb", "--listen=127.0.0.1", fmt.Sprintf("--port=%d", port), "--sessions")
-	cmd.Stdout = logFile
-	cmd.Stderr = logFile
-	if err := cmd.Start(); err != nil {
-		_ = logFile.Close()
-		return err
-	}
-	_ = cmd.Process.Release()
-	return logFile.Close()
 }
 
 func (s *DatabaseService) startAdminerHelper(port int) error {

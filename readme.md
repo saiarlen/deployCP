@@ -335,12 +335,13 @@ Important:
 
 DeployCP does not expose DB helpers publicly.
 
-- install/update now attempts to provision local loopback-only DB helpers when distro packages are available
+- install/update now attempts to provision the local Adminer helper when distro packages are available
 - `ADMINER_URL` defaults to `http://127.0.0.1:8081`
-- `POSTGRES_GUI_URL` defaults to `http://127.0.0.1:8082`
 - the panel proxies those helpers through authenticated DeployCP routes instead of exposing them directly to the browser
-- `pgweb` is used for PostgreSQL when present
-- Adminer is used for MariaDB, and DeployCP can start a local Adminer PHP helper when `php` and a local Adminer install are available
+- Adminer is used for both MariaDB and PostgreSQL
+- clicking a DB card opens the associated database directly through a panel-generated Adminer auto-login bridge
+- `pgweb` / `pgAdmin` are not part of the current DeployCP database-helper flow
+- DeployCP can start a local Adminer PHP helper when `php` and a local Adminer install are available
 - Docker is not used for these tools
 
 ## Local Development

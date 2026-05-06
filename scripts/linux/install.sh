@@ -230,46 +230,7 @@ install_first_available_package() {
 install_db_ui_helper_packages() {
   local manager="$1"
   install_first_available_package "$manager" php-cli php8-cli php php8
-  install_optional_packages "$manager" adminer pgweb
-  install_pgweb_binary_fallback
-}
-
-pgweb_asset_name() {
-  case "$(uname -m)" in
-    x86_64|amd64) echo "pgweb_linux_amd64.zip" ;;
-    aarch64|arm64) echo "pgweb_linux_arm64.zip" ;;
-    armv7l|armv7) echo "pgweb_linux_arm64_v7.zip" ;;
-    *) echo "" ;;
-  esac
-}
-
-install_pgweb_binary_fallback() {
-  command -v pgweb >/dev/null 2>&1 && return 0
-  command -v curl >/dev/null 2>&1 || return 0
-  command -v unzip >/dev/null 2>&1 || return 0
-  local asset
-  asset="$(pgweb_asset_name)"
-  [[ -n "$asset" ]] || return 0
-  local tmpdir download_url
-  tmpdir="$(mktemp -d)"
-  download_url="$(curl -fsSL https://api.github.com/repos/sosedoff/pgweb/releases/latest | grep "\"browser_download_url\": \".*${asset}\"" | head -n1 | cut -d '"' -f 4)"
-  if [[ -z "$download_url" ]]; then
-    rm -rf "$tmpdir"
-    return 0
-  fi
-  if ! curl -fsSL "$download_url" -o "${tmpdir}/${asset}"; then
-    rm -rf "$tmpdir"
-    return 0
-  fi
-  if ! unzip -o "${tmpdir}/${asset}" -d "$tmpdir" >/dev/null 2>&1; then
-    rm -rf "$tmpdir"
-    return 0
-  fi
-  local binary_name="${asset%.zip}"
-  if [[ -f "${tmpdir}/${binary_name}" ]]; then
-    install -m 0755 "${tmpdir}/${binary_name}" /usr/local/bin/pgweb || true
-  fi
-  rm -rf "$tmpdir"
+  install_optional_packages "$manager" adminer
 }
 
 install_default_php_runtime() {
@@ -752,7 +713,6 @@ POSTGRES_ADMIN_HOST=127.0.0.1
 POSTGRES_ADMIN_PORT=5432
 POSTGRES_ADMIN_DB=postgres
 ADMINER_URL=http://127.0.0.1:8081
-POSTGRES_GUI_URL=http://127.0.0.1:8082
 FTP_NOLOGIN_SHELL=/usr/sbin/nologin
 PROFTPD_CONF_DIR=${PROFTPD_CONF_DIR}
 PROFTPD_SERVICE_NAME=${PROFTPD_SERVICE_NAME}
@@ -779,7 +739,6 @@ fi
 set_env_value "${CORE_DIR}/.env" "APP_VERSION" "$(resolved_release_version)"
 set_env_value "${CORE_DIR}/.env" "DEPLOYCP_REPO" "${DEPLOYCP_REPO:-saiarlen/deployCP}"
 set_env_value "${CORE_DIR}/.env" "ADMINER_URL" "http://127.0.0.1:8081"
-set_env_value "${CORE_DIR}/.env" "POSTGRES_GUI_URL" "http://127.0.0.1:8082"
 install_default_php_runtime
 if [[ -x "${CORE_DIR}/scripts/linux/harden-host.sh" ]]; then
   bash "${CORE_DIR}/scripts/linux/harden-host.sh"

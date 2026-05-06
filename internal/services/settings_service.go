@@ -65,7 +65,6 @@ func (s *SettingsService) Defaults() map[string]string {
 		"service_manager_launchd":    s.cfg.Paths.LaunchctlBinary,
 		"default_site_root":          s.cfg.Paths.DefaultSiteRoot,
 		"adminer_url":                s.cfg.Integrations.AdminerURL,
-		"postgres_gui_url":           s.cfg.Integrations.PostgresGUIURL,
 		"restricted_shell_path":      s.cfg.Paths.RestrictedShellPath,
 		"php_versions":               "8.4,8.3,8.2,8.1,8.0,7.4",
 		"go_versions":                "go1.25,go1.24,go1.23,go1.22,go1.21",

@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"fmt"
-	"net/url"
 	"strconv"
 	"strings"
 
@@ -605,21 +604,19 @@ func (h *AppHandler) ManageAdminerDB(c *fiber.Ctx) error {
 		h.base.Sessions.SetFlash(c, err.Error())
 		return c.Redirect(platformURLWithTab("app", id, "databases"))
 	}
-	adminerURL, err := h.databaseService.AdminerDBURL(dbid)
-	if err != nil {
-		h.base.Sessions.SetFlash(c, err.Error())
-		return c.Redirect(platformURLWithTab("app", id, "databases"))
-	}
 	if err := h.databaseService.EnsureAdminerReady(); err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
 		return c.Redirect(platformURLWithTab("app", id, "databases"))
 	}
-	target, parseErr := url.Parse(adminerURL)
-	if parseErr != nil {
-		h.base.Sessions.SetFlash(c, parseErr.Error())
-		return c.Redirect(platformURLWithTab("app", id, "databases"))
+	if c.Method() == fiber.MethodGet && strings.TrimSpace(c.Params("*")) == "" {
+		form, err := h.databaseService.AdminerLoginForm(dbid)
+		if err != nil {
+			h.base.Sessions.SetFlash(c, err.Error())
+			return c.Redirect(platformURLWithTab("app", id, "databases"))
+		}
+		return renderAdminerAutoLogin(c, "Opening Adminer", c.Path(), form)
 	}
-	return proxyToolRequest(c, h.databaseService.AdminerURL(), target.Query())
+	return proxyToolRequest(c, h.databaseService.AdminerURL(), nil)
 }
 
 func (h *AppHandler) LogFiles(c *fiber.Ctx) error {
@@ -677,34 +674,19 @@ func (h *AppHandler) ManageOpenPostgresGUI(c *fiber.Ctx) error {
 		h.base.Sessions.SetFlash(c, err.Error())
 		return c.Redirect(platformURLWithTab("app", id, "databases"))
 	}
-	guiURL, err := h.databaseService.PostgresGUIURL(item.ID)
-	if err != nil {
+	if err := h.databaseService.EnsureAdminerReady(); err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
 		return c.Redirect(platformURLWithTab("app", id, "databases"))
 	}
-	if err := h.databaseService.EnsurePostgresGUIReady(); err != nil {
-		adminerURL, adminerErr := h.databaseService.PostgresAdminerURL(item.ID)
-		if adminerErr != nil {
+	if c.Method() == fiber.MethodGet && strings.TrimSpace(c.Params("*")) == "" {
+		form, err := h.databaseService.PostgresAdminerLoginForm(item.ID)
+		if err != nil {
 			h.base.Sessions.SetFlash(c, err.Error())
 			return c.Redirect(platformURLWithTab("app", id, "databases"))
 		}
-		if readyErr := h.databaseService.EnsureAdminerReady(); readyErr != nil {
-			h.base.Sessions.SetFlash(c, err.Error())
-			return c.Redirect(platformURLWithTab("app", id, "databases"))
-		}
-		target, parseErr := url.Parse(adminerURL)
-		if parseErr != nil {
-			h.base.Sessions.SetFlash(c, parseErr.Error())
-			return c.Redirect(platformURLWithTab("app", id, "databases"))
-		}
-		return proxyToolRequest(c, h.databaseService.AdminerURL(), target.Query())
+		return renderAdminerAutoLogin(c, "Opening PostgreSQL in Adminer", c.Path(), form)
 	}
-	target, parseErr := url.Parse(guiURL)
-	if parseErr != nil {
-		h.base.Sessions.SetFlash(c, parseErr.Error())
-		return c.Redirect(platformURLWithTab("app", id, "databases"))
-	}
-	return proxyToolRequest(c, h.databaseService.PostgresGUIBaseURL(), target.Query())
+	return proxyToolRequest(c, h.databaseService.AdminerURL(), nil)
 }
 
 func (h *AppHandler) runtimeVersions(runtime string) []string {

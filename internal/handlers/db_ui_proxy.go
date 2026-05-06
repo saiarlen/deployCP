@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"fmt"
+	ht "html/template"
 	"io"
 	"net/http"
 	"net/url"
@@ -198,4 +199,32 @@ func proxyBasePath(c *fiber.Ctx) string {
 		return strings.TrimSuffix(path, suffix)
 	}
 	return path
+}
+
+func renderAdminerAutoLogin(c *fiber.Ctx, title string, actionPath string, fields url.Values) error {
+	c.Type("html", "utf-8")
+	var body strings.Builder
+	body.WriteString("<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">")
+	body.WriteString("<title>")
+	body.WriteString(ht.HTMLEscapeString(title))
+	body.WriteString("</title>")
+	body.WriteString("<style>body{font-family:system-ui,-apple-system,sans-serif;background:#f5f7fb;color:#111827;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:24px}.card{background:#fff;border:1px solid #d8deea;border-radius:16px;padding:24px;max-width:460px;width:100%;box-shadow:0 20px 40px rgba(15,23,42,.08)}h1{font-size:18px;margin:0 0 8px}p{margin:0 0 16px;color:#475569;line-height:1.5}button{background:#111827;color:#fff;border:0;border-radius:10px;padding:10px 14px;font:inherit;cursor:pointer}</style>")
+	body.WriteString("</head><body><div class=\"card\"><h1>")
+	body.WriteString(ht.HTMLEscapeString(title))
+	body.WriteString("</h1><p>Signing in to the selected database UI.</p>")
+	body.WriteString("<form id=\"db-ui-login\" method=\"post\" action=\"")
+	body.WriteString(ht.HTMLEscapeString(actionPath))
+	body.WriteString("\">")
+	for key, values := range fields {
+		escapedKey := ht.HTMLEscapeString(key)
+		for _, value := range values {
+			body.WriteString("<input type=\"hidden\" name=\"")
+			body.WriteString(escapedKey)
+			body.WriteString("\" value=\"")
+			body.WriteString(ht.HTMLEscapeString(value))
+			body.WriteString("\">")
+		}
+	}
+	body.WriteString("<noscript><button type=\"submit\">Continue</button></noscript></form><script>document.getElementById('db-ui-login').submit()</script></div></body></html>")
+	return c.SendString(body.String())
 }
