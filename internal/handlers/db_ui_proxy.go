@@ -171,6 +171,12 @@ func rewriteProxyLocation(location string, c *fiber.Ctx, target *url.URL) string
 	}
 	basePath := proxyBasePath(c)
 	if !loc.IsAbs() {
+		query := loc.Query()
+		query.Del("deploycp_token")
+		if loc.RawQuery != "" {
+			loc.RawQuery = query.Encode()
+			location = loc.String()
+		}
 		switch {
 		case strings.HasPrefix(location, "?"):
 			return basePath + location
@@ -183,9 +189,11 @@ func rewriteProxyLocation(location string, c *fiber.Ctx, target *url.URL) string
 	if !strings.EqualFold(loc.Scheme, target.Scheme) || !strings.EqualFold(loc.Host, target.Host) {
 		return location
 	}
+	query := loc.Query()
+	query.Del("deploycp_token")
 	rewritten := &url.URL{
 		Path:     strings.TrimRight(basePath, "/") + loc.Path,
-		RawQuery: loc.RawQuery,
+		RawQuery: query.Encode(),
 		Fragment: loc.Fragment,
 	}
 	return rewritten.String()

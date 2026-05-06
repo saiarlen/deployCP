@@ -686,6 +686,9 @@ function deploycp_seed_auth() {
     if (!is_array($payload)) {
         return;
     }
+    if (!empty($_COOKIE['adminer_permanent'])) {
+        return;
+    }
     if (!isset($_POST['auth']) || !is_array($_POST['auth'])) {
         $_POST['auth'] = array();
     }
@@ -693,6 +696,7 @@ function deploycp_seed_auth() {
         $_POST['auth']['driver'] = 'pgsql';
         $_GET['pgsql'] = $payload['server'];
     } else {
+        $_POST['auth']['driver'] = 'server';
         $_GET['server'] = $payload['server'];
     }
     $_POST['auth']['server'] = $payload['server'];
@@ -714,38 +718,8 @@ function adminer_object() {
     }
 
     class DeployCPAdminer extends DeployCPAdminerBase {
-        private function deploycpPayload() {
-            static $payload;
-            static $resolved = false;
-            if (!$resolved) {
-                $payload = deploycp_adminer_payload();
-                $resolved = true;
-            }
-            return $payload;
-        }
-
-        function credentials() {
-            $payload = $this->deploycpPayload();
-            if (is_array($payload)) {
-                return array($payload['server'], $payload['username'], $payload['password']);
-            }
-            return parent::credentials();
-        }
-
-        function database() {
-            $payload = $this->deploycpPayload();
-            if (is_array($payload) && !empty($payload['database'])) {
-                return $payload['database'];
-            }
-            return parent::database();
-        }
-
-        function login($login, $password) {
-            $payload = $this->deploycpPayload();
-            if (is_array($payload) && isset($payload['username']) && $login === $payload['username']) {
-                return true;
-            }
-            return parent::login($login, $password);
+        function permanentLogin() {
+            return hash('sha256', '%s');
         }
     }
 
@@ -753,7 +727,7 @@ function adminer_object() {
 }
 
 include './adminer.php';
-`, secret)
+`, secret, secret)
 }
 
 func (s *DatabaseService) helperLogFile(name string) (*os.File, error) {
