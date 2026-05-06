@@ -584,6 +584,15 @@ func (h *AppHandler) ManageUpdateDatabasePassword(c *fiber.Ctx) error {
 }
 
 func (h *AppHandler) ManageAdminerDB(c *fiber.Ctx) error {
+	if strings.TrimSpace(c.Params("*")) == "" && !strings.HasSuffix(c.Path(), "/") {
+		raw := c.OriginalURL()
+		if idx := strings.Index(raw, "?"); idx >= 0 {
+			raw = raw[:idx] + "/" + raw[idx:]
+		} else {
+			raw += "/"
+		}
+		return c.Redirect(raw, fiber.StatusTemporaryRedirect)
+	}
 	id, err := repositories.ParseID(c.Params("id"))
 	if err != nil {
 		return c.Status(400).SendString(err.Error())
@@ -646,6 +655,15 @@ func (h *AppHandler) LogContent(c *fiber.Ctx) error {
 }
 
 func (h *AppHandler) ManageOpenPostgresGUI(c *fiber.Ctx) error {
+	if strings.TrimSpace(c.Params("*")) == "" && !strings.HasSuffix(c.Path(), "/") {
+		raw := c.OriginalURL()
+		if idx := strings.Index(raw, "?"); idx >= 0 {
+			raw = raw[:idx] + "/" + raw[idx:]
+		} else {
+			raw += "/"
+		}
+		return c.Redirect(raw, fiber.StatusTemporaryRedirect)
+	}
 	id, err := repositories.ParseID(c.Params("id"))
 	if err != nil {
 		return c.Status(400).SendString(err.Error())
@@ -665,8 +683,21 @@ func (h *AppHandler) ManageOpenPostgresGUI(c *fiber.Ctx) error {
 		return c.Redirect(platformURLWithTab("app", id, "databases"))
 	}
 	if err := h.databaseService.EnsurePostgresGUIReady(); err != nil {
-		h.base.Sessions.SetFlash(c, err.Error())
-		return c.Redirect(platformURLWithTab("app", id, "databases"))
+		adminerURL, adminerErr := h.databaseService.PostgresAdminerURL(item.ID)
+		if adminerErr != nil {
+			h.base.Sessions.SetFlash(c, err.Error())
+			return c.Redirect(platformURLWithTab("app", id, "databases"))
+		}
+		if readyErr := h.databaseService.EnsureAdminerReady(); readyErr != nil {
+			h.base.Sessions.SetFlash(c, err.Error())
+			return c.Redirect(platformURLWithTab("app", id, "databases"))
+		}
+		target, parseErr := url.Parse(adminerURL)
+		if parseErr != nil {
+			h.base.Sessions.SetFlash(c, parseErr.Error())
+			return c.Redirect(platformURLWithTab("app", id, "databases"))
+		}
+		return proxyToolRequest(c, h.databaseService.AdminerURL(), target.Query())
 	}
 	target, parseErr := url.Parse(guiURL)
 	if parseErr != nil {

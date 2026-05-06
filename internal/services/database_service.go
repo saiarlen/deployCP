@@ -422,6 +422,35 @@ func (s *DatabaseService) PostgresGUIURL(id uint) (string, error) {
 	return base.String(), nil
 }
 
+func (s *DatabaseService) PostgresAdminerURL(id uint) (string, error) {
+	item, err := s.dbRepo.Find(id)
+	if err != nil {
+		return "", err
+	}
+	if !strings.EqualFold(strings.TrimSpace(item.Engine), "postgres") {
+		return "", fmt.Errorf("connection is not postgres")
+	}
+	base := strings.TrimSpace(s.cfg.Integrations.AdminerURL)
+	if base == "" {
+		return "", fmt.Errorf("ADMINER_URL is not configured")
+	}
+	u, err := url.Parse(base)
+	if err != nil {
+		return "", err
+	}
+	server := item.Host
+	if item.Port > 0 && item.Port != 5432 {
+		server = fmt.Sprintf("%s:%d", item.Host, item.Port)
+	}
+	q := u.Query()
+	q.Set("pgsql", server)
+	q.Set("server", server)
+	q.Set("username", item.Username)
+	q.Set("db", item.Database)
+	u.RawQuery = q.Encode()
+	return u.String(), nil
+}
+
 func (s *DatabaseService) ensureLoopbackUIReady(baseURL string, starter func(port int) error) error {
 	if err := ensureReachableAddress(baseURL); err == nil {
 		return nil
@@ -517,7 +546,7 @@ func parseHelperTarget(baseURL string) (string, int, bool, error) {
 
 func (s *DatabaseService) startPgwebHelper(port int) error {
 	if _, err := exec.LookPath("pgweb"); err != nil {
-		return fmt.Errorf("pgweb is not installed on the server")
+		return fmt.Errorf("pgweb is not installed on the server; rerun the DeployCP update/install flow to provision the PostgreSQL UI helper")
 	}
 	logFile, err := s.helperLogFile("pgweb")
 	if err != nil {
