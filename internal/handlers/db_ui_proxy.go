@@ -3,7 +3,6 @@ package handlers
 import (
 	"bytes"
 	"fmt"
-	ht "html/template"
 	"io"
 	"net/http"
 	"net/url"
@@ -26,15 +25,29 @@ var hopByHopHeaders = map[string]struct{}{
 }
 
 func proxyToolRequest(c *fiber.Ctx, baseURL string, fallbackQuery url.Values) error {
+	return proxyToolCustomRequest(c, baseURL, fallbackQuery, c.Method(), c.Body(), "")
+}
+
+func proxyToolFormRequest(c *fiber.Ctx, baseURL string, fallbackQuery url.Values, form url.Values) error {
+	if form == nil {
+		form = url.Values{}
+	}
+	return proxyToolCustomRequest(c, baseURL, fallbackQuery, http.MethodPost, []byte(form.Encode()), "application/x-www-form-urlencoded")
+}
+
+func proxyToolCustomRequest(c *fiber.Ctx, baseURL string, fallbackQuery url.Values, method string, body []byte, contentType string) error {
 	target, err := buildProxyTarget(c, baseURL, fallbackQuery)
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequest(c.Method(), target.String(), bytes.NewReader(c.Body()))
+	req, err := http.NewRequest(method, target.String(), bytes.NewReader(body))
 	if err != nil {
 		return fiber.NewError(fiber.StatusBadGateway, err.Error())
 	}
 	copyRequestHeaders(c, req)
+	if strings.TrimSpace(contentType) != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
 	req.Close = true
 	req.Host = target.Host
 
@@ -55,11 +68,11 @@ func proxyToolRequest(c *fiber.Ctx, baseURL string, fallbackQuery url.Values) er
 
 	copyResponseHeaders(c, resp, target)
 	c.Status(resp.StatusCode)
-	body, err := io.ReadAll(resp.Body)
+	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fiber.NewError(fiber.StatusBadGateway, fmt.Sprintf("database UI helper response failed: %v", err))
 	}
-	return c.Send(body)
+	return c.Send(responseBody)
 }
 
 func buildProxyTarget(c *fiber.Ctx, baseURL string, fallbackQuery url.Values) (*url.URL, error) {
@@ -199,38 +212,4 @@ func proxyBasePath(c *fiber.Ctx) string {
 		return strings.TrimSuffix(path, suffix)
 	}
 	return path
-}
-
-func renderAdminerAutoLogin(c *fiber.Ctx, title string, actionPath string, fields url.Values) error {
-	c.Type("html", "utf-8")
-	csrfToken := csrfTokenFromContext(c)
-	var body strings.Builder
-	body.WriteString("<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">")
-	body.WriteString("<title>")
-	body.WriteString(ht.HTMLEscapeString(title))
-	body.WriteString("</title>")
-	body.WriteString("<style>body{font-family:system-ui,-apple-system,sans-serif;background:#f5f7fb;color:#111827;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:24px}.card{background:#fff;border:1px solid #d8deea;border-radius:16px;padding:24px;max-width:460px;width:100%;box-shadow:0 20px 40px rgba(15,23,42,.08)}h1{font-size:18px;margin:0 0 8px}p{margin:0 0 16px;color:#475569;line-height:1.5}button{background:#111827;color:#fff;border:0;border-radius:10px;padding:10px 14px;font:inherit;cursor:pointer}</style>")
-	body.WriteString("</head><body><div class=\"card\"><h1>")
-	body.WriteString(ht.HTMLEscapeString(title))
-	body.WriteString("</h1><p>Signing in to the selected database UI.</p>")
-	body.WriteString("<form id=\"db-ui-login\" method=\"post\" action=\"")
-	body.WriteString(ht.HTMLEscapeString(actionPath))
-	body.WriteString("\">")
-	if strings.TrimSpace(csrfToken) != "" {
-		body.WriteString("<input type=\"hidden\" name=\"_csrf\" value=\"")
-		body.WriteString(ht.HTMLEscapeString(csrfToken))
-		body.WriteString("\">")
-	}
-	for key, values := range fields {
-		escapedKey := ht.HTMLEscapeString(key)
-		for _, value := range values {
-			body.WriteString("<input type=\"hidden\" name=\"")
-			body.WriteString(escapedKey)
-			body.WriteString("\" value=\"")
-			body.WriteString(ht.HTMLEscapeString(value))
-			body.WriteString("\">")
-		}
-	}
-	body.WriteString("<noscript><button type=\"submit\">Continue</button></noscript></form><script>document.getElementById('db-ui-login').submit()</script></div></body></html>")
-	return c.SendString(body.String())
 }

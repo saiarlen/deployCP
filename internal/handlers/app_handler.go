@@ -614,7 +614,7 @@ func (h *AppHandler) ManageAdminerDB(c *fiber.Ctx) error {
 			h.base.Sessions.SetFlash(c, err.Error())
 			return c.Redirect(platformURLWithTab("app", id, "databases"))
 		}
-		return renderAdminerAutoLogin(c, "Opening Adminer", c.Path(), form)
+		return proxyToolFormRequest(c, h.databaseService.AdminerURL(), nil, form)
 	}
 	return proxyToolRequest(c, h.databaseService.AdminerURL(), nil)
 }
@@ -684,7 +684,7 @@ func (h *AppHandler) ManageOpenPostgresGUI(c *fiber.Ctx) error {
 			h.base.Sessions.SetFlash(c, err.Error())
 			return c.Redirect(platformURLWithTab("app", id, "databases"))
 		}
-		return renderAdminerAutoLogin(c, "Opening PostgreSQL in Adminer", c.Path(), form)
+		return proxyToolFormRequest(c, h.databaseService.AdminerURL(), nil, form)
 	}
 	return proxyToolRequest(c, h.databaseService.AdminerURL(), nil)
 }

@@ -260,6 +260,28 @@ domain_request() {
   fi
 }
 
+test_db_helper_open() {
+  local path="$1" label="$2" expected_db="$3"
+  local out="$WORKDIR/db-helper-$(printf "%s" "$label" | tr ' /' '__').html"
+  if ! curl -fsSL -b "$COOKIE_JAR" -c "$COOKIE_JAR" "$BASE_URL$path" -o "$out"; then
+    fail "$label helper GET failed"
+    return 1
+  fi
+  if file_contains "$out" "Security token expired or invalid"; then
+    fail "$label hit DeployCP CSRF failure"
+    return 1
+  fi
+  if file_contains "$out" "Signing in to the selected database UI"; then
+    fail "$label returned an intermediate bridge page"
+    return 1
+  fi
+  if file_contains "$out" "$expected_db"; then
+    pass "$label opened the selected database"
+  else
+    fail "$label response did not include the selected database"
+  fi
+}
+
 service_active_any() {
   local svc
   for svc in "$@"; do
@@ -668,6 +690,7 @@ create_static_suite() {
     if [[ -n "$dbid" ]]; then
       CREATED_MYSQL_DBS+=("$db_name|$db_user")
       pass "MariaDB connection created"
+      test_db_helper_open "/websites/$website_id/manage/database/$dbid/adminer" "MariaDB Adminer" "$db_name"
     else
       fail "MariaDB connection row was not created"
     fi
@@ -694,6 +717,7 @@ create_static_suite() {
     if [[ -n "$pgid" ]]; then
       CREATED_PG_DBS+=("$pg_name|$pg_user")
       pass "PostgreSQL connection created"
+      test_db_helper_open "/websites/$website_id/manage/database/$pgid/postgres-adminer" "PostgreSQL Adminer" "$pg_name"
     else
       fail "PostgreSQL connection row was not created"
     fi
