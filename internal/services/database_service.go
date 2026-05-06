@@ -351,9 +351,9 @@ func (s *DatabaseService) AdminerProxyQuery(id uint) (url.Values, error) {
 		return nil, err
 	}
 	q := url.Values{}
-	q.Add("", server)
 	q.Set("username", item.Username)
 	q.Set("db", item.Database)
+	q.Set("server", server)
 	q.Set("deploycp_token", token)
 	return q, nil
 }

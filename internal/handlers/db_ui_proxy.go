@@ -86,6 +86,10 @@ func buildProxyTarget(c *fiber.Ctx, baseURL string, fallbackQuery url.Values) (*
 	if raw := string(c.Context().QueryArgs().QueryString()); strings.TrimSpace(raw) != "" {
 		if incoming, err := url.ParseQuery(raw); err == nil {
 			for key, values := range incoming {
+				key = strings.TrimSpace(key)
+				if key == "" {
+					continue
+				}
 				if _, locked := protected[strings.ToLower(strings.TrimSpace(key))]; locked {
 					continue
 				}
