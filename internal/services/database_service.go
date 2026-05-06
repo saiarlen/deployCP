@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -465,12 +466,27 @@ func ensureReachableAddress(baseURL string) error {
 			host += ":80"
 		}
 	}
-	conn, err := net.DialTimeout("tcp", host, 2*time.Second)
+	transport := &http.Transport{DisableKeepAlives: true}
+	client := &http.Client{
+		Timeout:   3 * time.Second,
+		Transport: transport,
+	}
+	req, err := http.NewRequest(http.MethodGet, baseURL, nil)
 	if err != nil {
+		return err
+	}
+	req.Close = true
+	resp, err := client.Do(req)
+	if err == nil {
+		_ = resp.Body.Close()
+		return nil
+	}
+	conn, dialErr := net.DialTimeout("tcp", host, 2*time.Second)
+	if dialErr != nil {
 		return fmt.Errorf("database UI helper is not reachable at %s", host)
 	}
 	_ = conn.Close()
-	return nil
+	return fmt.Errorf("database UI helper accepted TCP but did not return a valid HTTP response yet")
 }
 
 func parseHelperTarget(baseURL string) (string, int, bool, error) {

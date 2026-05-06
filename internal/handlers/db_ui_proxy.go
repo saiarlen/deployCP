@@ -65,5 +65,7 @@ func proxyToolRequest(c *fiber.Ctx, baseURL string, fallbackQuery url.Values) er
 		}
 		target.RawQuery = q.Encode()
 	}
+	c.Request().Header.Set("Connection", "close")
+	c.Request().Header.Del("Proxy-Connection")
 	return fiberproxy.Do(c, target.String())
 }
