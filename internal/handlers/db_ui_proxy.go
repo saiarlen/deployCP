@@ -24,6 +24,63 @@ var hopByHopHeaders = map[string]struct{}{
 	"proxy-connection":    {},
 }
 
+var adminerNavigationQueryKeys = map[string]struct{}{
+	"call":        {},
+	"callf":       {},
+	"clone":       {},
+	"columns":     {},
+	"create":      {},
+	"database":    {},
+	"download":    {},
+	"dump":        {},
+	"edit":        {},
+	"event":       {},
+	"file":        {},
+	"foreign":     {},
+	"function":    {},
+	"indexes":     {},
+	"import":      {},
+	"logout":      {},
+	"order":       {},
+	"page":        {},
+	"privileges":  {},
+	"procedure":   {},
+	"processlist": {},
+	"schema":      {},
+	"scheme":      {},
+	"script":      {},
+	"select":      {},
+	"sql":         {},
+	"table":       {},
+	"trigger":     {},
+	"type":        {},
+	"user":        {},
+	"variables":   {},
+	"view":        {},
+	"where":       {},
+}
+
+func isAdminerOpenRequest(c *fiber.Ctx) bool {
+	if c.Method() != fiber.MethodGet || strings.TrimSpace(c.Params("*")) != "" {
+		return false
+	}
+	raw := string(c.Context().QueryArgs().QueryString())
+	if strings.TrimSpace(raw) == "" {
+		return true
+	}
+	values, err := url.ParseQuery(raw)
+	if err != nil {
+		return false
+	}
+	for key := range values {
+		key = strings.ToLower(strings.TrimSpace(key))
+		if _, navigates := adminerNavigationQueryKeys[key]; navigates {
+			return false
+		}
+	}
+	return true
+}
+
 func proxyToolRequest(c *fiber.Ctx, baseURL string, fallbackQuery url.Values) error {
 	return proxyToolRequestWithHeaders(c, baseURL, fallbackQuery, nil)
 }

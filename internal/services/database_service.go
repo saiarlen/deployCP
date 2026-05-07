@@ -707,20 +707,27 @@ function deploycp_seed_auth() {
     setcookie('adminer_permanent', '', time() - 3600, '/');
     setcookie('deploycp_db_key', '', time() - 3600, '/');
 
-    $_POST = array('auth' => array());
     if ($payload['engine'] === 'postgres') {
-        $_POST['auth']['driver'] = 'pgsql';
+        $driver = 'pgsql';
         $_GET['pgsql'] = $payload['server'];
     } else {
-        $_POST['auth']['driver'] = 'server';
+        $driver = 'server';
         $_GET['server'] = $payload['server'];
     }
-    $_POST['auth']['server']    = $payload['server'];
-    $_POST['auth']['username']  = $payload['username'];
-    $_POST['auth']['password']  = $payload['password'];
-    $_POST['auth']['db']        = $payload['database'];
     $_GET['username'] = $payload['username'];
     $_GET['db']       = $payload['database'];
+
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        session_cache_limiter('');
+        session_name('adminer_sid');
+        session_set_cookie_params(0, '/', '', false, true);
+        session_start();
+    }
+
+    $_SESSION['pwds'] = array();
+    $_SESSION['db'] = array();
+    $_SESSION['pwds'][$driver][$payload['server']][$payload['username']] = (string) $payload['password'];
+    $_SESSION['db'][$driver][$payload['server']][$payload['username']][$payload['database']] = true;
 }
 
 deploycp_seed_auth();

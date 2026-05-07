@@ -756,7 +756,7 @@ func (h *WebsiteHandler) ManageAdminerDB(c *fiber.Ctx) error {
 		h.base.Sessions.SetFlash(c, err.Error())
 		return c.Redirect(platformURLWithTab("website", id, "databases"))
 	}
-	if c.Method() == fiber.MethodGet && strings.TrimSpace(c.Params("*")) == "" && strings.TrimSpace(c.Context().QueryArgs().String()) == "" {
+	if isAdminerOpenRequest(c) {
 		query, token, err := h.databaseService.AdminerProxyLogin(dbid)
 		if err != nil {
 			h.base.Sessions.SetFlash(c, err.Error())
@@ -794,7 +794,7 @@ func (h *WebsiteHandler) ManageOpenPostgresGUI(c *fiber.Ctx) error {
 		h.base.Sessions.SetFlash(c, err.Error())
 		return c.Redirect(platformURLWithTab("website", id, "databases"))
 	}
-	if c.Method() == fiber.MethodGet && strings.TrimSpace(c.Params("*")) == "" && strings.TrimSpace(c.Context().QueryArgs().String()) == "" {
+	if isAdminerOpenRequest(c) {
 		query, token, err := h.databaseService.PostgresAdminerProxyLogin(item.ID)
 		if err != nil {
 			h.base.Sessions.SetFlash(c, err.Error())
