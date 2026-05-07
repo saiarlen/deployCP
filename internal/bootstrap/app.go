@@ -246,6 +246,9 @@ func Build() (*Application, error) {
 	if cfg.Security.CSRFEnabled {
 		sm := sessionManager
 		app.Use(csrf.New(csrf.Config{
+			Next: func(c *fiber.Ctx) bool {
+				return isDatabaseUIProxyPath(c.Path())
+			},
 			KeyLookup:      "header:X-CSRF-Token",
 			CookieName:     "deploycp_csrf",
 			CookieSecure:   false,
@@ -313,6 +316,19 @@ func Build() (*Application, error) {
 
 	instance.registerRoutes()
 	return instance, nil
+}
+
+func isDatabaseUIProxyPath(path string) bool {
+	parts := strings.Split(strings.Trim(strings.TrimSpace(path), "/"), "/")
+	if len(parts) < 6 {
+		return false
+	}
+	if parts[0] != "websites" && parts[0] != "apps" {
+		return false
+	}
+	return parts[2] == "manage" &&
+		parts[3] == "database" &&
+		(parts[5] == "adminer" || parts[5] == "postgres-adminer")
 }
 
 func secureCookiesForRequest(cfg *config.Config, c *fiber.Ctx) bool {

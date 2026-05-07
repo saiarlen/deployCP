@@ -48,6 +48,23 @@ func shouldInjectAdminerLoginFor(method, suffix, rawQuery string) bool {
 	return true
 }
 
+func isAdminerAssetRequest(c *fiber.Ctx) bool {
+	raw := string(c.Context().QueryArgs().QueryString())
+	if strings.TrimSpace(raw) == "" {
+		return false
+	}
+	values, err := url.ParseQuery(raw)
+	if err != nil {
+		return false
+	}
+	for key := range values {
+		if strings.EqualFold(strings.TrimSpace(key), "file") {
+			return true
+		}
+	}
+	return false
+}
+
 func proxyToolRequest(c *fiber.Ctx, baseURL string, fallbackQuery url.Values) error {
 	return proxyToolRequestWithHeaders(c, baseURL, fallbackQuery, nil)
 }
@@ -62,6 +79,10 @@ func proxyToolRequestWithHeaders(c *fiber.Ctx, baseURL string, fallbackQuery url
 		return fiber.NewError(fiber.StatusBadGateway, err.Error())
 	}
 	copyRequestHeaders(c, req)
+	if isAdminerAssetRequest(c) {
+		req.Header.Del("If-Modified-Since")
+		req.Header.Del("If-None-Match")
+	}
 	setForwardedProxyHeaders(c, req)
 	for key, values := range extraHeaders {
 		req.Header.Del(key)
@@ -177,6 +198,9 @@ func copyRequestHeaders(c *fiber.Ctx, req *http.Request) {
 			return
 		}
 		if strings.HasPrefix(header, "x-forwarded-") {
+			return
+		}
+		if header == "accept-encoding" {
 			return
 		}
 		req.Header.Add(string(key), string(value))
