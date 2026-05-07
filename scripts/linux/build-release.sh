@@ -59,9 +59,10 @@ build_target() {
     go build -o "${out_dir}/deploycp" ./main.go
   )
   cp "${ROOT_DIR}/.env.example" "$out_dir/"
-  mkdir -p "${out_dir}/scripts/linux" "${out_dir}/docs" "${out_dir}/frontend"
+  mkdir -p "${out_dir}/scripts/linux" "${out_dir}/assets" "${out_dir}/docs" "${out_dir}/frontend"
   cp "${ROOT_DIR}/scripts/linux/"*.sh "${out_dir}/scripts/linux/"
   cp "${ROOT_DIR}/readme.md" "$out_dir/"
+  cp -R "${ROOT_DIR}/assets/." "${out_dir}/assets/"
   cp -R "${ROOT_DIR}/docs/." "${out_dir}/docs/"
   cp -R "${ROOT_DIR}/frontend/." "${out_dir}/frontend/"
   (

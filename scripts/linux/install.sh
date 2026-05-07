@@ -106,6 +106,15 @@ stage_release_assets() {
     fi
   done
 
+  for candidate in "${PACKAGE_ROOT}/assets" "$(pwd)/assets"; do
+    if [[ -d "$candidate" && "$candidate" != "${CORE_DIR}/assets" ]]; then
+      mkdir -p "${CORE_DIR}/assets"
+      cp -R "${candidate}/." "${CORE_DIR}/assets/"
+      chown -R "${APP_USER}:${APP_USER}" "${CORE_DIR}/assets"
+      break
+    fi
+  done
+
   for candidate in "${PACKAGE_ROOT}/scripts/linux" "$(pwd)/scripts/linux"; do
     if [[ -d "$candidate" && "$candidate" != "${CORE_DIR}/scripts/linux" ]]; then
       mkdir -p "${CORE_DIR}/scripts/linux"
@@ -230,7 +239,6 @@ install_first_available_package() {
 install_db_ui_helper_packages() {
   local manager="$1"
   install_first_available_package "$manager" php-cli php8-cli php php8
-  install_optional_packages "$manager" adminer
 }
 
 install_default_php_runtime() {
@@ -652,7 +660,7 @@ if ! id -u "$APP_USER" >/dev/null 2>&1; then
 fi
 
 mkdir -p \
-  "$CORE_DIR"/{bin,scripts,storage/db,storage/logs,storage/generated,storage/ssl,storage/runtimes,tmp,docs} \
+  "$CORE_DIR"/{assets,bin,scripts,storage/db,storage/logs,storage/generated,storage/ssl,storage/runtimes,tmp,docs} \
   "$DATA_DIR"/{sites,logs,backups,tmp} \
   "$NGINX_AVAILABLE_DIR" \
   "$NGINX_ENABLED_DIR" \

@@ -335,7 +335,7 @@ Important:
 
 DeployCP does not expose DB helpers publicly.
 
-- install/update now attempts to provision the local Adminer helper when distro packages are available
+- install/update now ships a bundled English-only Adminer PHP file instead of relying on distro Adminer packages
 - `ADMINER_URL` defaults to `http://127.0.0.1:8081`
 - the panel proxies those helpers through authenticated DeployCP routes instead of exposing them directly to the browser
 - Adminer is used for both MariaDB and PostgreSQL

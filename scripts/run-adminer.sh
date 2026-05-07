@@ -4,11 +4,12 @@ set -euo pipefail
 PORT="${1:-8081}"
 PHP_BIN="$(command -v php || true)"
 ADMINER_FILE=""
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CORE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 for candidate in \
-  /usr/share/adminer/index.php \
-  /usr/share/adminer/adminer.php \
-  /usr/share/php/adminer/adminer.php
+  "${CORE_DIR}/assets/adminer/adminer.php" \
+  "$(pwd)/assets/adminer/adminer.php"
 do
   if [[ -f "$candidate" ]]; then
     ADMINER_FILE="$candidate"
@@ -22,11 +23,11 @@ if [[ -z "$PHP_BIN" ]]; then
 fi
 
 if [[ -z "$ADMINER_FILE" ]]; then
-  echo "Adminer PHP file not found; install Adminer locally (for example distro package adminer) and then rerun." >&2
+  echo "Bundled Adminer PHP file not found under assets/adminer/adminer.php." >&2
   exit 1
 fi
 
-HELPER_ROOT="/home/deploycp/core/storage/generated/adminer-helper"
+HELPER_ROOT="${CORE_DIR}/storage/generated/adminer-helper"
 mkdir -p "$HELPER_ROOT"
 cp "$ADMINER_FILE" "$HELPER_ROOT/index.php"
 

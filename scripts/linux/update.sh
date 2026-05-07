@@ -76,7 +76,6 @@ install_first_available_package() {
 install_db_ui_helper_packages() {
   local manager="$1"
   install_first_available_package "$manager" php-cli php8-cli php php8
-  install_optional_packages "$manager" adminer
 }
 
 resolved_release_version() {
@@ -142,6 +141,15 @@ stage_release_assets() {
       mkdir -p "${CORE_DIR}/docs"
       cp -R "${candidate}/." "${CORE_DIR}/docs/"
       chown -R "${APP_USER}:${APP_USER}" "${CORE_DIR}/docs"
+      break
+    fi
+  done
+
+  for candidate in "${PACKAGE_ROOT}/assets" "$(pwd)/assets"; do
+    if [[ -d "$candidate" && "$candidate" != "${CORE_DIR}/assets" ]]; then
+      mkdir -p "${CORE_DIR}/assets"
+      cp -R "${candidate}/." "${CORE_DIR}/assets/"
+      chown -R "${APP_USER}:${APP_USER}" "${CORE_DIR}/assets"
       break
     fi
   done

@@ -622,11 +622,7 @@ func (s *DatabaseService) startAdminerHelper(port int) error {
 }
 
 func (s *DatabaseService) prepareAdminerHelper() (string, error) {
-	adminerSource := firstExistingPath(
-		"/usr/share/adminer/index.php",
-		"/usr/share/adminer/adminer.php",
-		"/usr/share/php/adminer/adminer.php",
-	)
+	adminerSource := firstExistingPath(s.adminerSourceCandidates()...)
 	helperRoot := filepath.Join(s.cfg.Paths.StorageRoot, "generated", "adminer-helper")
 	if err := os.MkdirAll(helperRoot, 0o755); err != nil {
 		return "", err
@@ -641,13 +637,31 @@ func (s *DatabaseService) prepareAdminerHelper() (string, error) {
 			return "", err
 		}
 	} else if _, err := os.Stat(adminerCopy); err != nil {
-		return "", fmt.Errorf("Adminer is not installed on the server")
+		return "", fmt.Errorf("bundled Adminer is missing at assets/adminer/adminer.php")
 	}
 	entrypoint := filepath.Join(helperRoot, "index.php")
 	if err := os.WriteFile(entrypoint, []byte(s.adminerWrapperPHP()), 0o644); err != nil {
 		return "", err
 	}
 	return helperRoot, nil
+}
+
+func (s *DatabaseService) adminerSourceCandidates() []string {
+	candidates := []string{
+		filepath.Join("assets", "adminer", "adminer.php"),
+		filepath.Join("/home/deploycp/core", "assets", "adminer", "adminer.php"),
+	}
+	if wd, err := os.Getwd(); err == nil && strings.TrimSpace(wd) != "" {
+		candidates = append(candidates, filepath.Join(wd, "assets", "adminer", "adminer.php"))
+	}
+	if exePath, err := os.Executable(); err == nil && strings.TrimSpace(exePath) != "" {
+		exeDir := filepath.Dir(exePath)
+		candidates = append(candidates,
+			filepath.Join(exeDir, "assets", "adminer", "adminer.php"),
+			filepath.Join(filepath.Dir(exeDir), "assets", "adminer", "adminer.php"),
+		)
+	}
+	return candidates
 }
 
 func (s *DatabaseService) signAdminerToken(payload adminerTokenPayload) (string, error) {
