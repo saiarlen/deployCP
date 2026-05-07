@@ -290,6 +290,11 @@ func (s *DatabaseService) AdminerURL() string {
 }
 
 func (s *DatabaseService) EnsureAdminerReady() error {
+	if _, _, loopback, err := parseHelperTarget(s.cfg.Integrations.AdminerURL); err == nil && loopback {
+		if _, err := s.prepareAdminerHelper(); err != nil {
+			return err
+		}
+	}
 	return s.ensureLoopbackUIReady(
 		s.cfg.Integrations.AdminerURL,
 		func(port int) error { return s.startAdminerHelper(port) },
@@ -323,17 +328,17 @@ func (s *DatabaseService) AdminerDBURL(id uint) (string, error) {
 	return u.String(), nil
 }
 
-func (s *DatabaseService) AdminerProxyQuery(id uint) (url.Values, error) {
+func (s *DatabaseService) AdminerProxyLogin(id uint) (url.Values, string, error) {
 	item, err := s.dbRepo.Find(id)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if !strings.EqualFold(strings.TrimSpace(item.Engine), "mariadb") {
-		return nil, fmt.Errorf("adminer is only for MariaDB connections")
+		return nil, "", fmt.Errorf("adminer is only for MariaDB connections")
 	}
 	password, err := utils.DecryptString(s.cfg.Security.SessionSecret, item.PasswordEnc)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	server := item.Host
 	if item.Port > 0 && item.Port != 3306 {
@@ -348,14 +353,13 @@ func (s *DatabaseService) AdminerProxyQuery(id uint) (url.Values, error) {
 		Expires:  time.Now().Add(2 * time.Minute).Unix(),
 	})
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	q := url.Values{}
 	q.Set("username", item.Username)
 	q.Set("db", item.Database)
 	q.Set("server", server)
-	q.Set("deploycp_token", token)
-	return q, nil
+	return q, token, nil
 }
 
 // UpdateDatabasePassword changes the password for a managed database user and
@@ -466,17 +470,17 @@ func (s *DatabaseService) PostgresAdminerURL(id uint) (string, error) {
 	return u.String(), nil
 }
 
-func (s *DatabaseService) PostgresAdminerProxyQuery(id uint) (url.Values, error) {
+func (s *DatabaseService) PostgresAdminerProxyLogin(id uint) (url.Values, string, error) {
 	item, err := s.dbRepo.Find(id)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if !strings.EqualFold(strings.TrimSpace(item.Engine), "postgres") {
-		return nil, fmt.Errorf("connection is not postgres")
+		return nil, "", fmt.Errorf("connection is not postgres")
 	}
 	password, err := utils.DecryptString(s.cfg.Security.SessionSecret, item.PasswordEnc)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	server := item.Host
 	if item.Port > 0 && item.Port != 5432 {
@@ -491,14 +495,13 @@ func (s *DatabaseService) PostgresAdminerProxyQuery(id uint) (url.Values, error)
 		Expires:  time.Now().Add(2 * time.Minute).Unix(),
 	})
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	q := url.Values{}
 	q.Set("pgsql", server)
 	q.Set("username", item.Username)
 	q.Set("db", item.Database)
-	q.Set("deploycp_token", token)
-	return q, nil
+	return q, token, nil
 }
 
 func (s *DatabaseService) ensureLoopbackUIReady(baseURL string, starter func(port int) error) error {
@@ -599,28 +602,8 @@ func (s *DatabaseService) startAdminerHelper(port int) error {
 	if err != nil {
 		return fmt.Errorf("PHP is not installed on the server for Adminer")
 	}
-	adminerSource := firstExistingPath(
-		"/usr/share/adminer/index.php",
-		"/usr/share/adminer/adminer.php",
-		"/usr/share/php/adminer/adminer.php",
-	)
-	if adminerSource == "" {
-		return fmt.Errorf("Adminer is not installed on the server")
-	}
-	helperRoot := filepath.Join(s.cfg.Paths.StorageRoot, "generated", "adminer-helper")
-	if err := os.MkdirAll(helperRoot, 0o755); err != nil {
-		return err
-	}
-	src, err := os.ReadFile(adminerSource)
+	helperRoot, err := s.prepareAdminerHelper()
 	if err != nil {
-		return err
-	}
-	adminerCopy := filepath.Join(helperRoot, "adminer.php")
-	if err := os.WriteFile(adminerCopy, src, 0o644); err != nil {
-		return err
-	}
-	entrypoint := filepath.Join(helperRoot, "index.php")
-	if err := os.WriteFile(entrypoint, []byte(s.adminerWrapperPHP()), 0o644); err != nil {
 		return err
 	}
 	logFile, err := s.helperLogFile("adminer")
@@ -638,6 +621,35 @@ func (s *DatabaseService) startAdminerHelper(port int) error {
 	return logFile.Close()
 }
 
+func (s *DatabaseService) prepareAdminerHelper() (string, error) {
+	adminerSource := firstExistingPath(
+		"/usr/share/adminer/index.php",
+		"/usr/share/adminer/adminer.php",
+		"/usr/share/php/adminer/adminer.php",
+	)
+	helperRoot := filepath.Join(s.cfg.Paths.StorageRoot, "generated", "adminer-helper")
+	if err := os.MkdirAll(helperRoot, 0o755); err != nil {
+		return "", err
+	}
+	adminerCopy := filepath.Join(helperRoot, "adminer.php")
+	if adminerSource != "" {
+		src, err := os.ReadFile(adminerSource)
+		if err != nil {
+			return "", err
+		}
+		if err := os.WriteFile(adminerCopy, src, 0o644); err != nil {
+			return "", err
+		}
+	} else if _, err := os.Stat(adminerCopy); err != nil {
+		return "", fmt.Errorf("Adminer is not installed on the server")
+	}
+	entrypoint := filepath.Join(helperRoot, "index.php")
+	if err := os.WriteFile(entrypoint, []byte(s.adminerWrapperPHP()), 0o644); err != nil {
+		return "", err
+	}
+	return helperRoot, nil
+}
+
 func (s *DatabaseService) signAdminerToken(payload adminerTokenPayload) (string, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -653,7 +665,7 @@ func (s *DatabaseService) adminerWrapperPHP() string {
 	secret := strings.ReplaceAll(s.cfg.Security.SessionSecret, `'`, `\'`)
 	return fmt.Sprintf(`<?php
 function deploycp_adminer_payload() {
-    $token = isset($_GET['deploycp_token']) ? trim((string) $_GET['deploycp_token']) : '';
+    $token = isset($_SERVER['HTTP_X_DEPLOYCP_ADMINER_TOKEN']) ? trim((string) $_SERVER['HTTP_X_DEPLOYCP_ADMINER_TOKEN']) : '';
     if ($token === '' || strpos($token, '.') === false) {
         return null;
     }
@@ -687,29 +699,15 @@ function deploycp_seed_auth() {
         return;
     }
 
-    // A stable key identifying this specific DB connection (no password, no timestamp).
-    $dbKey = hash('sha256', $payload['server'] . ':' . $payload['username'] . ':' . $payload['database']);
-    $storedKey = isset($_COOKIE['deploycp_db_key']) ? (string) $_COOKIE['deploycp_db_key'] : '';
-
-    if ($storedKey === $dbKey && !empty($_COOKIE['adminer_permanent'])) {
-        // Same DB, session still alive — just ensure the URL params point at the right DB.
-        if ($payload['engine'] === 'postgres') {
-            $_GET['pgsql'] = $payload['server'];
-        } else {
-            $_GET['server'] = $payload['server'];
-        }
-        $_GET['username'] = $payload['username'];
-        $_GET['db']       = $payload['database'];
-        return;
-    }
-
-    // Different DB (or no session yet) — discard the stale permanent cookie so Adminer
-    // does not try to authenticate the new DB with old credentials.
+    // This helper is opened from an already authenticated DeployCP route. Keep
+    // Adminer authentication scoped to its PHP session and avoid permanent-login
+    // cookies, which make one-click switching between DB cards unreliable.
     unset($_COOKIE['adminer_permanent']);
+    unset($_COOKIE['deploycp_db_key']);
+    setcookie('adminer_permanent', '', time() - 3600, '/');
+    setcookie('deploycp_db_key', '', time() - 3600, '/');
 
-    if (!isset($_POST['auth']) || !is_array($_POST['auth'])) {
-        $_POST['auth'] = array();
-    }
+    $_POST = array('auth' => array());
     if ($payload['engine'] === 'postgres') {
         $_POST['auth']['driver'] = 'pgsql';
         $_GET['pgsql'] = $payload['server'];
@@ -721,12 +719,8 @@ function deploycp_seed_auth() {
     $_POST['auth']['username']  = $payload['username'];
     $_POST['auth']['password']  = $payload['password'];
     $_POST['auth']['db']        = $payload['database'];
-    $_POST['auth']['permanent'] = '1';
     $_GET['username'] = $payload['username'];
     $_GET['db']       = $payload['database'];
-
-    // Record which DB owns the upcoming permanent cookie so we can detect a DB switch.
-    setcookie('deploycp_db_key', $dbKey, 0, '/');
 }
 
 deploycp_seed_auth();

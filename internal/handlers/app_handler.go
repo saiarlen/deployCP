@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 
@@ -609,12 +610,12 @@ func (h *AppHandler) ManageAdminerDB(c *fiber.Ctx) error {
 		return c.Redirect(platformURLWithTab("app", id, "databases"))
 	}
 	if c.Method() == fiber.MethodGet && strings.TrimSpace(c.Params("*")) == "" && strings.TrimSpace(c.Context().QueryArgs().String()) == "" {
-		query, err := h.databaseService.AdminerProxyQuery(dbid)
+		query, token, err := h.databaseService.AdminerProxyLogin(dbid)
 		if err != nil {
 			h.base.Sessions.SetFlash(c, err.Error())
 			return c.Redirect(platformURLWithTab("app", id, "databases"))
 		}
-		return proxyToolRequest(c, h.databaseService.AdminerURL(), query)
+		return proxyToolRequestWithHeaders(c, h.databaseService.AdminerURL(), query, http.Header{"X-Deploycp-Adminer-Token": {token}})
 	}
 	return proxyToolRequest(c, h.databaseService.AdminerURL(), nil)
 }
@@ -679,12 +680,12 @@ func (h *AppHandler) ManageOpenPostgresGUI(c *fiber.Ctx) error {
 		return c.Redirect(platformURLWithTab("app", id, "databases"))
 	}
 	if c.Method() == fiber.MethodGet && strings.TrimSpace(c.Params("*")) == "" && strings.TrimSpace(c.Context().QueryArgs().String()) == "" {
-		query, err := h.databaseService.PostgresAdminerProxyQuery(item.ID)
+		query, token, err := h.databaseService.PostgresAdminerProxyLogin(item.ID)
 		if err != nil {
 			h.base.Sessions.SetFlash(c, err.Error())
 			return c.Redirect(platformURLWithTab("app", id, "databases"))
 		}
-		return proxyToolRequest(c, h.databaseService.AdminerURL(), query)
+		return proxyToolRequestWithHeaders(c, h.databaseService.AdminerURL(), query, http.Header{"X-Deploycp-Adminer-Token": {token}})
 	}
 	return proxyToolRequest(c, h.databaseService.AdminerURL(), nil)
 }

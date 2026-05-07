@@ -25,6 +25,10 @@ var hopByHopHeaders = map[string]struct{}{
 }
 
 func proxyToolRequest(c *fiber.Ctx, baseURL string, fallbackQuery url.Values) error {
+	return proxyToolRequestWithHeaders(c, baseURL, fallbackQuery, nil)
+}
+
+func proxyToolRequestWithHeaders(c *fiber.Ctx, baseURL string, fallbackQuery url.Values, extraHeaders http.Header) error {
 	target, err := buildProxyTarget(c, baseURL, fallbackQuery)
 	if err != nil {
 		return err
@@ -34,6 +38,12 @@ func proxyToolRequest(c *fiber.Ctx, baseURL string, fallbackQuery url.Values) er
 		return fiber.NewError(fiber.StatusBadGateway, err.Error())
 	}
 	copyRequestHeaders(c, req)
+	for key, values := range extraHeaders {
+		req.Header.Del(key)
+		for _, value := range values {
+			req.Header.Add(key, value)
+		}
+	}
 	req.Close = true
 	req.Host = target.Host
 
@@ -136,6 +146,9 @@ func copyRequestHeaders(c *fiber.Ctx, req *http.Request) {
 	c.Request().Header.VisitAll(func(key, value []byte) {
 		header := strings.ToLower(strings.TrimSpace(string(key)))
 		if _, skip := hopByHopHeaders[header]; skip {
+			return
+		}
+		if header == "x-deploycp-adminer-token" {
 			return
 		}
 		req.Header.Add(string(key), string(value))
