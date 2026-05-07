@@ -627,18 +627,19 @@ func (s *DatabaseService) prepareAdminerHelper() (string, error) {
 	if err := os.MkdirAll(helperRoot, 0o755); err != nil {
 		return "", err
 	}
-	adminerCopy := filepath.Join(helperRoot, "adminer.php")
-	if adminerSource != "" {
-		src, err := os.ReadFile(adminerSource)
-		if err != nil {
-			return "", err
-		}
-		if err := os.WriteFile(adminerCopy, src, 0o644); err != nil {
-			return "", err
-		}
-	} else if _, err := os.Stat(adminerCopy); err != nil {
+	if adminerSource == "" {
 		return "", fmt.Errorf("bundled Adminer is missing at assets/adminer/adminer.php")
 	}
+	adminerCopy := filepath.Join(helperRoot, "adminer.php")
+	src, err := os.ReadFile(adminerSource)
+	if err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(adminerCopy, src, 0o644); err != nil {
+		return "", err
+	}
+	versionMarker := filepath.Join(helperRoot, "adminer-source.txt")
+	_ = os.WriteFile(versionMarker, []byte("DeployCP bundled Adminer: "+adminerSource+"\n"), 0o644)
 	entrypoint := filepath.Join(helperRoot, "index.php")
 	if err := os.WriteFile(entrypoint, []byte(s.adminerWrapperPHP()), 0o644); err != nil {
 		return "", err

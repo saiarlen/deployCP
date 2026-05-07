@@ -126,6 +126,38 @@ stage_release_assets() {
   done
 }
 
+ensure_bundled_adminer() {
+  local target="${CORE_DIR}/assets/adminer/adminer.php"
+  local tmp="${target}.tmp"
+  if [[ -f "$target" ]] && grep -q 'VERSION="5\.4\.2"' "$target"; then
+    return 0
+  fi
+  mkdir -p "$(dirname "$target")"
+  if command -v curl >/dev/null 2>&1; then
+    if curl -fsSL https://www.adminer.org/latest-en.php -o "$tmp"; then
+      mv -f "$tmp" "$target"
+      chown "${APP_USER}:${APP_USER}" "$target"
+      return 0
+    fi
+  elif command -v wget >/dev/null 2>&1; then
+    if wget -q https://www.adminer.org/latest-en.php -O "$tmp"; then
+      mv -f "$tmp" "$target"
+      chown "${APP_USER}:${APP_USER}" "$target"
+      return 0
+    fi
+  fi
+  rm -f "$tmp"
+  echo "Bundled Adminer missing. Place Adminer 5.4.2 English-only PHP at ${target} and rerun." >&2
+  return 1
+}
+
+reset_adminer_helper() {
+  rm -f \
+    "${CORE_DIR}/storage/generated/adminer-helper/adminer.php" \
+    "${CORE_DIR}/storage/generated/adminer-helper/index.php" \
+    "${CORE_DIR}/storage/generated/adminer-helper/adminer-source.txt"
+}
+
 if [[ "$(id -u)" -ne 0 ]]; then
   echo "run as root" >&2
   exit 1
@@ -673,6 +705,8 @@ ensure_nginx_integration
 ensure_varnish_integration
 stage_release_binary || true
 stage_release_assets
+ensure_bundled_adminer
+reset_adminer_helper
 
 if [[ -f "${CORE_DIR}/.env" ]]; then
   :
