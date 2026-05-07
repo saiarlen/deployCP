@@ -598,9 +598,21 @@ func parseHelperTarget(baseURL string) (string, int, bool, error) {
 }
 
 func (s *DatabaseService) startAdminerHelper(port int) error {
-	phpBinary, err := exec.LookPath("php")
-	if err != nil {
-		return fmt.Errorf("PHP is not installed on the server for Adminer")
+	phpBinary := firstExistingPath(
+		"/usr/bin/php8.4",
+		"/usr/bin/php8.3",
+		"/usr/bin/php8.2",
+		"/usr/bin/php8.1",
+		"/usr/bin/php8.0",
+		"/usr/bin/php",
+		"/usr/local/bin/php",
+	)
+	if phpBinary == "" {
+		var err error
+		phpBinary, err = exec.LookPath("php")
+		if err != nil {
+			return fmt.Errorf("PHP CLI is not installed on the server for Adminer")
+		}
 	}
 	helperRoot, err := s.prepareAdminerHelper()
 	if err != nil {

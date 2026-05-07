@@ -270,7 +270,34 @@ install_first_available_package() {
 
 install_db_ui_helper_packages() {
   local manager="$1"
-  install_first_available_package "$manager" php-cli php8-cli php php8
+  case "$manager" in
+    apt)
+      install_first_available_package "$manager" php-cli php8.4-cli php8.3-cli php8.2-cli php8.1-cli php8-cli php
+      install_first_available_package "$manager" php-mysql php8.4-mysql php8.3-mysql php8.2-mysql php8.1-mysql
+      install_first_available_package "$manager" php-pgsql php8.4-pgsql php8.3-pgsql php8.2-pgsql php8.1-pgsql
+      install_first_available_package "$manager" php-sqlite3 php8.4-sqlite3 php8.3-sqlite3 php8.2-sqlite3 php8.1-sqlite3
+      ;;
+    dnf|yum)
+      install_first_available_package "$manager" php-cli php
+      install_first_available_package "$manager" php-mysqlnd php-mysql
+      install_first_available_package "$manager" php-pgsql
+      install_first_available_package "$manager" php-sqlite3 php-pdo
+      ;;
+    zypper)
+      install_first_available_package "$manager" php8-cli php-cli php8 php
+      install_first_available_package "$manager" php8-mysql php-mysql
+      install_first_available_package "$manager" php8-pgsql php-pgsql
+      install_first_available_package "$manager" php8-sqlite php-sqlite3
+      ;;
+    pacman)
+      install_first_available_package "$manager" php
+      install_optional_packages "$manager" php-pgsql php-sqlite
+      ;;
+    *)
+      install_first_available_package "$manager" php-cli php8-cli php php8
+      install_optional_packages "$manager" php-mysql php-pgsql php-sqlite3
+      ;;
+  esac
 }
 
 install_default_php_runtime() {
