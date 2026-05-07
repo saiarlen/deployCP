@@ -24,57 +24,24 @@ var hopByHopHeaders = map[string]struct{}{
 	"proxy-connection":    {},
 }
 
-var adminerNavigationQueryKeys = map[string]struct{}{
-	"call":        {},
-	"callf":       {},
-	"clone":       {},
-	"columns":     {},
-	"create":      {},
-	"database":    {},
-	"download":    {},
-	"dump":        {},
-	"edit":        {},
-	"event":       {},
-	"file":        {},
-	"foreign":     {},
-	"function":    {},
-	"indexes":     {},
-	"import":      {},
-	"logout":      {},
-	"order":       {},
-	"page":        {},
-	"privileges":  {},
-	"procedure":   {},
-	"processlist": {},
-	"schema":      {},
-	"scheme":      {},
-	"script":      {},
-	"select":      {},
-	"sql":         {},
-	"table":       {},
-	"trigger":     {},
-	"type":        {},
-	"user":        {},
-	"variables":   {},
-	"view":        {},
-	"where":       {},
+func shouldInjectAdminerLogin(c *fiber.Ctx) bool {
+	return shouldInjectAdminerLoginFor(c.Method(), c.Params("*"), string(c.Context().QueryArgs().QueryString()))
 }
 
-func isAdminerOpenRequest(c *fiber.Ctx) bool {
-	if c.Method() != fiber.MethodGet || strings.TrimSpace(c.Params("*")) != "" {
+func shouldInjectAdminerLoginFor(method, suffix, rawQuery string) bool {
+	if method != fiber.MethodGet || strings.TrimSpace(suffix) != "" {
 		return false
 	}
-	raw := string(c.Context().QueryArgs().QueryString())
-	if strings.TrimSpace(raw) == "" {
+	if strings.TrimSpace(rawQuery) == "" {
 		return true
 	}
-	values, err := url.ParseQuery(raw)
+	values, err := url.ParseQuery(rawQuery)
 	if err != nil {
 		return false
 	}
 	for key := range values {
 		key = strings.ToLower(strings.TrimSpace(key))
-		if _, navigates := adminerNavigationQueryKeys[key]; navigates {
+		if key == "file" || key == "logout" {
 			return false
 		}
 	}
@@ -95,6 +62,7 @@ func proxyToolRequestWithHeaders(c *fiber.Ctx, baseURL string, fallbackQuery url
 		return fiber.NewError(fiber.StatusBadGateway, err.Error())
 	}
 	copyRequestHeaders(c, req)
+	setForwardedProxyHeaders(c, req)
 	for key, values := range extraHeaders {
 		req.Header.Del(key)
 		for _, value := range values {
@@ -208,10 +176,27 @@ func copyRequestHeaders(c *fiber.Ctx, req *http.Request) {
 		if header == "x-deploycp-adminer-token" {
 			return
 		}
+		if strings.HasPrefix(header, "x-forwarded-") {
+			return
+		}
 		req.Header.Add(string(key), string(value))
 	})
 	req.Header.Set("Connection", "close")
 	req.Header.Del("Proxy-Connection")
+}
+
+func setForwardedProxyHeaders(c *fiber.Ctx, req *http.Request) {
+	basePath := strings.TrimRight(proxyBasePath(c), "/")
+	if basePath == "" {
+		basePath = "/"
+	}
+	req.Header.Set("X-Forwarded-Prefix", basePath)
+	req.Header.Set("X-Forwarded-Host", c.Hostname())
+	proto := strings.TrimSpace(c.Protocol())
+	if proto == "" {
+		proto = "http"
+	}
+	req.Header.Set("X-Forwarded-Proto", proto)
 }
 
 func copyResponseHeaders(c *fiber.Ctx, resp *http.Response, target *url.URL) {
