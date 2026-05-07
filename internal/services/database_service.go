@@ -747,7 +747,17 @@ function deploycp_seed_auth() {
     if (session_status() !== PHP_SESSION_ACTIVE) {
         session_cache_limiter('');
         session_name('adminer_sid');
-        session_set_cookie_params(0, '/', '', false, true);
+        $cookiePath = '/';
+        if (!empty($_SERVER['HTTP_X_FORWARDED_PREFIX'])) {
+            $cookiePath = rtrim((string) $_SERVER['HTTP_X_FORWARDED_PREFIX'], '/') . '/';
+        }
+        session_set_cookie_params([
+            'lifetime' => 0,
+            'path' => $cookiePath,
+            'secure' => false,
+            'httponly' => true,
+            'samesite' => 'Lax',
+        ]);
         session_start();
     }
 
@@ -755,6 +765,8 @@ function deploycp_seed_auth() {
     $_SESSION['db'] = array();
     $_SESSION['pwds'][$driver][$payload['server']][$payload['username']] = (string) $payload['password'];
     $_SESSION['db'][$driver][$payload['server']][$payload['username']][$payload['database']] = true;
+    $tokenSeed = hash_hmac('sha256', $payload['engine'] . '|' . $payload['server'] . '|' . $payload['username'] . '|' . $payload['database'], '%s');
+    $_SESSION['token'] = (hexdec(substr($tokenSeed, 0, 8)) %% 1000000) + 1;
 }
 
 deploycp_seed_auth();
@@ -776,7 +788,7 @@ function adminer_object() {
 }
 
 include './adminer.php';
-`, secret, secret)
+`, secret, secret, secret)
 }
 
 func (s *DatabaseService) helperLogFile(name string) (*os.File, error) {

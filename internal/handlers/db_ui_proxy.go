@@ -29,7 +29,7 @@ func shouldInjectAdminerLogin(c *fiber.Ctx) bool {
 }
 
 func shouldInjectAdminerLoginFor(method, suffix, rawQuery string) bool {
-	if method != fiber.MethodGet || strings.TrimSpace(suffix) != "" {
+	if (method != fiber.MethodGet && method != fiber.MethodPost) || strings.TrimSpace(suffix) != "" {
 		return false
 	}
 	if strings.TrimSpace(rawQuery) == "" {
@@ -96,7 +96,8 @@ func proxyToolRequestWithHeaders(c *fiber.Ctx, baseURL string, fallbackQuery url
 	client := &http.Client{
 		Timeout: 90 * time.Second,
 		Transport: &http.Transport{
-			DisableKeepAlives: true,
+			DisableKeepAlives:  true,
+			DisableCompression: true,
 		},
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 			return http.ErrUseLastResponse
@@ -232,9 +233,21 @@ func copyResponseHeaders(c *fiber.Ctx, resp *http.Response, target *url.URL) {
 			c.Set(key, rewriteProxyLocation(values[0], c, target))
 			continue
 		}
+		if strings.EqualFold(key, "Content-Length") {
+			continue
+		}
+		if strings.EqualFold(key, "Content-Type") && len(values) > 0 {
+			c.Set(key, values[0])
+			continue
+		}
 		for _, value := range values {
 			c.Append(key, value)
 		}
+	}
+	if isAdminerAssetRequest(c) {
+		c.Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+		c.Set("Pragma", "no-cache")
+		c.Set("Expires", "0")
 	}
 	c.Set("Connection", "close")
 }
