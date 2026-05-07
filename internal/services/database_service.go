@@ -686,9 +686,27 @@ function deploycp_seed_auth() {
     if (!is_array($payload)) {
         return;
     }
-    if (!empty($_COOKIE['adminer_permanent'])) {
+
+    // A stable key identifying this specific DB connection (no password, no timestamp).
+    $dbKey = hash('sha256', $payload['server'] . ':' . $payload['username'] . ':' . $payload['database']);
+    $storedKey = isset($_COOKIE['deploycp_db_key']) ? (string) $_COOKIE['deploycp_db_key'] : '';
+
+    if ($storedKey === $dbKey && !empty($_COOKIE['adminer_permanent'])) {
+        // Same DB, session still alive — just ensure the URL params point at the right DB.
+        if ($payload['engine'] === 'postgres') {
+            $_GET['pgsql'] = $payload['server'];
+        } else {
+            $_GET['server'] = $payload['server'];
+        }
+        $_GET['username'] = $payload['username'];
+        $_GET['db']       = $payload['database'];
         return;
     }
+
+    // Different DB (or no session yet) — discard the stale permanent cookie so Adminer
+    // does not try to authenticate the new DB with old credentials.
+    unset($_COOKIE['adminer_permanent']);
+
     if (!isset($_POST['auth']) || !is_array($_POST['auth'])) {
         $_POST['auth'] = array();
     }
@@ -699,13 +717,16 @@ function deploycp_seed_auth() {
         $_POST['auth']['driver'] = 'server';
         $_GET['server'] = $payload['server'];
     }
-    $_POST['auth']['server'] = $payload['server'];
-    $_POST['auth']['username'] = $payload['username'];
-    $_POST['auth']['password'] = $payload['password'];
-    $_POST['auth']['db'] = $payload['database'];
+    $_POST['auth']['server']    = $payload['server'];
+    $_POST['auth']['username']  = $payload['username'];
+    $_POST['auth']['password']  = $payload['password'];
+    $_POST['auth']['db']        = $payload['database'];
     $_POST['auth']['permanent'] = '1';
     $_GET['username'] = $payload['username'];
-    $_GET['db'] = $payload['database'];
+    $_GET['db']       = $payload['database'];
+
+    // Record which DB owns the upcoming permanent cookie so we can detect a DB switch.
+    setcookie('deploycp_db_key', $dbKey, 0, '/');
 }
 
 deploycp_seed_auth();
