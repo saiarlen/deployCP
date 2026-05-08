@@ -164,12 +164,18 @@ if [ -f "$runtime_env" ]; then
 fi
 export HOME="$allowed"
 export DEPLOYCP_ALLOWED_ROOT="$allowed"
-state_root="/tmp/deploycp-user/$USER"
-mkdir -p "$state_root/cache" "$state_root/data" "$state_root/config" >/dev/null 2>&1 || true
+state_root="$allowed/.deploycp-user-state/$USER"
+if ! mkdir -p "$state_root/cache" "$state_root/data" "$state_root/config" >/dev/null 2>&1; then
+  state_root="/tmp/deploycp-user/$USER"
+  mkdir -p "$state_root/cache" "$state_root/data" "$state_root/config" >/dev/null 2>&1 || true
+fi
 chmod 700 "$state_root" "$state_root/cache" "$state_root/data" "$state_root/config" >/dev/null 2>&1 || true
 export XDG_CACHE_HOME="$state_root/cache"
 export XDG_DATA_HOME="$state_root/data"
 export XDG_CONFIG_HOME="$state_root/config"
+export GOCACHE="${GOCACHE:-$XDG_CACHE_HOME/go-build}"
+export GOPATH="${GOPATH:-$XDG_DATA_HOME/go}"
+mkdir -p "$GOCACHE" "$GOPATH/pkg/mod" >/dev/null 2>&1 || true
 export HISTFILE="$state_root/.bash_history"
 rcfile="$(mktemp /tmp/deploycp-shell.XXXXXX)"
 cat > "$rcfile" <<'EOF'

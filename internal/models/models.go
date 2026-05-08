@@ -37,42 +37,44 @@ type AuthSession struct {
 }
 
 type Website struct {
-	ID               uint   `gorm:"primaryKey"`
-	Name             string `gorm:"size:120;index;not null"`
-	RootPath         string `gorm:"size:255;not null"`
-	Type             string `gorm:"size:30;not null;default:static"` // static|php|proxy
-	AppRuntime       string `gorm:"size:30"`                         // go|python|node|binary (only for proxy sites)
-	ExecutionMode    string `gorm:"size:16;index"`                   // compiled|interpreted
-	ProcessManager   string `gorm:"size:24;index"`                   // systemd|pm2|gunicorn|uwsgi
-	BinaryPath       string `gorm:"size:255"`
-	EntryPoint       string `gorm:"size:255"`
-	Host             string `gorm:"size:64"`
-	Port             int
-	StartArgs        string `gorm:"type:text"`
-	HealthPath       string `gorm:"size:255"`
-	RestartPolicy    string `gorm:"size:32"`
-	Workers          int
-	WorkerClass      string `gorm:"size:32"`
-	MaxMemory        string `gorm:"size:16"`
-	Timeout          int
-	ExecMode         string `gorm:"size:16"`
-	StdoutLogPath    string `gorm:"size:255"`
-	StderrLogPath    string `gorm:"size:255"`
-	ServiceName      string `gorm:"size:180;index"`
-	PHPVersion       string `gorm:"size:16"`
-	ProxyTarget      string `gorm:"size:255"`
-	CustomDirectives string `gorm:"type:text"`
+	ID                   uint   `gorm:"primaryKey"`
+	Name                 string `gorm:"size:120;index;not null"`
+	RootPath             string `gorm:"size:255;not null"`
+	Type                 string `gorm:"size:30;not null;default:static"` // static|php|proxy
+	AppRuntime           string `gorm:"size:30"`                         // go|python|node|binary (only for proxy sites)
+	ShellRuntime         string `gorm:"size:30"`                         // go|python|node|php for SSH/runtime PATH only
+	ShellRuntimeVersion  string `gorm:"size:32"`
+	ExecutionMode        string `gorm:"size:16;index"` // compiled|interpreted
+	ProcessManager       string `gorm:"size:24;index"` // systemd|pm2|gunicorn|uwsgi
+	BinaryPath           string `gorm:"size:255"`
+	EntryPoint           string `gorm:"size:255"`
+	Host                 string `gorm:"size:64"`
+	Port                 int
+	StartArgs            string `gorm:"type:text"`
+	HealthPath           string `gorm:"size:255"`
+	RestartPolicy        string `gorm:"size:32"`
+	Workers              int
+	WorkerClass          string `gorm:"size:32"`
+	MaxMemory            string `gorm:"size:16"`
+	Timeout              int
+	ExecMode             string `gorm:"size:16"`
+	StdoutLogPath        string `gorm:"size:255"`
+	StderrLogPath        string `gorm:"size:255"`
+	ServiceName          string `gorm:"size:180;index"`
+	PHPVersion           string `gorm:"size:16"`
+	ProxyTarget          string `gorm:"size:255"`
+	CustomDirectives     string `gorm:"type:text"`
 	MaintenanceBypassIPs string `gorm:"type:text"`
-	PhpSettings      string `gorm:"type:text"` // JSON blob for PHP tuning
-	Enabled          bool   `gorm:"not null;default:true"`
-	SSLReady         bool   `gorm:"not null;default:false"`
-	SiteUserID       *uint  `gorm:"index"`
-	AccessLogPath    string `gorm:"size:255"`
-	ErrorLogPath     string `gorm:"size:255"`
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
-	Domains          []WebsiteDomain
-	SiteUser         *SiteUser `gorm:"foreignKey:SiteUserID"`
+	PhpSettings          string `gorm:"type:text"` // JSON blob for PHP tuning
+	Enabled              bool   `gorm:"not null;default:true"`
+	SSLReady             bool   `gorm:"not null;default:false"`
+	SiteUserID           *uint  `gorm:"index"`
+	AccessLogPath        string `gorm:"size:255"`
+	ErrorLogPath         string `gorm:"size:255"`
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+	Domains              []WebsiteDomain
+	SiteUser             *SiteUser `gorm:"foreignKey:SiteUserID"`
 }
 
 func (Website) TableName() string {

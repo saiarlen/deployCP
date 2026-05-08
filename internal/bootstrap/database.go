@@ -135,6 +135,8 @@ func reconcilePlatformColumns(db *gorm.DB) error {
 		"RootPath",
 		"Type",
 		"AppRuntime",
+		"ShellRuntime",
+		"ShellRuntimeVersion",
 		"ExecutionMode",
 		"ProcessManager",
 		"BinaryPath",

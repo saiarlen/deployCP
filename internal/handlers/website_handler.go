@@ -535,6 +535,8 @@ func (h *WebsiteHandler) ManageAddDomain(c *fiber.Ctx) error {
 		Name:                 site.Name,
 		RootPath:             site.RootPath,
 		Type:                 site.Type,
+		ShellRuntime:         site.ShellRuntime,
+		ShellRuntimeVersion:  site.ShellRuntimeVersion,
 		PHPVersion:           site.PHPVersion,
 		ProxyTarget:          site.ProxyTarget,
 		Domains:              domains,
@@ -1463,6 +1465,12 @@ func (h *WebsiteHandler) payload(c *fiber.Ctx, existing *models.Website) (websit
 
 	phpVersion := strings.TrimSpace(c.FormValue("php_version"))
 	proxyTarget := strings.TrimSpace(c.FormValue("proxy_target"))
+	shellRuntime := strings.TrimSpace(c.FormValue("shell_runtime"))
+	shellRuntimeVersion := strings.TrimSpace(c.FormValue("shell_runtime_version"))
+	if existing != nil {
+		shellRuntime = existing.ShellRuntime
+		shellRuntimeVersion = existing.ShellRuntimeVersion
+	}
 	if siteType != "php" {
 		phpVersion = ""
 	}
@@ -1480,6 +1488,8 @@ func (h *WebsiteHandler) payload(c *fiber.Ctx, existing *models.Website) (websit
 			Name:                 name,
 			RootPath:             root,
 			Type:                 siteType,
+			ShellRuntime:         shellRuntime,
+			ShellRuntimeVersion:  shellRuntimeVersion,
 			PHPVersion:           phpVersion,
 			ProxyTarget:          proxyTarget,
 			Domains:              domains,
@@ -1727,10 +1737,6 @@ func (h *WebsiteHandler) ManageCreateLinkedApp(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(404).SendString("website not found")
 	}
-	if site.Type != "proxy" {
-		h.base.Sessions.SetFlash(c, "Runtime settings only apply to proxy sites")
-		return c.Redirect(platformURLWithTab("website", id, "settings"))
-	}
 	if websiteRuntimeApp(site) != nil {
 		h.base.Sessions.SetFlash(c, "Application already linked")
 		return c.Redirect(platformURLWithTab("website", id, "settings"))
@@ -1761,12 +1767,25 @@ func (h *WebsiteHandler) ManageCreateLinkedApp(c *fiber.Ctx) error {
 		}
 	}
 	if v := strings.TrimSpace(c.FormValue("port")); v != "" {
-		port, _ = strconv.Atoi(v)
+		parsedPort, portErr := validators.ValidatePort(v)
+		if portErr != nil {
+			h.base.Sessions.SetFlash(c, portErr.Error())
+			return c.Redirect(platformURLWithTab("website", id, "settings"))
+		}
+		port = parsedPort
+	}
+	if port <= 0 {
+		h.base.Sessions.SetFlash(c, "port is required")
+		return c.Redirect(platformURLWithTab("website", id, "settings"))
 	}
 
 	execMode := "compiled"
-	if runtime == "go" || runtime == "python" || runtime == "node" {
+	if runtime == "python" || runtime == "node" {
 		execMode = "interpreted"
+	}
+	if runtime == "go" && binaryPath == "" {
+		h.base.Sessions.SetFlash(c, "Go binary path is required. Build or upload your app first, then point Runtime Setup to that binary.")
+		return c.Redirect(platformURLWithTab("website", id, "settings"))
 	}
 
 	if binaryPath == "" {
@@ -1779,8 +1798,6 @@ func (h *WebsiteHandler) ManageCreateLinkedApp(c *fiber.Ctx) error {
 			binaryPath = "pm2"
 		default:
 			switch runtime {
-			case "go":
-				binaryPath = "/usr/bin/env"
 			case "python":
 				binaryPath = "python3"
 			case "node":
@@ -1790,11 +1807,6 @@ func (h *WebsiteHandler) ManageCreateLinkedApp(c *fiber.Ctx) error {
 	}
 	if entryPoint == "" && execMode == "interpreted" {
 		switch runtime {
-		case "go":
-			entryPoint = "main.go"
-			if startArgs == "" {
-				startArgs = "run"
-			}
 		case "python":
 			if processManager == "gunicorn" || processManager == "uwsgi" {
 				entryPoint = "app:app"

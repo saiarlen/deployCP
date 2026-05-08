@@ -1246,7 +1246,7 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
   </div>
   {{ end }}
 
-  {{ if Item.Type == "proxy" }}
+  {{ if Item.Type == "proxy" || Item.ShellRuntime != "" }}
   {{ if isset(LinkedApp) && LinkedApp != nil }}
   <!-- ── Runtime Info & Controls (app exists) ── -->
   <div class="surface p-5">
@@ -1484,11 +1484,15 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
 
         <label class="block text-sm font-medium">Runtime
           <select class="field mt-2" name="runtime" id="ca-runtime">
-            <option value="go" {{ if Item.AppRuntime == "go" }}selected{{ end }}>Go</option>
+            <option value="go" {{ if Item.AppRuntime == "go" || Item.ShellRuntime == "go" }}selected{{ end }}>Go</option>
             <option value="python" {{ if Item.AppRuntime == "python" }}selected{{ end }}>Python</option>
             <option value="node" {{ if Item.AppRuntime == "node" }}selected{{ end }}>Node.js</option>
-            <option value="binary" {{ if Item.AppRuntime == "binary" || Item.AppRuntime == "" }}selected{{ end }}>Binary / Other</option>
+            <option value="binary" {{ if Item.AppRuntime == "binary" || Item.AppRuntime == "" && Item.ShellRuntime == "" }}selected{{ end }}>Binary / Other</option>
           </select>
+        </label>
+
+        <label class="block text-sm font-medium">Runtime Version
+          <input class="field mt-2" type="text" name="runtime_version" value="{{ Item.ShellRuntimeVersion }}" placeholder="e.g. go1.25">
         </label>
 
         <label class="block text-sm font-medium">Process Manager
@@ -1498,7 +1502,7 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
 
         <label class="block text-sm font-medium" id="ca-binary-label">
           <span id="ca-binary-title">Binary / Command Path</span>
-          <input class="field mt-2" type="text" name="binary_path" id="ca-binary-input" placeholder="/usr/local/bin/myapp">
+	          <input class="field mt-2" type="text" name="binary_path" id="ca-binary-input" placeholder="{{ Item.RootPath }}/app">
           <span class="text-xs opacity-50 mt-1" id="ca-binary-hint">Absolute path to the compiled binary or command</span>
         </label>
 
@@ -1512,8 +1516,8 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
         </label>
 
         <label class="block text-sm font-medium">Port
-          <input class="field mt-2" type="number" name="port" min="1" max="65535" placeholder="8080">
-          <span class="text-xs opacity-50 mt-1">Leave blank to auto-detect from proxy target</span>
+          <input class="field mt-2" type="number" name="port" min="1" max="65535" placeholder="8080" required>
+          <span class="text-xs opacity-50 mt-1">The managed process will bind to this local port.</span>
         </label>
 
         <label class="block text-sm font-medium">Workers
@@ -4030,10 +4034,14 @@ $(function () {
       var rt = $('#ca-runtime').val();
       var pm = $('#ca-pm').val() || 'systemd';
       var title, placeholder, hint;
-      if (rt === 'go' || rt === 'binary') {
-        title = rt === 'go' ? 'Binary Path' : 'Binary / Command Path';
-        placeholder = '/usr/local/bin/myapp';
-        hint = 'Absolute path to the compiled binary (required)';
+	      if (rt === 'go') {
+	        title = 'Binary Path';
+	        placeholder = '{{ Item.RootPath }}/app';
+	        hint = 'Build or upload the Go binary under htdocs, then point to it here';
+	      } else if (rt === 'binary') {
+	        title = 'Binary / Command Path';
+	        placeholder = '{{ Item.RootPath }}/app';
+	        hint = 'Absolute path to the compiled binary (required)';
       } else if (pm === 'gunicorn') {
         title = 'Gunicorn Command'; placeholder = 'gunicorn'; hint = 'Leave blank to default to "gunicorn"';
       } else if (pm === 'uwsgi') {

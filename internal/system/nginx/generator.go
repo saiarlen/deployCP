@@ -46,12 +46,12 @@ var cloudflareIPs = []string{
 }
 
 type WebsiteConfigOptions struct {
-	Certificate        *models.SSLCertificate
-	BasicAuth          *models.BasicAuth
-	BasicAuthPath      string
-	IPBlocks           []models.IPBlock
-	BotBlocks          []models.BotBlock
-	CloudflareEnabled  bool
+	Certificate       *models.SSLCertificate
+	BasicAuth         *models.BasicAuth
+	BasicAuthPath     string
+	IPBlocks          []models.IPBlock
+	BotBlocks         []models.BotBlock
+	CloudflareEnabled bool
 }
 
 func BuildWebsiteConfig(cfg *config.Config, site *models.Website, opts WebsiteConfigOptions) GeneratedConfig {
@@ -263,8 +263,17 @@ func escapeNginxString(value string) string {
 }
 
 func phpFPMSocketPath(version string) string {
+	version = phpFPMRuntimeVersion(version)
 	if runtime.GOOS == "darwin" {
 		return fmt.Sprintf("/opt/homebrew/var/run/php@%s-fpm.sock", version)
 	}
 	return fmt.Sprintf("/run/php/php%s-fpm.sock", version)
+}
+
+func phpFPMRuntimeVersion(version string) string {
+	parts := strings.Split(strings.TrimSpace(version), ".")
+	if len(parts) >= 2 {
+		return parts[0] + "." + parts[1]
+	}
+	return strings.TrimSpace(version)
 }

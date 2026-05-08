@@ -28,6 +28,8 @@ type WebsiteInput struct {
 	RootPath             string
 	Type                 string
 	AppRuntime           string
+	ShellRuntime         string
+	ShellRuntimeVersion  string
 	PHPVersion           string
 	ProxyTarget          string
 	Domains              []string
@@ -162,7 +164,8 @@ func (s *WebsiteService) RuntimeInspection(site *models.Website) RuntimeInspecti
 	} else if !runtimeVersionMatches("php", selected, inspection.SSHVersion) {
 		inspection.Issues = append(inspection.Issues, fmt.Sprintf("PHP CLI resolves %s while PHP-FPM is set to %s.", inspection.SSHVersion, selected))
 	}
-	serviceName := "php" + selected + "-fpm"
+	serviceVersion := phpFPMRuntimeVersion(selected)
+	serviceName := "php" + serviceVersion + "-fpm"
 	if s.packages != nil {
 		serviceName = s.packages.ResolveServiceUnit(context.Background(), serviceName)
 	}
@@ -220,7 +223,7 @@ func (s *WebsiteService) ManagedPHPShellFallbackUsage(version string) ([]string,
 }
 
 func phpFPMSocketPathForPlatform(version string, cfg *config.Config) string {
-	version = strings.TrimSpace(version)
+	version = phpFPMRuntimeVersion(version)
 	if version == "" {
 		return ""
 	}
@@ -233,8 +236,19 @@ func phpFPMSocketPathForPlatform(version string, cfg *config.Config) string {
 	return fmt.Sprintf("/run/php/php%s-fpm.sock", version)
 }
 
+func phpFPMRuntimeVersion(version string) string {
+	parts := strings.Split(strings.TrimSpace(version), ".")
+	if len(parts) >= 2 {
+		return parts[0] + "." + parts[1]
+	}
+	return strings.TrimSpace(version)
+}
+
 func (s *WebsiteService) Create(ctx context.Context, in WebsiteInput, actor *uint, ip string) (*models.Website, error) {
 	if err := s.ensurePHPFPMVersion(ctx, strings.TrimSpace(in.Type), strings.TrimSpace(in.PHPVersion), actor, ip); err != nil {
+		return nil, err
+	}
+	if err := s.ensureShellRuntimeVersion(strings.TrimSpace(in.ShellRuntime), strings.TrimSpace(in.ShellRuntimeVersion)); err != nil {
 		return nil, err
 	}
 	normalizedBypass, err := normalizeMaintenanceBypassIPs(in.MaintenanceBypassIPs)
@@ -245,12 +259,17 @@ func (s *WebsiteService) Create(ctx context.Context, in WebsiteInput, actor *uin
 	if err := s.validate(in); err != nil {
 		return nil, err
 	}
+	if err := s.ensureDomainsAvailable(in.Domains, 0); err != nil {
+		return nil, err
+	}
 	platformHome := platformHomeFromWebRoot(in.RootPath)
 	site := &models.Website{
 		Name:                 in.Name,
 		RootPath:             in.RootPath,
 		Type:                 in.Type,
 		AppRuntime:           in.AppRuntime,
+		ShellRuntime:         strings.ToLower(strings.TrimSpace(in.ShellRuntime)),
+		ShellRuntimeVersion:  strings.TrimSpace(in.ShellRuntimeVersion),
 		PHPVersion:           in.PHPVersion,
 		ProxyTarget:          in.ProxyTarget,
 		CustomDirectives:     in.CustomDirectives,
@@ -284,12 +303,18 @@ func (s *WebsiteService) Update(ctx context.Context, id uint, in WebsiteInput, a
 	if err := s.ensurePHPFPMVersion(ctx, strings.TrimSpace(in.Type), strings.TrimSpace(in.PHPVersion), actor, ip); err != nil {
 		return err
 	}
+	if err := s.ensureShellRuntimeVersion(strings.TrimSpace(in.ShellRuntime), strings.TrimSpace(in.ShellRuntimeVersion)); err != nil {
+		return err
+	}
 	normalizedBypass, err := normalizeMaintenanceBypassIPs(in.MaintenanceBypassIPs)
 	if err != nil {
 		return err
 	}
 	in.MaintenanceBypassIPs = normalizedBypass
 	if err := s.validate(in); err != nil {
+		return err
+	}
+	if err := s.ensureDomainsAvailable(in.Domains, id); err != nil {
 		return err
 	}
 	site, err := s.repo.Find(id)
@@ -299,6 +324,8 @@ func (s *WebsiteService) Update(ctx context.Context, id uint, in WebsiteInput, a
 	site.Name = in.Name
 	site.RootPath = in.RootPath
 	site.Type = in.Type
+	site.ShellRuntime = strings.ToLower(strings.TrimSpace(in.ShellRuntime))
+	site.ShellRuntimeVersion = strings.TrimSpace(in.ShellRuntimeVersion)
 	site.PHPVersion = in.PHPVersion
 	site.ProxyTarget = in.ProxyTarget
 	site.CustomDirectives = in.CustomDirectives
@@ -391,6 +418,9 @@ func (s *WebsiteService) RemoveRuntime(ctx context.Context, id uint, actor *uint
 		return err
 	}
 	if err := s.appRepo.ClearRuntime(id); err != nil {
+		return err
+	}
+	if err := s.RefreshConfig(ctx, id); err != nil {
 		return err
 	}
 	s.audit.Record(actor, "platform.runtime.delete", "website", fmt.Sprintf("%d", id), ip, nil)
@@ -522,13 +552,14 @@ func (s *WebsiteService) ensurePHPFPMVersion(ctx context.Context, siteType, vers
 	if s.packages == nil || s.cfg == nil || s.cfg.Features.PlatformMode == "dryrun" {
 		return nil
 	}
-	serviceName := "php" + version + "-fpm"
+	serviceVersion := phpFPMRuntimeVersion(version)
+	serviceName := "php" + serviceVersion + "-fpm"
 	if !s.packages.IsInstalled(ctx, serviceName) {
 		if err := s.packages.EnsureInstalled(ctx, serviceName, actor, ip); err != nil {
 			return err
 		}
 	}
-	_ = s.packages.EnsurePHPCLIInstalled(ctx, version, actor, ip)
+	_ = s.packages.EnsurePHPCLIInstalled(ctx, serviceVersion, actor, ip)
 	unitName := s.packages.ResolveServiceUnit(ctx, serviceName)
 	if unitName == "" {
 		unitName = serviceName
@@ -720,7 +751,28 @@ func (s *WebsiteService) applyPlatformRuntime(site *models.Website, actor *uint,
 			return s.runtime.ApplyPlatformRuntime(platformHomeFromWebRoot(site.RootPath), runtimeName, version, actor, ip)
 		}
 	}
+	if runtimeName := strings.ToLower(strings.TrimSpace(site.ShellRuntime)); runtimeName != "" && strings.TrimSpace(site.ShellRuntimeVersion) != "" {
+		return s.runtime.ApplyPlatformRuntime(platformHomeFromWebRoot(site.RootPath), runtimeName, strings.TrimSpace(site.ShellRuntimeVersion), actor, ip)
+	}
 	return s.runtime.ApplyPlatformRuntime(platformHomeFromWebRoot(site.RootPath), "", "", actor, ip)
+}
+
+func (s *WebsiteService) ensureShellRuntimeVersion(runtimeName, version string) error {
+	runtimeName = strings.ToLower(strings.TrimSpace(runtimeName))
+	version = strings.TrimSpace(version)
+	if runtimeName == "" && version == "" {
+		return nil
+	}
+	if runtimeName == "" || version == "" {
+		return fmt.Errorf("shell runtime and version must both be selected")
+	}
+	if runtimeName == "binary" {
+		return nil
+	}
+	if s.runtime != nil && !s.runtime.VerifyInstalledVersion(runtimeName, version) {
+		return fmt.Errorf("selected %s runtime %s is not installed or is not verifiable on this server", runtimeName, version)
+	}
+	return nil
 }
 
 func (s *WebsiteService) linkedAppRuntime(site *models.Website) (string, string) {
@@ -1140,6 +1192,32 @@ func (s *WebsiteService) validate(in WebsiteInput) error {
 	}
 	in.MaintenanceBypassIPs = normalizedBypass
 	return nil
+}
+
+func (s *WebsiteService) ensureDomainsAvailable(domains []string, excludeWebsiteID uint) error {
+	seen := make(map[string]struct{}, len(domains))
+	for _, raw := range domains {
+		domain := normalizedDomain(raw)
+		if domain == "" {
+			continue
+		}
+		if _, ok := seen[domain]; ok {
+			return fmt.Errorf("domain %s is listed more than once", domain)
+		}
+		seen[domain] = struct{}{}
+		owner, err := s.repo.FindDomainOwner(domain, excludeWebsiteID)
+		if err != nil {
+			return err
+		}
+		if owner != nil {
+			return fmt.Errorf("domain %s already belongs to platform #%d", domain, owner.WebsiteID)
+		}
+	}
+	return nil
+}
+
+func normalizedDomain(domain string) string {
+	return strings.TrimSuffix(strings.ToLower(strings.TrimSpace(domain)), ".")
 }
 
 func normalizeMaintenanceBypassIPs(raw string) (string, error) {

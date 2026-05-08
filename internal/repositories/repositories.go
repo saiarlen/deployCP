@@ -193,6 +193,24 @@ func (r *WebsiteRepository) Find(id uint) (*models.Website, error) {
 	}
 	return &item, nil
 }
+func (r *WebsiteRepository) FindDomainOwner(domain string, excludeWebsiteID uint) (*models.WebsiteDomain, error) {
+	domain = strings.ToLower(strings.TrimSpace(domain))
+	if domain == "" {
+		return nil, nil
+	}
+	var item models.WebsiteDomain
+	q := r.db.Where("LOWER(domain) = ?", domain)
+	if excludeWebsiteID > 0 {
+		q = q.Where("website_id <> ?", excludeWebsiteID)
+	}
+	if err := q.First(&item).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &item, nil
+}
 func (r *WebsiteRepository) Create(item *models.Website, domains []string) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(item).Error; err != nil {
@@ -481,6 +499,7 @@ func (r *GoAppRepository) ClearRuntime(id uint) error {
 		}
 		return tx.Model(&models.GoApp{}).Where("id = ?", id).Updates(map[string]any{
 			"app_runtime":     "",
+			"type":            "static",
 			"execution_mode":  "",
 			"process_manager": "",
 			"binary_path":     "",
@@ -498,6 +517,7 @@ func (r *GoAppRepository) ClearRuntime(id uint) error {
 			"stdout_log_path": "",
 			"stderr_log_path": "",
 			"service_name":    "",
+			"proxy_target":    "",
 		}).Error
 	})
 }

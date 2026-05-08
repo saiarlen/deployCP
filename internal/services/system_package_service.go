@@ -308,7 +308,7 @@ func (s servicePackageSpec) unitCandidates(manager string) []string {
 }
 
 func phpCLIPackagesForManager(manager, version string) []string {
-	version = strings.TrimSpace(version)
+	version = phpSystemPackageVersion(version)
 	switch manager {
 	case "apt":
 		return []string{"php" + version + "-cli"}
@@ -320,6 +320,14 @@ func phpCLIPackagesForManager(manager, version string) []string {
 	default:
 		return nil
 	}
+}
+
+func phpSystemPackageVersion(version string) string {
+	parts := strings.Split(strings.TrimSpace(version), ".")
+	if len(parts) >= 2 {
+		return parts[0] + "." + parts[1]
+	}
+	return strings.TrimSpace(version)
 }
 
 var phpFPMServicePattern = regexp.MustCompile(`^php([0-9]+(?:\.[0-9]+){1,2})-fpm$`)

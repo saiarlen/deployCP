@@ -167,12 +167,7 @@
 	              </select>
 	              <span id="sa-go-version-error" class="pw-error" aria-live="polite"></span>
 	            </label>
-            <label class="pw-field">
-              <span class="pw-label">Proxy Port <span class="pw-required">*</span></span>
-              <input class="field" id="sa-go-port" name="port" value="8080" inputmode="numeric" required>
-              <span id="sa-go-port-error" class="pw-error" aria-live="polite"></span>
-            </label>
-          </div>
+	          </div>
 
 	          <div id="sa-python" class="wizard-stage form-grid">
 	            <label class="pw-field">
@@ -230,8 +225,8 @@
 var saAllowRelativeRootPath = {{ if IsDryRun }}true{{ else }}false{{ end }};
 function saGenPw(){var c="ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%",o="";for(var i=0;i<18;i++)o+=c[Math.floor(Math.random()*c.length)];return o}
 function saCategoryByKind(kind){
-  if(kind==='static' || kind==='php') return 'site';
-  if(kind==='go' || kind==='python' || kind==='node' || kind==='binary') return 'app';
+  if(kind==='static' || kind==='php' || kind==='go') return 'site';
+  if(kind==='python' || kind==='node' || kind==='binary') return 'app';
   return '';
 }
 function saSetFieldError(id,msg){
@@ -331,8 +326,6 @@ function saValidateForm(){
   }
   if(kind==='go'){
     if(!$.trim($('#sa-go-version').val()))invalidateField('sa-go-version','Go version is required.');
-    if(!$.trim($('#sa-go-port').val()))invalidateField('sa-go-port','Port is required.');
-    else if(!saValidPort($('#sa-go-port').val()))invalidateField('sa-go-port','Port must be between 1 and 65535.');
   }
   if(kind==='python'){
     if(!$.trim($('#sa-python-version').val()))invalidateField('sa-python-version','Python version is required.');

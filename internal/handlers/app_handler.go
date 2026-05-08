@@ -228,7 +228,52 @@ func (h *AppHandler) SitesAppsCreate(c *fiber.Ctx) error {
 		}
 		h.base.Sessions.SetFlash(c, "Platform created")
 		return c.Redirect(platformURL("website", site.ID))
-	case "go", "python", "node", "binary":
+	case "go":
+		runtimeVersion := strings.TrimSpace(c.FormValue("runtime_version"))
+		if runtimeVersion == "" {
+			h.base.Sessions.SetFlash(c, "Go version is required")
+			return c.Redirect("/platforms/new")
+		}
+		root := strings.TrimSpace(c.FormValue("root_path"))
+		if root == "" {
+			root = strings.TrimSuffix(h.base.Config.Paths.DefaultSiteRoot, "/") + "/" + strings.ReplaceAll(domain, "*.", "wildcard-") + "/htdocs"
+		}
+		var siteUserID *uint
+		if siteUsername != "" {
+			platformHome := platformHomeFromRoot(root)
+			user, generatedPassword, err := h.siteUserService.Create(c.Context(), services.SiteUserInput{
+				Username:      siteUsername,
+				HomeDirectory: platformHome,
+				AllowedRoot:   platformHome,
+				Password:      sitePassword,
+				SSHEnabled:    true,
+			}, currentUserID(c), c.IP())
+			if err != nil {
+				h.base.Sessions.SetFlash(c, err.Error())
+				return c.Redirect("/platforms/new")
+			}
+			siteUserID = &user.ID
+			if strings.TrimSpace(sitePassword) == "" {
+				h.base.Sessions.SetFlash(c, "Site user created. Generated password: "+generatedPassword)
+			}
+		}
+		site, err := h.websiteService.Create(c.Context(), services.WebsiteInput{
+			Name:                name,
+			RootPath:            root,
+			Type:                "static",
+			ShellRuntime:        "go",
+			ShellRuntimeVersion: runtimeVersion,
+			Domains:             []string{domain},
+			SiteUserID:          siteUserID,
+			Enabled:             true,
+		}, currentUserID(c), c.IP())
+		if err != nil {
+			h.base.Sessions.SetFlash(c, err.Error())
+			return c.Redirect("/platforms/new")
+		}
+		h.base.Sessions.SetFlash(c, "Platform created")
+		return c.Redirect(platformURL("website", site.ID))
+	case "python", "node", "binary":
 		port, err := validators.ValidatePort(c.FormValue("port"))
 		if err != nil {
 			h.base.Sessions.SetFlash(c, err.Error())
@@ -1311,9 +1356,9 @@ func appNameFromDomain(domain string) string {
 
 func platformCategoryFromKind(kind string) string {
 	switch strings.ToLower(strings.TrimSpace(kind)) {
-	case "static", "php":
+	case "static", "php", "go":
 		return "site"
-	case "go", "python", "node", "binary":
+	case "python", "node", "binary":
 		return "app"
 	default:
 		return ""
