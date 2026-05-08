@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	goruntime "runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"deploycp/internal/models"
 	"deploycp/internal/platform"
 	"deploycp/internal/repositories"
+	"deploycp/internal/utils"
 	"deploycp/internal/validators"
 )
 
@@ -86,7 +88,7 @@ func (s *AppService) Create(ctx context.Context, in AppInput, actor *uint, ip st
 	if err := s.ensurePortAvailable(in.Host, in.Port, 0, false); err != nil {
 		return nil, err
 	}
-	serviceName := "deploycp-app-" + strings.ReplaceAll(strings.ToLower(in.Name), " ", "-")
+	serviceName := appSystemdServiceName(in.Name)
 	stdoutPath := filepath.Join(s.cfg.Paths.LogRoot, "apps", in.Name, "stdout.log")
 	stderrPath := filepath.Join(s.cfg.Paths.LogRoot, "apps", in.Name, "stderr.log")
 	if err := os.MkdirAll(filepath.Dir(stdoutPath), 0o755); err != nil {
@@ -204,6 +206,15 @@ func (s *AppService) Delete(ctx context.Context, id uint, actor *uint, ip string
 	if serviceName != "" {
 		_ = s.adapter.Services().Stop(ctx, serviceName)
 		_ = s.adapter.Services().Disable(ctx, serviceName)
+		if app.WebsiteID != nil && s.websites != nil {
+			if site, err := s.websites.Find(*app.WebsiteID); err == nil {
+				for _, user := range runtimeSudoerUsersForSite(site, s.websites.siteUsers) {
+					if err := removeSiteUserRuntimeSudoers(s.cfg, user.Username, serviceName); err != nil {
+						return err
+					}
+				}
+			}
+		}
 		if err := s.services.DeleteByName(serviceName); err != nil {
 			return err
 		}
@@ -511,11 +522,36 @@ func (s *AppService) installService(ctx context.Context, app *models.GoApp, env 
 		return err
 	}
 	_ = s.services.Upsert(&models.ManagedService{Name: app.ServiceName, Type: "application", PlatformName: s.adapter.Name(), UnitPath: unitPath, Enabled: app.Enabled})
+	if err := s.syncSiteUserRuntimeSudoers(ctx, app); err != nil {
+		return err
+	}
 	if app.Enabled {
 		if err := s.adapter.Services().Enable(ctx, app.ServiceName); err != nil {
 			return err
 		}
 		if err := s.adapter.Services().Start(ctx, app.ServiceName); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *AppService) syncSiteUserRuntimeSudoers(ctx context.Context, app *models.GoApp) error {
+	if app == nil || app.WebsiteID == nil || s.websites == nil {
+		return nil
+	}
+	site, err := s.websites.Find(*app.WebsiteID)
+	if err != nil {
+		return err
+	}
+	for _, user := range runtimeSudoerUsersForSite(site, s.websites.siteUsers) {
+		if !user.IsActive || !user.SSHEnabled {
+			if err := removeSiteUserRuntimeSudoers(s.cfg, user.Username, app.ServiceName); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := writeSiteUserRuntimeSudoers(ctx, s.cfg, user.Username, app.ServiceName); err != nil {
 			return err
 		}
 	}
@@ -886,6 +922,33 @@ func normalizeProcessManager(v string) string {
 	return v
 }
 
+func appSystemdServiceName(name string) string {
+	return "deploycp-app-" + appSystemdServiceSlug(name)
+}
+
+func appSystemdServiceSlug(name string) string {
+	name = strings.ToLower(strings.TrimSpace(name))
+	var b strings.Builder
+	lastDash := false
+	for _, r := range name {
+		allowed := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
+		if allowed {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	slug := strings.Trim(b.String(), "-")
+	if slug == "" {
+		return "platform"
+	}
+	return slug
+}
+
 func validateExecutablePath(path string) error {
 	p := strings.TrimSpace(path)
 	if _, err := os.Stat(p); err == nil {
@@ -898,6 +961,162 @@ func validateExecutablePath(path string) error {
 		return nil
 	}
 	return fmt.Errorf("executable not found (use absolute path or PATH name): %s", path)
+}
+
+func runtimeSudoerUsersForSite(site *models.Website, repo *repositories.SiteUserRepository) []models.SiteUser {
+	if site == nil {
+		return nil
+	}
+	var users []models.SiteUser
+	seen := map[uint]struct{}{}
+	seenNames := map[string]struct{}{}
+	add := func(user models.SiteUser) {
+		username := strings.TrimSpace(user.Username)
+		if username == "" {
+			return
+		}
+		if user.ID > 0 {
+			if _, ok := seen[user.ID]; ok {
+				return
+			}
+			seen[user.ID] = struct{}{}
+		}
+		key := strings.ToLower(username)
+		if _, ok := seenNames[key]; ok {
+			return
+		}
+		seenNames[key] = struct{}{}
+		users = append(users, user)
+	}
+	if site.SiteUser != nil {
+		add(*site.SiteUser)
+	}
+	if repo != nil {
+		if additional, err := repo.ListByWebsite(site.ID); err == nil {
+			for _, user := range additional {
+				add(user)
+			}
+		}
+	}
+	return users
+}
+
+func writeSiteUserRuntimeSudoers(ctx context.Context, cfg *config.Config, username, serviceName string) error {
+	if !shouldManageRuntimeSudoers(cfg) {
+		return nil
+	}
+	username = strings.TrimSpace(username)
+	serviceName = strings.TrimSpace(serviceName)
+	if username == "" || serviceName == "" {
+		return nil
+	}
+	path := siteUserRuntimeSudoersPath(username, serviceName)
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		return err
+	}
+	content := siteUserRuntimeSudoersContent(cfg, username, serviceName)
+	if err := utils.WriteFileAtomic(path, []byte(content), 0o440); err != nil {
+		return err
+	}
+	if err := validateSudoersFile(ctx, path); err != nil {
+		_ = os.Remove(path)
+		return err
+	}
+	return nil
+}
+
+func removeSiteUserRuntimeSudoers(cfg *config.Config, username, serviceName string) error {
+	if !shouldManageRuntimeSudoers(cfg) {
+		return nil
+	}
+	path := siteUserRuntimeSudoersPath(username, serviceName)
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+func shouldManageRuntimeSudoers(cfg *config.Config) bool {
+	return cfg != nil && cfg.Features.PlatformMode != "dryrun" && goruntime.GOOS == "linux"
+}
+
+func siteUserRuntimeSudoersPath(username, serviceName string) string {
+	name := fmt.Sprintf("deploycp-%s-%s", sudoersFileToken(username), sudoersFileToken(serviceName))
+	return filepath.Join("/etc/sudoers.d", name)
+}
+
+func sudoersFileToken(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	var b strings.Builder
+	lastDash := false
+	for _, r := range value {
+		allowed := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
+		if allowed {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	token := strings.Trim(b.String(), "-")
+	if token == "" {
+		return "runtime"
+	}
+	return token
+}
+
+func siteUserRuntimeSudoersContent(cfg *config.Config, username, serviceName string) string {
+	commands := siteUserRuntimeSudoCommands(cfg, serviceName)
+	return fmt.Sprintf("# Managed by DeployCP. Do not edit.\n%s ALL=(root) NOPASSWD: %s\n", username, strings.Join(commands, ", "))
+}
+
+func siteUserRuntimeSudoCommands(cfg *config.Config, serviceName string) []string {
+	var systemctlPaths []string
+	add := func(path string) {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			return
+		}
+		for _, existing := range systemctlPaths {
+			if existing == path {
+				return
+			}
+		}
+		systemctlPaths = append(systemctlPaths, path)
+	}
+	if cfg != nil {
+		add(cfg.Paths.SystemctlBinary)
+	}
+	add("/bin/systemctl")
+	add("/usr/bin/systemctl")
+
+	actions := []string{"start", "stop", "restart", "status", "is-active"}
+	var commands []string
+	for _, systemctl := range systemctlPaths {
+		for _, action := range actions {
+			commands = append(commands, fmt.Sprintf("%s %s %s", systemctl, action, serviceName))
+			commands = append(commands, fmt.Sprintf("%s %s %s.service", systemctl, action, serviceName))
+		}
+		commands = append(commands, fmt.Sprintf("%s --no-pager status %s", systemctl, serviceName))
+		commands = append(commands, fmt.Sprintf("%s --no-pager status %s.service", systemctl, serviceName))
+	}
+	return commands
+}
+
+func validateSudoersFile(ctx context.Context, path string) error {
+	visudo, err := exec.LookPath("visudo")
+	if err != nil {
+		return nil
+	}
+	cmd := exec.CommandContext(ctx, visudo, "-cf", path)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("validate sudoers file %s: %w: %s", path, err, strings.TrimSpace(string(output)))
+	}
+	return nil
 }
 
 func buildAppServiceDefinition(app *models.GoApp, env map[string]string) platform.ServiceDefinition {

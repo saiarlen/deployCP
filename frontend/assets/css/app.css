@@ -1482,6 +1482,212 @@ body.light-theme .settings-tab-active { color: var(--primary-dark); }
   color: var(--text-sec);
 }
 
+.runtime-service-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.runtime-service-main,
+.runtime-service-command,
+.runtime-health-strip,
+.runtime-detail-grid,
+.runtime-issue-list {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+}
+
+.runtime-service-main {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4);
+}
+
+.runtime-service-state {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.runtime-service-state strong {
+  display: block;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.runtime-service-label,
+.runtime-copy-label,
+.runtime-health-strip span,
+.runtime-detail-row span {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-sec);
+}
+
+.runtime-service-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+}
+
+.runtime-service-dot.is-running {
+  background: var(--success);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--success) 18%, transparent);
+}
+
+.runtime-service-dot.is-stopped {
+  background: var(--danger);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 16%, transparent);
+}
+
+.runtime-service-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.runtime-service-actions .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.runtime-service-actions .btn [data-lucide],
+.runtime-service-actions .btn .lucide {
+  width: 14px;
+  height: 14px;
+}
+
+.runtime-service-command {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.runtime-copy-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.runtime-copy-row .runtime-copy-label {
+  grid-column: 1 / -1;
+}
+
+.runtime-copy-row code,
+.runtime-detail-row code,
+.runtime-resolved-binary span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--text);
+}
+
+.runtime-health-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  margin-bottom: var(--space-4);
+  overflow: hidden;
+}
+
+.runtime-health-strip > div,
+.runtime-detail-row {
+  padding: var(--space-3);
+  border-right: 1px solid var(--border);
+}
+
+.runtime-health-strip > div:last-child {
+  border-right: 0;
+}
+
+.runtime-health-strip strong,
+.runtime-detail-row strong {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 0.25rem;
+  font-size: 0.86rem;
+  color: var(--text);
+}
+
+.runtime-resolved-binary {
+  margin: calc(var(--space-2) * -1) 0 var(--space-4);
+  font-size: 0.78rem;
+  color: var(--text-sec);
+}
+
+.runtime-issue-list {
+  display: grid;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+  padding: var(--space-3);
+  color: var(--text-sec);
+  font-size: 0.84rem;
+}
+
+.runtime-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: var(--space-5);
+  overflow: hidden;
+}
+
+.runtime-detail-row {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.runtime-detail-row:nth-child(2n) {
+  border-right: 0;
+}
+
+.runtime-detail-row.is-wide {
+  grid-column: 1 / -1;
+  border-right: 0;
+}
+
+.runtime-detail-row:last-child {
+  border-bottom: 0;
+}
+
+@media (max-width: 900px) {
+  .runtime-service-panel,
+  .runtime-detail-grid,
+  .runtime-health-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .runtime-health-strip > div,
+  .runtime-detail-row {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .runtime-health-strip > div:last-child,
+  .runtime-detail-row:last-child {
+    border-bottom: 0;
+  }
+}
+
 .settings-summary-grid {
   display: grid;
   grid-template-columns: repeat(1, minmax(0, 1fr));

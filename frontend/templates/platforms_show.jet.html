@@ -163,7 +163,14 @@
     <div class="grid gap-3 text-sm sm:grid-cols-2">
       <div class="rounded-md border border-[var(--border)] p-3">
         <p class="text-xs uppercase tracking-wide opacity-70">Service</p>
-        <p class="mt-1 font-mono text-xs ">{{ Status.App.ServiceName }}</p>
+        <div class="mt-1 flex items-center gap-2 min-w-0">
+          <span class="font-mono text-xs truncate">{{ Status.App.ServiceName }}</span>
+          <button type="button" class="platform-copy-action" data-copy-value="{{ Status.App.ServiceName }}" data-copy-success="Service name copied">Copy</button>
+        </div>
+        <div class="mt-2 flex items-center gap-2 min-w-0">
+          <span class="font-mono text-xs truncate">sudo systemctl restart {{ Status.App.ServiceName }}</span>
+          <button type="button" class="platform-copy-action" data-copy-value="sudo systemctl restart {{ Status.App.ServiceName }}" data-copy-success="Restart command copied">Copy</button>
+        </div>
       </div>
       <div class="rounded-md border border-[var(--border)] p-3">
         <p class="text-xs uppercase tracking-wide opacity-70">Execution Mode</p>
@@ -1255,92 +1262,87 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
         <h3 class="settings-section-title">Runtime &amp; Service</h3>
         <p class="settings-section-copy">This platform is backed by a managed application runtime. Adjust the process model and runtime tuning here.</p>
       </div>
-      <div class="flex items-center gap-2">
-        {{ if isset(LinkedAppStatus) && LinkedAppStatus != nil }}
-          {{ if LinkedAppStatus.Service.Active }}
-            <span class="badge badge-ok">running</span>
+    </div>
+    <div class="runtime-service-panel">
+      <div class="runtime-service-main">
+        <div class="runtime-service-state">
+          {{ if isset(LinkedAppStatus) && LinkedAppStatus != nil && LinkedAppStatus.Service.Active }}
+          <span class="runtime-service-dot is-running"></span>
+          <div>
+            <span class="runtime-service-label">Service Status</span>
+            <strong>Running</strong>
+          </div>
           {{ else }}
-            <span class="badge badge-danger">stopped</span>
+          <span class="runtime-service-dot is-stopped"></span>
+          <div>
+            <span class="runtime-service-label">Service Status</span>
+            <strong>Stopped</strong>
+          </div>
           {{ end }}
-        {{ end }}
+        </div>
+        <div class="runtime-service-actions">
+          <form action="/apps/{{ LinkedApp.ID }}/actions/start" method="post"><input type="hidden" name="_csrf" value="{{ CSRFToken }}"><button class="btn btn-success text-xs" type="submit"><i data-lucide="play"></i><span>Start</span></button></form>
+          <form action="/apps/{{ LinkedApp.ID }}/actions/stop" method="post" data-confirm-message="Stop this service now?"><input type="hidden" name="_csrf" value="{{ CSRFToken }}"><button class="btn btn-danger text-xs" type="submit"><i data-lucide="square"></i><span>Stop</span></button></form>
+          <form action="/apps/{{ LinkedApp.ID }}/actions/restart" method="post"><input type="hidden" name="_csrf" value="{{ CSRFToken }}"><button class="btn text-xs" type="submit"><i data-lucide="refresh-cw"></i><span>Restart</span></button></form>
+          <form action="/apps/{{ LinkedApp.ID }}/actions/enable" method="post"><input type="hidden" name="_csrf" value="{{ CSRFToken }}"><button class="btn btn-primary text-xs" type="submit"><i data-lucide="power"></i><span>Enable</span></button></form>
+          <form action="/apps/{{ LinkedApp.ID }}/actions/disable" method="post" data-confirm-message="Disable autostart?"><input type="hidden" name="_csrf" value="{{ CSRFToken }}"><button class="btn btn-warning text-xs" type="submit"><i data-lucide="power-off"></i><span>Disable</span></button></form>
+        </div>
+      </div>
+      <div class="runtime-service-command">
+        <div class="runtime-copy-row">
+          <span class="runtime-copy-label">Service name</span>
+          <code>{{ LinkedApp.ServiceName }}</code>
+          <button type="button" class="platform-copy-action" data-copy-value="{{ LinkedApp.ServiceName }}" data-copy-success="Service name copied">Copy</button>
+        </div>
+        <div class="runtime-copy-row">
+          <span class="runtime-copy-label">SSH command</span>
+          <code>sudo systemctl restart {{ LinkedApp.ServiceName }}</code>
+          <button type="button" class="platform-copy-action" data-copy-value="sudo systemctl restart {{ LinkedApp.ServiceName }}" data-copy-success="Restart command copied">Copy</button>
+        </div>
       </div>
     </div>
+
     {{ if LinkedRuntimeHealth.Applicable }}
-    <div class="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4 mb-5">
-      <div class="rounded-md border border-[var(--border)] p-3">
-        <p class="text-xs uppercase tracking-wide opacity-70">Selected Runtime</p>
-        <p class="mt-1 font-mono text-xs">{{ LinkedRuntimeHealth.SelectedVersion }}</p>
+    <div class="runtime-health-strip">
+      <div>
+        <span>Selected</span>
+        <strong>{{ LinkedRuntimeHealth.SelectedVersion }}</strong>
       </div>
-      <div class="rounded-md border border-[var(--border)] p-3">
-        <p class="text-xs uppercase tracking-wide opacity-70">SSH Version</p>
-        <p class="mt-1 font-mono text-xs">{{ if LinkedRuntimeHealth.SSHVersion != "" }}{{ LinkedRuntimeHealth.SSHVersion }}{{ else }}Unavailable{{ end }}</p>
+      <div>
+        <span>SSH</span>
+        <strong>{{ if LinkedRuntimeHealth.SSHVersion != "" }}{{ LinkedRuntimeHealth.SSHVersion }}{{ else }}Unavailable{{ end }}</strong>
       </div>
-      <div class="rounded-md border border-[var(--border)] p-3">
-        <p class="text-xs uppercase tracking-wide opacity-70">Service Version</p>
-        <p class="mt-1 font-mono text-xs">{{ if LinkedRuntimeHealth.ServiceVersion != "" }}{{ LinkedRuntimeHealth.ServiceVersion }}{{ else }}Unavailable{{ end }}</p>
+      <div>
+        <span>Service</span>
+        <strong>{{ if LinkedRuntimeHealth.ServiceVersion != "" }}{{ LinkedRuntimeHealth.ServiceVersion }}{{ else }}Unavailable{{ end }}</strong>
       </div>
-      <div class="rounded-md border border-[var(--border)] p-3">
-        <p class="text-xs uppercase tracking-wide opacity-70">Runtime Health</p>
-        <p class="mt-1">{{ if LinkedRuntimeHealth.Healthy }}<span class="badge badge-ok">healthy</span>{{ else }}<span class="badge badge-warning">needs attention</span>{{ end }}</p>
+      <div>
+        <span>Health</span>
+        <strong>{{ if LinkedRuntimeHealth.Healthy }}Healthy{{ else }}Needs attention{{ end }}</strong>
       </div>
     </div>
     {{ if LinkedRuntimeHealth.ServiceBinary != "" }}
-    <div class="mb-3 text-xs opacity-70">Resolved service binary: <span class="font-mono">{{ LinkedRuntimeHealth.ServiceBinary }}</span></div>
+    <div class="runtime-resolved-binary">Resolved binary: <span>{{ LinkedRuntimeHealth.ServiceBinary }}</span></div>
     {{ end }}
     {{ if len(LinkedRuntimeHealth.Issues) > 0 }}
-    <div class="mb-5 rounded-md border border-[var(--border)] p-3 text-sm">
+    <div class="runtime-issue-list">
       {{ range _, issue := LinkedRuntimeHealth.Issues }}
-      <div class="opacity-80">{{ issue }}</div>
+      <div>{{ issue }}</div>
       {{ end }}
     </div>
     {{ end }}
     {{ end }}
 
-    <!-- Service Controls -->
-    <div class="flex flex-wrap gap-2 mb-5">
-      <form action="/apps/{{ LinkedApp.ID }}/actions/start" method="post"><input type="hidden" name="_csrf" value="{{ CSRFToken }}"><button class="btn btn-success text-xs" type="submit">Start</button></form>
-      <form action="/apps/{{ LinkedApp.ID }}/actions/stop" method="post" data-confirm-message="Stop this service now?"><input type="hidden" name="_csrf" value="{{ CSRFToken }}"><button class="btn btn-danger text-xs" type="submit">Stop</button></form>
-      <form action="/apps/{{ LinkedApp.ID }}/actions/restart" method="post"><input type="hidden" name="_csrf" value="{{ CSRFToken }}"><button class="btn text-xs" type="submit">Restart</button></form>
-      <form action="/apps/{{ LinkedApp.ID }}/actions/enable" method="post"><input type="hidden" name="_csrf" value="{{ CSRFToken }}"><button class="btn btn-primary text-xs" type="submit">Enable</button></form>
-      <form action="/apps/{{ LinkedApp.ID }}/actions/disable" method="post" data-confirm-message="Disable autostart?"><input type="hidden" name="_csrf" value="{{ CSRFToken }}"><button class="btn btn-warning text-xs" type="submit">Disable</button></form>
-    </div>
-
-    <!-- Info Cards -->
-    <div class="grid gap-3 text-sm sm:grid-cols-2 mb-5">
-      <div class="rounded-md border border-[var(--border)] p-3">
-        <p class="text-xs uppercase tracking-wide opacity-70">Runtime</p>
-        <p class="mt-1"><span class="badge badge-neutral">{{ LinkedApp.Runtime }}</span></p>
-      </div>
-      <div class="rounded-md border border-[var(--border)] p-3">
-        <p class="text-xs uppercase tracking-wide opacity-70">Process Manager</p>
-        <p class="mt-1"><span class="badge badge-neutral">{{ if LinkedApp.ProcessManager }}{{ LinkedApp.ProcessManager }}{{ else }}systemd{{ end }}</span></p>
-      </div>
-      <div class="rounded-md border border-[var(--border)] p-3">
-        <p class="text-xs uppercase tracking-wide opacity-70">Bind</p>
-        <p class="mt-1 font-mono text-xs ">{{ LinkedApp.Host }}:{{ LinkedApp.Port }}</p>
-      </div>
-      <div class="rounded-md border border-[var(--border)] p-3">
-        <p class="text-xs uppercase tracking-wide opacity-70">Execution Mode</p>
-        <p class="mt-1"><span class="badge {{ if LinkedApp.ExecutionMode == "compiled" }}badge-ok{{ else }}badge-warn{{ end }}">{{ LinkedApp.ExecutionMode }}</span></p>
-      </div>
-      <div class="rounded-md border border-[var(--border)] p-3">
-        <p class="text-xs uppercase tracking-wide opacity-70">{{ if LinkedApp.ExecutionMode == "interpreted" }}Interpreter{{ else }}Binary{{ end }}</p>
-        <p class="mt-1 font-mono text-xs ">{{ LinkedApp.BinaryPath }}</p>
-      </div>
+    <div class="runtime-detail-grid">
+      <div class="runtime-detail-row"><span>Runtime</span><strong>{{ LinkedApp.Runtime }}</strong></div>
+      <div class="runtime-detail-row"><span>Process Manager</span><strong>{{ if LinkedApp.ProcessManager }}{{ LinkedApp.ProcessManager }}{{ else }}systemd{{ end }}</strong></div>
+      <div class="runtime-detail-row"><span>Bind</span><code>{{ LinkedApp.Host }}:{{ LinkedApp.Port }}</code></div>
+      <div class="runtime-detail-row"><span>Execution</span><strong>{{ LinkedApp.ExecutionMode }}</strong></div>
+      <div class="runtime-detail-row is-wide"><span>{{ if LinkedApp.ExecutionMode == "interpreted" }}Interpreter{{ else }}Binary{{ end }}</span><code>{{ LinkedApp.BinaryPath }}</code></div>
       {{ if LinkedApp.EntryPoint }}
-      <div class="rounded-md border border-[var(--border)] p-3">
-        <p class="text-xs uppercase tracking-wide opacity-70">Entry Point</p>
-        <p class="mt-1 font-mono text-xs ">{{ LinkedApp.EntryPoint }}</p>
-      </div>
+      <div class="runtime-detail-row"><span>Entry Point</span><code>{{ LinkedApp.EntryPoint }}</code></div>
       {{ end }}
-      <div class="rounded-md border border-[var(--border)] p-3">
-        <p class="text-xs uppercase tracking-wide opacity-70">Working Directory</p>
-        <p class="mt-1 font-mono text-xs ">{{ LinkedAppWorkingDir }}</p>
-      </div>
-      <div class="rounded-md border border-[var(--border)] p-3">
-        <p class="text-xs uppercase tracking-wide opacity-70">Service Name</p>
-        <p class="mt-1 font-mono text-xs ">{{ LinkedApp.ServiceName }}</p>
-      </div>
+      <div class="runtime-detail-row is-wide"><span>Working Directory</span><code>{{ LinkedAppWorkingDir }}</code></div>
     </div>
 
     <!-- Editable Runtime Tuning -->
@@ -4010,7 +4012,7 @@ $(function () {
 
   // Create-app form: toggle runtime-specific and PM-specific fields
   if ($('#ca-runtime').length) {
-    var defaultPm = { go: 'systemd', binary: 'systemd', python: 'gunicorn', node: 'pm2' };
+    var defaultPm = { go: 'systemd', binary: 'systemd', python: 'systemd', node: 'systemd' };
     var defaultEntryPoint = {
       python: { gunicorn: 'app:app', uwsgi: 'app:app', pm2: 'app.py', systemd: 'app.py' },
       node:   { pm2: 'index.js', systemd: 'index.js' }

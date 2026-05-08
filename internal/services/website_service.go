@@ -948,6 +948,15 @@ func (s *WebsiteService) deleteLinkedAppRuntime(ctx context.Context, app *models
 		}
 		_ = s.adapter.Services().Stop(ctx, serviceName)
 		_ = s.adapter.Services().Disable(ctx, serviceName)
+		if app.WebsiteID != nil {
+			if site, err := s.repo.Find(*app.WebsiteID); err == nil {
+				for _, user := range runtimeSudoerUsersForSite(site, s.siteUsers) {
+					if err := removeSiteUserRuntimeSudoers(s.cfg, user.Username, serviceName); err != nil {
+						return err
+					}
+				}
+			}
+		}
 		if err := s.services.DeleteByName(serviceName); err != nil {
 			return err
 		}

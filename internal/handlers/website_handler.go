@@ -1821,8 +1821,13 @@ func (h *WebsiteHandler) ManageCreateLinkedApp(c *fiber.Ctx) error {
 	workers, _ := strconv.Atoi(c.FormValue("workers"))
 	timeout, _ := strconv.Atoi(c.FormValue("timeout"))
 
+	appName := strings.TrimSpace(site.Name)
+	if domain := primaryWebsiteDomain(site.Domains); domain != "" {
+		appName = domain
+	}
+
 	_, err = h.appService.Create(c.Context(), services.AppInput{
-		Name:             site.Name,
+		Name:             appName,
 		Runtime:          runtime,
 		ExecutionMode:    execMode,
 		ProcessManager:   processManager,
