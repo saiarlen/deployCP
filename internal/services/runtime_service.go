@@ -440,7 +440,37 @@ func (s *RuntimeService) inspectAppServiceRuntime(app *models.GoApp, selected st
 	if err != nil {
 		return "", "", err.Error()
 	}
+	if !s.canInspectRuntimeBinary(runtimeName, selected, binary) {
+		return binary, selected, ""
+	}
 	return binary, detectRuntimeVersion(runtimeName, binary), ""
+}
+
+func (s *RuntimeService) canInspectRuntimeBinary(runtime, version, binary string) bool {
+	switch strings.ToLower(strings.TrimSpace(runtime)) {
+	case "go", "node", "python", "php":
+	default:
+		return false
+	}
+	if s.isManagedRuntimeBinary(runtime, version, binary) {
+		return true
+	}
+	name := filepath.Base(strings.TrimSpace(binary))
+	return name != "" && name == defaultRuntimeCommand(runtime)
+}
+
+func (s *RuntimeService) isManagedRuntimeBinary(runtime, version, binary string) bool {
+	runtime = strings.ToLower(strings.TrimSpace(runtime))
+	version = strings.TrimSpace(version)
+	binary = strings.TrimSpace(binary)
+	if runtime == "" || version == "" || binary == "" {
+		return false
+	}
+	managed := strings.TrimSpace(s.runtimeManagedBinary(runtime, version))
+	if managed == "" {
+		return false
+	}
+	return filepath.Clean(binary) == filepath.Clean(managed)
 }
 
 func (s *RuntimeService) inspectLiveProcessRuntime(app *models.GoApp, selected string) (string, string, bool) {
@@ -482,6 +512,9 @@ func (s *RuntimeService) inspectLiveProcessRuntime(app *models.GoApp, selected s
 					continue
 				}
 				if candidate == strings.TrimSpace(app.EntryPoint) || filepath.Base(candidate) == filepath.Base(strings.TrimSpace(app.EntryPoint)) {
+					continue
+				}
+				if !s.canInspectRuntimeBinary(app.Runtime, selected, candidate) {
 					continue
 				}
 				version := detectRuntimeVersion(app.Runtime, candidate)

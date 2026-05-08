@@ -1485,14 +1485,14 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
         <label class="block text-sm font-medium">Runtime
           <select class="field mt-2" name="runtime" id="ca-runtime">
             <option value="go" {{ if Item.AppRuntime == "go" || Item.ShellRuntime == "go" }}selected{{ end }}>Go</option>
-            <option value="python" {{ if Item.AppRuntime == "python" }}selected{{ end }}>Python</option>
-            <option value="node" {{ if Item.AppRuntime == "node" }}selected{{ end }}>Node.js</option>
-            <option value="binary" {{ if Item.AppRuntime == "binary" || Item.AppRuntime == "" && Item.ShellRuntime == "" }}selected{{ end }}>Binary / Other</option>
+            <option value="python" {{ if Item.AppRuntime == "python" || Item.ShellRuntime == "python" }}selected{{ end }}>Python</option>
+            <option value="node" {{ if Item.AppRuntime == "node" || Item.ShellRuntime == "node" }}selected{{ end }}>Node.js</option>
+            <option value="binary" {{ if Item.AppRuntime == "binary" || Item.ShellRuntime == "binary" || Item.AppRuntime == "" && Item.ShellRuntime == "" }}selected{{ end }}>Binary / Other</option>
           </select>
         </label>
 
         <label class="block text-sm font-medium">Runtime Version
-          <input class="field mt-2" type="text" name="runtime_version" value="{{ Item.ShellRuntimeVersion }}" placeholder="e.g. go1.25">
+          <input class="field mt-2" type="text" name="runtime_version" value="{{ Item.ShellRuntimeVersion }}" placeholder="Not required for Binary">
         </label>
 
         <label class="block text-sm font-medium">Process Manager

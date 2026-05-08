@@ -1783,8 +1783,8 @@ func (h *WebsiteHandler) ManageCreateLinkedApp(c *fiber.Ctx) error {
 	if runtime == "python" || runtime == "node" {
 		execMode = "interpreted"
 	}
-	if runtime == "go" && binaryPath == "" {
-		h.base.Sessions.SetFlash(c, "Go binary path is required. Build or upload your app first, then point Runtime Setup to that binary.")
+	if (runtime == "go" || runtime == "binary") && binaryPath == "" {
+		h.base.Sessions.SetFlash(c, "Binary path is required. Build or upload your app first, then point Runtime Setup to that binary.")
 		return c.Redirect(platformURLWithTab("website", id, "settings"))
 	}
 

@@ -125,6 +125,9 @@ func (s *AppService) Create(ctx context.Context, in AppInput, actor *uint, ip st
 	if s.runtime != nil {
 		_ = s.runtime.ApplyPlatformRuntime(platformRuntimeRootForApp(app), app.Runtime, in.Env["RUNTIME_VERSION"], actor, ip)
 	}
+	if app.WebsiteID != nil && s.websites != nil {
+		_ = s.websites.SyncShellRuntime(*app.WebsiteID, app.Runtime, in.Env["RUNTIME_VERSION"])
+	}
 	if err := s.installService(ctx, app, in.Env); err != nil {
 		return nil, err
 	}
@@ -172,6 +175,9 @@ func (s *AppService) Update(ctx context.Context, id uint, in AppInput, actor *ui
 	}
 	if s.runtime != nil {
 		_ = s.runtime.ApplyPlatformRuntime(platformRuntimeRootForApp(app), app.Runtime, in.Env["RUNTIME_VERSION"], actor, ip)
+	}
+	if app.WebsiteID != nil && s.websites != nil {
+		_ = s.websites.SyncShellRuntime(*app.WebsiteID, app.Runtime, in.Env["RUNTIME_VERSION"])
 	}
 	if err := s.installService(ctx, app, in.Env); err != nil {
 		return err
@@ -425,6 +431,11 @@ func (s *AppService) UpdateRuntimeSettings(ctx context.Context, id uint, process
 			return err
 		}
 	}
+	if app.WebsiteID != nil && s.websites != nil {
+		if err := s.websites.SyncShellRuntime(*app.WebsiteID, app.Runtime, envMap["RUNTIME_VERSION"]); err != nil {
+			return err
+		}
+	}
 	if err := s.websites.ApplyAppProxy(ctx, app.WebsiteID, app.Host, app.Port, actor, ip); err != nil {
 		return err
 	}
@@ -466,6 +477,11 @@ func (s *AppService) Reconcile(ctx context.Context, id uint, actor *uint, ip str
 	}
 	if s.runtime != nil {
 		if err := s.runtime.ApplyPlatformRuntime(platformRuntimeRootForApp(app), app.Runtime, envMap["RUNTIME_VERSION"], actor, ip); err != nil {
+			return err
+		}
+	}
+	if app.WebsiteID != nil && s.websites != nil {
+		if err := s.websites.SyncShellRuntime(*app.WebsiteID, app.Runtime, envMap["RUNTIME_VERSION"]); err != nil {
 			return err
 		}
 	}

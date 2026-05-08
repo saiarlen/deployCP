@@ -179,12 +179,7 @@
 	              </select>
 	              <span id="sa-python-version-error" class="pw-error" aria-live="polite"></span>
 	            </label>
-            <label class="pw-field">
-              <span class="pw-label">Proxy Port <span class="pw-required">*</span></span>
-              <input class="field" id="sa-python-port" name="port" value="8000" inputmode="numeric" required>
-              <span id="sa-python-port-error" class="pw-error" aria-live="polite"></span>
-            </label>
-          </div>
+	          </div>
 
 	          <div id="sa-node" class="wizard-stage form-grid">
 	            <label class="pw-field">
@@ -196,20 +191,11 @@
 	              </select>
 	              <span id="sa-node-version-error" class="pw-error" aria-live="polite"></span>
 	            </label>
-            <label class="pw-field">
-              <span class="pw-label">Proxy Port <span class="pw-required">*</span></span>
-              <input class="field" id="sa-node-port" name="port" value="3000" inputmode="numeric" required>
-              <span id="sa-node-port-error" class="pw-error" aria-live="polite"></span>
-            </label>
-          </div>
+	          </div>
 
-          <div id="sa-binary" class="wizard-stage form-grid">
-            <label class="pw-field">
-              <span class="pw-label">Port <span class="pw-required">*</span></span>
-              <input class="field" id="sa-binary-port" name="port" value="3000" inputmode="numeric" required>
-              <span id="sa-binary-port-error" class="pw-error" aria-live="polite"></span>
-            </label>
-          </div>
+	          <div id="sa-binary" class="wizard-stage pw-runtime-note">
+	            Binary platforms do not require runtime settings during creation. Upload your compiled app, then attach it from Runtime Setup.
+	          </div>
         </div>
       </div>
     </div>
@@ -225,8 +211,7 @@
 var saAllowRelativeRootPath = {{ if IsDryRun }}true{{ else }}false{{ end }};
 function saGenPw(){var c="ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%",o="";for(var i=0;i<18;i++)o+=c[Math.floor(Math.random()*c.length)];return o}
 function saCategoryByKind(kind){
-  if(kind==='static' || kind==='php' || kind==='go') return 'site';
-  if(kind==='python' || kind==='node' || kind==='binary') return 'app';
+  if(kind==='static' || kind==='php' || kind==='go' || kind==='python' || kind==='node' || kind==='binary') return 'site';
   return '';
 }
 function saSetFieldError(id,msg){
@@ -329,17 +314,9 @@ function saValidateForm(){
   }
   if(kind==='python'){
     if(!$.trim($('#sa-python-version').val()))invalidateField('sa-python-version','Python version is required.');
-    if(!$.trim($('#sa-python-port').val()))invalidateField('sa-python-port','Port is required.');
-    else if(!saValidPort($('#sa-python-port').val()))invalidateField('sa-python-port','Port must be between 1 and 65535.');
   }
   if(kind==='node'){
     if(!$.trim($('#sa-node-version').val()))invalidateField('sa-node-version','Node.js version is required.');
-    if(!$.trim($('#sa-node-port').val()))invalidateField('sa-node-port','Port is required.');
-    else if(!saValidPort($('#sa-node-port').val()))invalidateField('sa-node-port','Port must be between 1 and 65535.');
-  }
-  if(kind==='binary'){
-    if(!$.trim($('#sa-binary-port').val()))invalidateField('sa-binary-port','Port is required.');
-    else if(!saValidPort($('#sa-binary-port').val()))invalidateField('sa-binary-port','Port must be between 1 and 65535.');
   }
 
   if(!ok&&firstInvalid&&firstInvalid.length){

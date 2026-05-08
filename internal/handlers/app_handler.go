@@ -228,10 +228,11 @@ func (h *AppHandler) SitesAppsCreate(c *fiber.Ctx) error {
 		}
 		h.base.Sessions.SetFlash(c, "Platform created")
 		return c.Redirect(platformURL("website", site.ID))
-	case "go":
+	case "go", "python", "node", "binary":
 		runtimeVersion := strings.TrimSpace(c.FormValue("runtime_version"))
-		if runtimeVersion == "" {
-			h.base.Sessions.SetFlash(c, "Go version is required")
+		if kind != "binary" && runtimeVersion == "" {
+			runtimeLabel := map[string]string{"go": "Go", "python": "Python", "node": "Node.js"}[kind]
+			h.base.Sessions.SetFlash(c, runtimeLabel+" version is required")
 			return c.Redirect("/platforms/new")
 		}
 		root := strings.TrimSpace(c.FormValue("root_path"))
@@ -261,120 +262,13 @@ func (h *AppHandler) SitesAppsCreate(c *fiber.Ctx) error {
 			Name:                name,
 			RootPath:            root,
 			Type:                "static",
-			ShellRuntime:        "go",
+			ShellRuntime:        kind,
 			ShellRuntimeVersion: runtimeVersion,
 			Domains:             []string{domain},
 			SiteUserID:          siteUserID,
 			Enabled:             true,
 		}, currentUserID(c), c.IP())
 		if err != nil {
-			h.base.Sessions.SetFlash(c, err.Error())
-			return c.Redirect("/platforms/new")
-		}
-		h.base.Sessions.SetFlash(c, "Platform created")
-		return c.Redirect(platformURL("website", site.ID))
-	case "python", "node", "binary":
-		port, err := validators.ValidatePort(c.FormValue("port"))
-		if err != nil {
-			h.base.Sessions.SetFlash(c, err.Error())
-			return c.Redirect("/platforms/new")
-		}
-		root := strings.TrimSpace(c.FormValue("root_path"))
-		if root == "" {
-			root = strings.TrimSuffix(h.base.Config.Paths.DefaultSiteRoot, "/") + "/" + strings.ReplaceAll(domain, "*.", "wildcard-") + "/htdocs"
-		}
-		var siteUserID *uint
-		if siteUsername != "" {
-			platformHome := platformHomeFromRoot(root)
-			user, generatedPassword, err := h.siteUserService.Create(c.Context(), services.SiteUserInput{
-				Username:      siteUsername,
-				HomeDirectory: platformHome,
-				AllowedRoot:   platformHome,
-				Password:      sitePassword,
-				SSHEnabled:    true,
-			}, currentUserID(c), c.IP())
-			if err != nil {
-				h.base.Sessions.SetFlash(c, err.Error())
-				return c.Redirect("/platforms/new")
-			}
-			siteUserID = &user.ID
-			if strings.TrimSpace(sitePassword) == "" {
-				h.base.Sessions.SetFlash(c, "Site user created. Generated password: "+generatedPassword)
-			}
-		}
-		siteInput := services.WebsiteInput{
-			Name:                 name,
-			RootPath:             root,
-			Type:                 "proxy",
-			AppRuntime:           kind,
-			ProxyTarget:          fmt.Sprintf("http://127.0.0.1:%d", port),
-			Domains:              []string{domain},
-			CustomDirectives:     "",
-			MaintenanceBypassIPs: "",
-			SiteUserID:           siteUserID,
-			Enabled:              true,
-		}
-		site, err := h.websiteService.Create(c.Context(), siteInput, currentUserID(c), c.IP())
-		if err != nil {
-			h.base.Sessions.SetFlash(c, err.Error())
-			return c.Redirect("/platforms/new")
-		}
-		execMode := "compiled"
-		entryPoint := ""
-		startArgs := ""
-		processManager := "systemd"
-		binaryPath := ""
-		if kind == "go" || kind == "python" || kind == "node" {
-			execMode = "interpreted"
-		}
-		if binaryPath == "" {
-			switch kind {
-			case "go":
-				binaryPath = "/usr/bin/env"
-			case "python":
-				binaryPath = "/usr/bin/env"
-			case "node":
-				binaryPath = "/usr/bin/env"
-			case "binary":
-				binaryPath = "/usr/bin/env"
-			}
-		}
-		if entryPoint == "" && execMode == "interpreted" {
-			switch kind {
-			case "go":
-				entryPoint = "main.go"
-				startArgs = "run"
-			case "python":
-				entryPoint = "app.py"
-			case "node":
-				entryPoint = "index.js"
-			}
-		}
-		envMap := map[string]string{}
-		if v := strings.TrimSpace(c.FormValue("runtime_version")); v != "" {
-			envMap["RUNTIME_VERSION"] = v
-		}
-		envMap["PORT"] = strconv.Itoa(port)
-		envMap["HOST"] = "127.0.0.1"
-		_, err = h.service.Create(c.Context(), services.AppInput{
-			Name:             name,
-			Runtime:          kind,
-			ExecutionMode:    execMode,
-			ProcessManager:   processManager,
-			BinaryPath:       binaryPath,
-			EntryPoint:       entryPoint,
-			WorkingDirectory: root,
-			Host:             "127.0.0.1",
-			Port:             port,
-			StartArgs:        startArgs,
-			HealthPath:       "/health",
-			RestartPolicy:    "on-failure",
-			WebsiteID:        &site.ID,
-			Enabled:          true,
-			Env:              envMap,
-		}, currentUserID(c), c.IP())
-		if err != nil {
-			_ = h.websiteService.Delete(c.Context(), site.ID, currentUserID(c), c.IP())
 			h.base.Sessions.SetFlash(c, err.Error())
 			return c.Redirect("/platforms/new")
 		}
@@ -1356,10 +1250,8 @@ func appNameFromDomain(domain string) string {
 
 func platformCategoryFromKind(kind string) string {
 	switch strings.ToLower(strings.TrimSpace(kind)) {
-	case "static", "php", "go":
+	case "static", "php", "go", "python", "node", "binary":
 		return "site"
-	case "python", "node", "binary":
-		return "app"
 	default:
 		return ""
 	}

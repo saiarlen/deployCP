@@ -518,6 +518,24 @@ func (s *WebsiteService) UpdateAppRuntime(id uint, runtime string) error {
 	return s.repo.Update(site, domains)
 }
 
+func (s *WebsiteService) SyncShellRuntime(id uint, runtimeName, version string) error {
+	if id == 0 {
+		return nil
+	}
+	site, err := s.repo.Find(id)
+	if err != nil {
+		return err
+	}
+	runtimeName = strings.ToLower(strings.TrimSpace(runtimeName))
+	version = strings.TrimSpace(version)
+	if strings.TrimSpace(site.ShellRuntime) == runtimeName && strings.TrimSpace(site.ShellRuntimeVersion) == version {
+		return nil
+	}
+	site.ShellRuntime = runtimeName
+	site.ShellRuntimeVersion = version
+	return s.repo.Update(site, domainsFromModel(site.Domains))
+}
+
 func (s *WebsiteService) UpdatePhpSettings(id uint, phpVersion string, data PhpSettingsData) error {
 	site, err := s.repo.Find(id)
 	if err != nil {
@@ -763,11 +781,11 @@ func (s *WebsiteService) ensureShellRuntimeVersion(runtimeName, version string) 
 	if runtimeName == "" && version == "" {
 		return nil
 	}
-	if runtimeName == "" || version == "" {
-		return fmt.Errorf("shell runtime and version must both be selected")
-	}
 	if runtimeName == "binary" {
 		return nil
+	}
+	if runtimeName == "" || version == "" {
+		return fmt.Errorf("shell runtime and version must both be selected")
 	}
 	if s.runtime != nil && !s.runtime.VerifyInstalledVersion(runtimeName, version) {
 		return fmt.Errorf("selected %s runtime %s is not installed or is not verifiable on this server", runtimeName, version)
