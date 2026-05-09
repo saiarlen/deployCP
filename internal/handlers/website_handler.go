@@ -1851,10 +1851,6 @@ func (h *WebsiteHandler) ManageCreateLinkedApp(c *fiber.Ctx) error {
 	if err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
 	} else {
-		if site.AppRuntime != runtime {
-			site.AppRuntime = runtime
-			_ = h.service.UpdateAppRuntime(id, runtime)
-		}
 		h.base.Sessions.SetFlash(c, "Runtime configuration created")
 	}
 	return c.Redirect(platformURLWithTab("website", id, "settings"))

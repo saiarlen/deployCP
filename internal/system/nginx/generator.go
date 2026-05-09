@@ -65,6 +65,7 @@ func BuildWebsiteConfig(cfg *config.Config, site *models.Website, opts WebsiteCo
 	serverNames := strings.Join(domains, " ")
 
 	httpServer := strings.Builder{}
+	httpServer.WriteString("# Managed by DeployCP. Do not edit.\n")
 	httpServer.WriteString("server {\n")
 	httpServer.WriteString("    listen 80;\n")
 	httpServer.WriteString(fmt.Sprintf("    server_name %s;\n", serverNames))

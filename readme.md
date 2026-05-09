@@ -83,6 +83,58 @@ Runtime behavior on live Linux:
 - if a PHP website shell still falls back to a managed PHP CLI version, DeployCP blocks removing that managed version
 - direct `systemd` runtime platforms are verified more strictly than `pm2`, `gunicorn`, and `uwsgi`, which remain best-effort verified from live process inspection
 
+## Production Readiness and Security
+
+DeployCP is designed for real Linux servers and controlled multi-app hosting, but it should be operated with the same care as any root-level hosting control panel.
+
+Production-oriented safeguards include:
+
+- per-platform Linux users with restricted shells and scoped SSH access
+- per-platform runtime environment files under `.deploycp/runtime.env`
+- systemd-managed application services with bounded start/stop/restart controls
+- nginx config generation with validation before reload
+- stale same-domain nginx config cleanup before writing a current vhost
+- a managed nginx catch-all that rejects unknown/deleted domains instead of serving the host default page
+- domain ownership checks before platform/domain creation
+- CSRF protection, authenticated panel routes, session handling, and login rate limiting
+- host hardening scripts for firewall, fail2ban, logrotate, and backups
+
+Security notes:
+
+- DeployCP performs privileged host operations and should be installed only on servers you control.
+- Use strong admin credentials and keep the panel behind trusted network access when possible.
+- Public multi-tenant hosting with untrusted users should be treated as higher risk until the deployment has been independently audited.
+- Review any manually edited nginx, sudoers, runtime, or service files before assuming managed cleanup can repair them automatically.
+
+## Resource Usage
+
+DeployCP itself is lightweight. Most server load comes from hosted applications and managed services, not from the panel process.
+
+Rough estimates for the `deploycp` service:
+
+| Scenario | Approximate usage |
+|---|---|
+| Idle panel | 20-60 MB RAM, near-zero CPU |
+| Normal UI/admin usage | 50-150 MB RAM, short CPU spikes during actions |
+| File manager, log viewing, runtime actions, smoke tests | temporary CPU and memory spikes depending on file size and host operations |
+
+Host resource planning depends on the workloads you enable:
+
+- nginx static/proxy hosting is usually low overhead
+- Go/binary apps depend mostly on the app itself
+- Node, Python, PHP-FPM, pm2, gunicorn, uwsgi, Redis, MariaDB, PostgreSQL, and Varnish add their own memory and CPU requirements
+- SQLite metadata storage is small for normal panel use, but activity/log retention and backups need disk planning
+
+Suggested minimums:
+
+| Use case | Suggested server |
+|---|---|
+| Panel plus light static or small Go apps | 1 vCPU, 1 GB RAM |
+| Multiple dynamic apps or small databases | 1-2 vCPU, 2 GB RAM |
+| Several production apps with DB/Redis/Varnish | 2+ vCPU, 4+ GB RAM |
+
+These are practical starting points, not hard limits. Size the server for the hosted applications first, then add a small margin for DeployCP and host services.
+
 ## Supported Platforms
 
 Release binaries are built for:
@@ -278,6 +330,8 @@ Fresh installs and updates also converge a few host-level safeguards:
 - `logrotate` keeps DeployCP and platform logs from growing unbounded
 - a daily backup job is written to `/etc/cron.d/deploycp-backup`
 - backup archives are stored in `/home/deploycp/platforms/backups`
+- the stock nginx default site is disabled when it is the standard `/var/www/html` fallback
+- DeployCP writes a managed nginx catch-all vhost that rejects unknown/deleted domains instead of serving the host default page
 
 Backup behavior is controlled from `/home/deploycp/core/.env`:
 

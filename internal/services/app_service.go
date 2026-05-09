@@ -130,10 +130,10 @@ func (s *AppService) Create(ctx context.Context, in AppInput, actor *uint, ip st
 	if app.WebsiteID != nil && s.websites != nil {
 		_ = s.websites.SyncShellRuntime(*app.WebsiteID, app.Runtime, in.Env["RUNTIME_VERSION"])
 	}
-	if err := s.installService(ctx, app, in.Env); err != nil {
+	if err := s.websites.ApplyAppProxy(ctx, app.WebsiteID, app.Host, app.Port, actor, ip); err != nil {
 		return nil, err
 	}
-	if err := s.websites.ApplyAppProxy(ctx, app.WebsiteID, app.Host, app.Port, actor, ip); err != nil {
+	if err := s.installService(ctx, app, in.Env); err != nil {
 		return nil, err
 	}
 	s.audit.Record(actor, "app.create", "app", fmt.Sprintf("%d", app.ID), ip, in)
@@ -181,10 +181,10 @@ func (s *AppService) Update(ctx context.Context, id uint, in AppInput, actor *ui
 	if app.WebsiteID != nil && s.websites != nil {
 		_ = s.websites.SyncShellRuntime(*app.WebsiteID, app.Runtime, in.Env["RUNTIME_VERSION"])
 	}
-	if err := s.installService(ctx, app, in.Env); err != nil {
+	if err := s.websites.ApplyAppProxy(ctx, app.WebsiteID, app.Host, app.Port, actor, ip); err != nil {
 		return err
 	}
-	if err := s.websites.ApplyAppProxy(ctx, app.WebsiteID, app.Host, app.Port, actor, ip); err != nil {
+	if err := s.installService(ctx, app, in.Env); err != nil {
 		return err
 	}
 	s.audit.Record(actor, "app.update", "app", fmt.Sprintf("%d", app.ID), ip, in)

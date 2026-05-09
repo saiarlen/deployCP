@@ -213,7 +213,7 @@
             position: { x: 'center', y: 'top' },
             ripple: false
           });
-          var isErr = /(error|failed|invalid|required|unable|cannot|can't|denied|blocked|in\s+use|not\s+found|unauthorized)/i.test(msg);
+          var isErr = /(error|failed|invalid|required|unable|cannot|can't|denied|blocked|already|exists|duplicate|conflict|unavailable|expired|unsupported|missing|in\s+use|not\s+found|unauthorized)/i.test(msg);
           notyf.open({ type: isErr ? 'error' : 'success', message: msg });
         } else if (msg) {
           $flash.removeClass('hidden');

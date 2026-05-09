@@ -71,6 +71,18 @@ func (s *HostLifecycleService) Bootstrap(ctx context.Context, actor *uint, ip st
 		}
 		add("ftp server config reconciled")
 	}
+	if s.websites != nil && s.platform != nil && s.cfg.Features.EnableNginxManage {
+		if err := s.websites.EnsureNginxUnknownHostReject(); err != nil {
+			return result, err
+		}
+		if err := s.platform.Nginx().Validate(ctx, s.cfg.Paths.NginxBinary); err != nil {
+			return result, err
+		}
+		if err := s.platform.Nginx().Reload(ctx, s.cfg.Paths.NginxBinary); err != nil {
+			return result, err
+		}
+		add("nginx default site disabled and unknown hosts set to reject")
+	}
 	return result, nil
 }
 

@@ -379,6 +379,9 @@ func (s *WebsiteService) Delete(ctx context.Context, id uint, actor *uint, ip st
 		return err
 	}
 	if s.cfg.Features.EnableNginxManage {
+		if err := s.EnsureNginxUnknownHostReject(); err != nil {
+			return err
+		}
 		if err := s.adapter.Nginx().Validate(ctx, s.cfg.Paths.NginxBinary); err != nil {
 			return err
 		}
@@ -742,10 +745,16 @@ func (s *WebsiteService) writeNginxConfig(ctx context.Context, site *models.Webs
 		BotBlocks:         botBlocks,
 		CloudflareEnabled: cloudflareEnabled,
 	})
+	if err := s.removeStaleNginxDomainConfigs(site, cfg); err != nil {
+		return err
+	}
 	if err := utils.WriteFileAtomic(cfg.ConfigPath, []byte(cfg.Content), 0o644); err != nil {
 		return err
 	}
 	if err := s.enableConfig(cfg.ConfigPath, cfg.EnabledPath); err != nil {
+		return err
+	}
+	if err := s.EnsureNginxUnknownHostReject(); err != nil {
 		return err
 	}
 	now := time.Now()
@@ -754,6 +763,141 @@ func (s *WebsiteService) writeNginxConfig(ctx context.Context, site *models.Webs
 		return err
 	}
 	return s.adapter.Nginx().Reload(ctx, s.cfg.Paths.NginxBinary)
+}
+
+func (s *WebsiteService) EnsureNginxUnknownHostReject() error {
+	if !s.cfg.Features.EnableNginxManage {
+		return nil
+	}
+	if err := s.disableStockNginxDefaultSite(); err != nil {
+		return err
+	}
+	name := "00-deploycp-catchall.conf"
+	available := filepath.Join(s.cfg.Paths.NginxAvailableDir, name)
+	enabled := filepath.Join(s.cfg.Paths.NginxEnabledDir, name)
+	content := strings.TrimSpace(`# Managed by DeployCP. Do not edit.
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
+    return 444;
+}`) + "\n"
+	if err := utils.WriteFileAtomic(available, []byte(content), 0o644); err != nil {
+		return err
+	}
+	return s.enableConfig(available, enabled)
+}
+
+func (s *WebsiteService) disableStockNginxDefaultSite() error {
+	path := filepath.Join(s.cfg.Paths.NginxEnabledDir, "default")
+	content, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	text := string(content)
+	isStockDefault := strings.Contains(text, "/var/www/html") ||
+		strings.Contains(text, "Default server configuration") ||
+		strings.Contains(text, "Welcome to nginx")
+	if !isStockDefault {
+		return nil
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+func (s *WebsiteService) removeStaleNginxDomainConfigs(site *models.Website, current nginx.GeneratedConfig) error {
+	if site == nil {
+		return nil
+	}
+	domains := domainsFromModel(site.Domains)
+	if len(domains) == 0 {
+		return nil
+	}
+	excluded := map[string]struct{}{}
+	for _, path := range []string{current.ConfigPath, current.EnabledPath} {
+		if cleaned := filepath.Clean(strings.TrimSpace(path)); cleaned != "." && cleaned != "" {
+			excluded[cleaned] = struct{}{}
+		}
+	}
+	for _, dir := range []string{s.cfg.Paths.NginxAvailableDir, s.cfg.Paths.NginxEnabledDir} {
+		dir = strings.TrimSpace(dir)
+		if dir == "" {
+			continue
+		}
+		if err := filepath.WalkDir(dir, func(path string, entry os.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if entry.IsDir() {
+				return nil
+			}
+			if filepath.Ext(path) != ".conf" {
+				return nil
+			}
+			cleaned := filepath.Clean(path)
+			if _, ok := excluded[cleaned]; ok {
+				return nil
+			}
+			content, err := os.ReadFile(path)
+			if err != nil {
+				return nil
+			}
+			if !looksLikeDeployCPNginxConfig(s.cfg, string(content)) {
+				return nil
+			}
+			if !nginxConfigHasAnyServerName(string(content), domains) {
+				return nil
+			}
+			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+				return err
+			}
+			return nil
+		}); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	return nil
+}
+
+func looksLikeDeployCPNginxConfig(cfg *config.Config, content string) bool {
+	if strings.Contains(content, "# Managed by DeployCP") || strings.Contains(content, "_deploycp_") {
+		return true
+	}
+	if cfg != nil && strings.TrimSpace(cfg.Paths.DefaultSiteRoot) != "" && strings.Contains(content, strings.TrimSpace(cfg.Paths.DefaultSiteRoot)) {
+		return true
+	}
+	return strings.Contains(content, "/deploycp/platforms/sites/")
+}
+
+func nginxConfigHasAnyServerName(content string, domains []string) bool {
+	wanted := map[string]struct{}{}
+	for _, domain := range domains {
+		domain = strings.ToLower(strings.TrimSpace(domain))
+		if domain != "" {
+			wanted[domain] = struct{}{}
+		}
+	}
+	if len(wanted) == 0 {
+		return false
+	}
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "server_name ") {
+			continue
+		}
+		line = strings.TrimSuffix(strings.TrimPrefix(line, "server_name "), ";")
+		for _, name := range strings.Fields(line) {
+			if _, ok := wanted[strings.ToLower(strings.TrimSpace(name))]; ok {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (s *WebsiteService) applyPlatformRuntime(site *models.Website, actor *uint, ip string) error {
@@ -1237,7 +1381,7 @@ func (s *WebsiteService) ensureDomainsAvailable(domains []string, excludeWebsite
 			return err
 		}
 		if owner != nil {
-			return fmt.Errorf("domain %s already belongs to platform #%d", domain, owner.WebsiteID)
+			return fmt.Errorf("domain %s is already used by another platform", domain)
 		}
 	}
 	return nil
