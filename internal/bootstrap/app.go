@@ -306,7 +306,7 @@ func Build() (*Application, error) {
 		UpdateService:    updateService,
 		AuthHandler:      handlers.NewAuthHandler(cfg, sessionManager, authService, settingsService),
 		DashboardHandler: handlers.NewDashboardHandler(cfg, sessionManager, dashboardService),
-		WebsiteHandler:   handlers.NewWebsiteHandler(cfg, sessionManager, websiteService, repos.SiteUsers, siteUserService, databaseService, sslService, repos.Databases, repos.SSL, settingsService, repos.NginxSites, repos.CronJobs, repos.Varnish, repos.IPBlocks, repos.BotBlocks, repos.BasicAuths, repos.CloudflareConfigs, repos.FTPUsers, appService, cronService, ftpService, varnishService),
+		WebsiteHandler:   handlers.NewWebsiteHandler(cfg, sessionManager, websiteService, repos.SiteUsers, siteUserService, databaseService, sslService, repos.Databases, repos.SSL, settingsService, repos.NginxSites, repos.CronJobs, repos.Varnish, repos.IPBlocks, repos.BotBlocks, repos.BasicAuths, repos.CloudflareConfigs, repos.FTPUsers, appService, cronService, ftpService, varnishService, platformAdapter),
 		AppHandler:       handlers.NewAppHandler(cfg, sessionManager, appService, websiteService, settingsService, siteUserService, repos.SiteUsers, databaseService, sslService, repos.Databases, repos.FTPUsers, ftpService),
 		ServiceHandler:   handlers.NewServiceHandler(cfg, sessionManager, serviceService),
 		SettingsHandler:  handlers.NewSettingsHandler(cfg, sessionManager, settingsService, serviceService, panelUserService, repos.Audit, repos.Firewalls, repos.UserPlatformAccess, websiteService, appService, auditService, firewallService, runtimeService, ftpService, updateService),
@@ -407,7 +407,7 @@ func (a *Application) registerRoutes() {
 	secured.Get("/websites/:id/manage/redis/:rid/info", a.WebsiteHandler.ManageRedisInfo)
 	secured.Post("/websites/:id/manage/redis/:rid/password", a.WebsiteHandler.ManageUpdateRedisPassword)
 	secured.Post("/websites/:id/manage/redis/:rid/delete", a.WebsiteHandler.ManageDeleteRedis)
-	secured.Post("/websites/:id/manage/vhost", a.WebsiteHandler.ManageSaveVhost)
+	secured.Post("/websites/:id/manage/vhost", adminOnly, a.WebsiteHandler.ManageSaveVhost)
 	secured.Post("/websites/:id/manage/cron-jobs", a.WebsiteHandler.ManageCreateCronJob)
 	secured.Post("/websites/:id/manage/cron-jobs/:cid/delete", a.WebsiteHandler.ManageDeleteCronJob)
 	secured.Post("/websites/:id/manage/varnish", a.WebsiteHandler.ManageUpdateVarnish)

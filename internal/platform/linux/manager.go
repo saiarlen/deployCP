@@ -41,6 +41,9 @@ type serviceManager struct {
 }
 
 func (m *serviceManager) Install(ctx context.Context, def platform.ServiceDefinition) (string, error) {
+	if err := validateServiceDefinition(def); err != nil {
+		return "", err
+	}
 	unitPath := filepath.Join("/etc/systemd/system", def.Name+".service")
 	content := renderUnit(def)
 	if err := utils.WriteFileAtomic(unitPath, []byte(content), 0o644); err != nil {
@@ -103,11 +106,12 @@ func renderUnit(def platform.ServiceDefinition) string {
 	sort.Strings(keys)
 	var env []string
 	for _, k := range keys {
-		env = append(env, fmt.Sprintf("Environment=%s=%s", k, strings.ReplaceAll(def.Environment[k], "\"", "\\\"")))
+		env = append(env, "Environment="+systemdQuote(k+"="+def.Environment[k]))
 	}
-	args := strings.Join(def.Args, " ")
-	if args != "" {
-		args = " " + args
+	args := strings.Builder{}
+	for _, arg := range def.Args {
+		args.WriteString(" ")
+		args.WriteString(systemdQuote(arg))
 	}
 	builder := strings.Builder{}
 	builder.WriteString("[Unit]\n")
@@ -117,8 +121,8 @@ func renderUnit(def platform.ServiceDefinition) string {
 	if def.User != "" {
 		builder.WriteString(fmt.Sprintf("User=%s\n", def.User))
 	}
-	builder.WriteString(fmt.Sprintf("WorkingDirectory=%s\n", def.WorkingDir))
-	builder.WriteString(fmt.Sprintf("ExecStart=%s%s\n", def.ExecPath, args))
+	builder.WriteString(fmt.Sprintf("WorkingDirectory=%s\n", systemdQuote(def.WorkingDir)))
+	builder.WriteString(fmt.Sprintf("ExecStart=%s%s\n", systemdQuote(def.ExecPath), args.String()))
 	for _, line := range env {
 		builder.WriteString(line + "\n")
 	}
@@ -135,6 +139,75 @@ func renderUnit(def platform.ServiceDefinition) string {
 	}
 	builder.WriteString("\n[Install]\nWantedBy=multi-user.target\n")
 	return builder.String()
+}
+
+func validateServiceDefinition(def platform.ServiceDefinition) error {
+	fields := map[string]string{
+		"name":           def.Name,
+		"description":    def.Description,
+		"exec path":      def.ExecPath,
+		"working dir":    def.WorkingDir,
+		"user":           def.User,
+		"restart policy": def.RestartPolicy,
+		"stdout path":    def.StdoutPath,
+		"stderr path":    def.StderrPath,
+	}
+	for label, value := range fields {
+		if err := rejectSystemdControlChars(label, value); err != nil {
+			return err
+		}
+	}
+	for _, arg := range def.Args {
+		if err := rejectSystemdControlChars("argument", arg); err != nil {
+			return err
+		}
+	}
+	for key, value := range def.Environment {
+		if !validEnvironmentKey(key) {
+			return fmt.Errorf("invalid environment variable name %q", key)
+		}
+		if err := rejectSystemdControlChars("environment value", value); err != nil {
+			return err
+		}
+	}
+	switch def.RestartPolicy {
+	case "", "no", "always", "on-success", "on-failure", "on-abnormal", "on-watchdog", "on-abort":
+	default:
+		return fmt.Errorf("invalid restart policy %q", def.RestartPolicy)
+	}
+	return nil
+}
+
+func rejectSystemdControlChars(label, value string) error {
+	for _, r := range value {
+		if r < 0x20 || r == 0x7f {
+			return fmt.Errorf("%s contains invalid control characters", label)
+		}
+	}
+	return nil
+}
+
+func validEnvironmentKey(key string) bool {
+	if key == "" {
+		return false
+	}
+	for i, r := range key {
+		if i == 0 {
+			if r != '_' && (r < 'A' || r > 'Z') && (r < 'a' || r > 'z') {
+				return false
+			}
+			continue
+		}
+		if r != '_' && (r < 'A' || r > 'Z') && (r < 'a' || r > 'z') && (r < '0' || r > '9') {
+			return false
+		}
+	}
+	return true
+}
+
+func systemdQuote(value string) string {
+	replacer := strings.NewReplacer(`\`, `\\`, `"`, `\"`, `%`, `%%`)
+	return `"` + replacer.Replace(value) + `"`
 }
 
 type userManager struct {

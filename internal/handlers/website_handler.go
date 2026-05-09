@@ -15,6 +15,7 @@ import (
 	"deploycp/internal/config"
 	"deploycp/internal/middleware"
 	"deploycp/internal/models"
+	"deploycp/internal/platform"
 	"deploycp/internal/repositories"
 	"deploycp/internal/services"
 	"deploycp/internal/utils"
@@ -43,6 +44,7 @@ type WebsiteHandler struct {
 	cronService     *services.CronService
 	ftpService      *services.FTPService
 	varnishService  *services.VarnishService
+	platform        platform.Adapter
 }
 
 type websiteFormInput struct {
@@ -74,6 +76,7 @@ func NewWebsiteHandler(
 	cronService *services.CronService,
 	ftpService *services.FTPService,
 	varnishService *services.VarnishService,
+	platformAdapter platform.Adapter,
 ) *WebsiteHandler {
 	return &WebsiteHandler{
 		base:            &BaseHandler{Config: cfg, Sessions: sessions},
@@ -97,6 +100,7 @@ func NewWebsiteHandler(
 		cronService:     cronService,
 		ftpService:      ftpService,
 		varnishService:  varnishService,
+		platform:        platformAdapter,
 	}
 }
 
@@ -107,6 +111,9 @@ func (h *WebsiteHandler) Create(c *fiber.Ctx) error {
 		return c.Redirect("/platforms/new")
 	}
 	websiteInput := form.Website
+	if authUserRole(c) != "admin" {
+		websiteInput.CustomDirectives = ""
+	}
 	if err := h.validatePHPFPMSelection(&websiteInput); err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
 		return c.Redirect("/platforms/new")
@@ -276,6 +283,9 @@ func (h *WebsiteHandler) Update(c *fiber.Ctx) error {
 	if err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
 		return c.Redirect(platformURL("website", id))
+	}
+	if authUserRole(c) != "admin" {
+		form.Website.CustomDirectives = current.CustomDirectives
 	}
 	if err := h.validatePHPFPMSelection(&form.Website); err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
@@ -1202,6 +1212,10 @@ func (h *WebsiteHandler) ManageDeleteFTPUser(c *fiber.Ctx) error {
 // ── Vhost Save ──
 
 func (h *WebsiteHandler) ManageSaveVhost(c *fiber.Ctx) error {
+	if authUserRole(c) != "admin" {
+		h.base.Sessions.SetFlash(c, "vhost editing is restricted to admin users")
+		return c.Redirect("/platforms")
+	}
 	id, err := repositories.ParseID(c.Params("id"))
 	if err != nil {
 		return c.Status(400).SendString(err.Error())
@@ -1212,9 +1226,21 @@ func (h *WebsiteHandler) ManageSaveVhost(c *fiber.Ctx) error {
 		h.base.Sessions.SetFlash(c, "No nginx config found for this website")
 		return c.Redirect(platformURLWithTab("website", id, "vhost"))
 	}
-	if err := os.WriteFile(nginxCfg.ConfigPath, []byte(content), 0o644); err != nil {
+	previous, _ := os.ReadFile(nginxCfg.ConfigPath)
+	if err := utils.WriteFileAtomic(nginxCfg.ConfigPath, []byte(content), 0o644); err != nil {
 		h.base.Sessions.SetFlash(c, "Failed to save: "+err.Error())
 	} else {
+		if h.platform != nil && h.base.Config.Features.EnableNginxManage {
+			if err := h.platform.Nginx().Validate(c.Context(), h.base.Config.Paths.NginxBinary); err != nil {
+				_ = utils.WriteFileAtomic(nginxCfg.ConfigPath, previous, 0o644)
+				h.base.Sessions.SetFlash(c, "Invalid nginx config. Changes were not saved: "+err.Error())
+				return c.Redirect(platformURLWithTab("website", id, "vhost"))
+			}
+			if err := h.platform.Nginx().Reload(c.Context(), h.base.Config.Paths.NginxBinary); err != nil {
+				h.base.Sessions.SetFlash(c, "Vhost saved, but nginx reload failed: "+err.Error())
+				return c.Redirect(platformURLWithTab("website", id, "vhost"))
+			}
+		}
 		h.base.Sessions.SetFlash(c, "Vhost config saved")
 	}
 	return c.Redirect(platformURLWithTab("website", id, "vhost"))

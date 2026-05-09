@@ -688,7 +688,71 @@ func (s *AppService) validate(in AppInput) error {
 	if in.RestartPolicy == "" {
 		in.RestartPolicy = "on-failure"
 	}
+	if err := validateRuntimeServiceInput(in); err != nil {
+		return err
+	}
 	return nil
+}
+
+func validateRuntimeServiceInput(in AppInput) error {
+	fields := map[string]string{
+		"name":              in.Name,
+		"runtime":           in.Runtime,
+		"execution mode":    in.ExecutionMode,
+		"process manager":   in.ProcessManager,
+		"binary path":       in.BinaryPath,
+		"entry point":       in.EntryPoint,
+		"working directory": in.WorkingDirectory,
+		"start args":        in.StartArgs,
+		"health path":       in.HealthPath,
+		"restart policy":    in.RestartPolicy,
+	}
+	for label, value := range fields {
+		if hasControlCharacter(value) {
+			return fmt.Errorf("%s contains invalid control characters", label)
+		}
+	}
+	for key, value := range in.Env {
+		if !validEnvName(key) {
+			return fmt.Errorf("invalid environment variable name %q", key)
+		}
+		if hasControlCharacter(value) {
+			return fmt.Errorf("environment value for %s contains invalid control characters", key)
+		}
+	}
+	switch in.RestartPolicy {
+	case "no", "always", "on-success", "on-failure", "on-abnormal", "on-watchdog", "on-abort":
+	default:
+		return fmt.Errorf("invalid restart policy")
+	}
+	return nil
+}
+
+func hasControlCharacter(value string) bool {
+	for _, r := range value {
+		if r < 0x20 || r == 0x7f {
+			return true
+		}
+	}
+	return false
+}
+
+func validEnvName(key string) bool {
+	if key == "" {
+		return false
+	}
+	for i, r := range key {
+		if i == 0 {
+			if r != '_' && (r < 'A' || r > 'Z') && (r < 'a' || r > 'z') {
+				return false
+			}
+			continue
+		}
+		if r != '_' && (r < 'A' || r > 'Z') && (r < 'a' || r > 'z') && (r < '0' || r > '9') {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *AppService) ensureRuntimeScaffold(app *models.GoApp) error {

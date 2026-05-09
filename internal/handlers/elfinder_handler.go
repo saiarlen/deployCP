@@ -79,6 +79,9 @@ func elfSafe(root, rel string) (string, error) {
 	if !pathWithinRoot(root, abs) {
 		return "", fmt.Errorf("path escapes root")
 	}
+	if err := ensureExistingPathWithinRoot(root, abs); err != nil {
+		return "", err
+	}
 	return abs, nil
 }
 
@@ -93,6 +96,69 @@ func pathWithinRoot(root, candidate string) bool {
 		return true
 	}
 	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+func realPath(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("invalid path")
+	}
+	real, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Clean(real), nil
+}
+
+func ensureExistingPathWithinRoot(root, candidate string) error {
+	realRoot, err := realPath(root)
+	if err != nil {
+		return err
+	}
+	realCandidate, err := realPath(candidate)
+	if err != nil {
+		return err
+	}
+	if !pathWithinRoot(realRoot, realCandidate) {
+		return fmt.Errorf("path escapes root")
+	}
+	return nil
+}
+
+func ensureCreatablePathWithinRoot(root, candidate string) error {
+	abs, err := filepath.Abs(candidate)
+	if err != nil {
+		return fmt.Errorf("invalid path")
+	}
+	if !pathWithinRoot(root, abs) {
+		return fmt.Errorf("path escapes root")
+	}
+	if _, err := os.Lstat(abs); err == nil {
+		return ensureExistingPathWithinRoot(root, abs)
+	}
+	realRoot, err := realPath(root)
+	if err != nil {
+		return err
+	}
+	parent := filepath.Dir(abs)
+	for {
+		if _, err := os.Lstat(parent); err == nil {
+			break
+		}
+		next := filepath.Dir(parent)
+		if next == parent || !pathWithinRoot(root, next) {
+			return fmt.Errorf("path escapes root")
+		}
+		parent = next
+	}
+	realParent, err := realPath(parent)
+	if err != nil {
+		return err
+	}
+	if !pathWithinRoot(realRoot, realParent) {
+		return fmt.Errorf("path escapes root")
+	}
+	return nil
 }
 
 type elfEntry struct {
@@ -437,8 +503,8 @@ func (h *ElfinderHandler) cmdMkdir(c *fiber.Ctx, site *models.Website, root stri
 		return c.JSON(fiber.Map{"error": err.Error()})
 	}
 	newDir := filepath.Join(dir, filepath.Base(name))
-	if !pathWithinRoot(root, newDir) {
-		return c.JSON(fiber.Map{"error": "path escapes root"})
+	if err := ensureCreatablePathWithinRoot(root, newDir); err != nil {
+		return c.JSON(fiber.Map{"error": err.Error()})
 	}
 	if err := h.mkdirsForSite(c.Context(), site, newDir, 0o775); err != nil {
 		return c.JSON(fiber.Map{"error": err.Error()})
@@ -456,8 +522,8 @@ func (h *ElfinderHandler) cmdMkfile(c *fiber.Ctx, site *models.Website, root str
 		return c.JSON(fiber.Map{"error": err.Error()})
 	}
 	fp := filepath.Join(dir, filepath.Base(name))
-	if !pathWithinRoot(root, fp) {
-		return c.JSON(fiber.Map{"error": "path escapes root"})
+	if err := ensureCreatablePathWithinRoot(root, fp); err != nil {
+		return c.JSON(fiber.Map{"error": err.Error()})
 	}
 	if err := h.writeFileForSite(c.Context(), site, fp, []byte{}, 0o664); err != nil {
 		return c.JSON(fiber.Map{"error": err.Error()})
@@ -478,8 +544,8 @@ func (h *ElfinderHandler) cmdRename(c *fiber.Ctx, site *models.Website, root str
 		return c.JSON(fiber.Map{"error": "cannot rename root"})
 	}
 	newPath := filepath.Join(filepath.Dir(abs), filepath.Base(name))
-	if !pathWithinRoot(root, newPath) {
-		return c.JSON(fiber.Map{"error": "path escapes root"})
+	if err := ensureCreatablePathWithinRoot(root, newPath); err != nil {
+		return c.JSON(fiber.Map{"error": err.Error()})
 	}
 
 	oldInfo, _ := os.Stat(abs)
@@ -533,7 +599,7 @@ func (h *ElfinderHandler) cmdUpload(c *fiber.Ctx, site *models.Website, root str
 			continue
 		}
 		dest := filepath.Join(dir, name)
-		if !pathWithinRoot(root, dest) {
+		if ensureCreatablePathWithinRoot(root, dest) != nil {
 			continue
 		}
 		src, err := fh.Open()
@@ -610,11 +676,14 @@ func (h *ElfinderHandler) cmdPaste(c *fiber.Ctx, site *models.Website, root stri
 		}
 		name := filepath.Base(srcPath)
 		dstPath := filepath.Join(destDir, name)
-		if !pathWithinRoot(root, dstPath) {
+		if ensureCreatablePathWithinRoot(root, dstPath) != nil {
 			continue
 		}
 		dstPath, err = nextAvailablePath(dstPath)
 		if err != nil {
+			return c.JSON(fiber.Map{"error": err.Error()})
+		}
+		if err := ensureCreatablePathWithinRoot(root, dstPath); err != nil {
 			return c.JSON(fiber.Map{"error": err.Error()})
 		}
 		if cut {
@@ -848,8 +917,8 @@ func (h *ElfinderHandler) cmdArchive(c *fiber.Ctx, site *models.Website, root st
 	}
 	parentDir := filepath.Dir(firstAbs)
 	archivePath := filepath.Join(parentDir, filepath.Base(name))
-	if !pathWithinRoot(root, archivePath) {
-		return c.JSON(fiber.Map{"error": "path escapes root"})
+	if err := ensureCreatablePathWithinRoot(root, archivePath); err != nil {
+		return c.JSON(fiber.Map{"error": err.Error()})
 	}
 	// Collect file names relative to parentDir.
 	var names []string
@@ -910,8 +979,8 @@ func (h *ElfinderHandler) cmdExtract(c *fiber.Ctx, site *models.Website, root st
 		if err != nil {
 			return c.JSON(fiber.Map{"error": err.Error()})
 		}
-		if !pathWithinRoot(root, destDir) {
-			return c.JSON(fiber.Map{"error": "path escapes root"})
+		if err := ensureCreatablePathWithinRoot(root, destDir); err != nil {
+			return c.JSON(fiber.Map{"error": err.Error()})
 		}
 		if err := os.MkdirAll(destDir, 0o755); err != nil {
 			return c.JSON(fiber.Map{"error": err.Error()})
@@ -1143,6 +1212,9 @@ func safeArchiveJoin(destDir, entryName string) (string, error) {
 	prefix := cleanDest + string(filepath.Separator)
 	if target != cleanDest && !strings.HasPrefix(target, prefix) {
 		return "", fmt.Errorf("archive escapes destination")
+	}
+	if err := ensureCreatablePathWithinRoot(cleanDest, target); err != nil {
+		return "", err
 	}
 	return target, nil
 }
