@@ -539,6 +539,31 @@ func (s *WebsiteService) SyncShellRuntime(id uint, runtimeName, version string) 
 	return s.repo.Update(site, domainsFromModel(site.Domains))
 }
 
+func (s *WebsiteService) UpdateShellRuntime(ctx context.Context, id uint, runtimeName, version string, actor *uint, ip string) error {
+	site, err := s.repo.Find(id)
+	if err != nil {
+		return err
+	}
+	runtimeName = strings.ToLower(strings.TrimSpace(runtimeName))
+	version = strings.TrimSpace(version)
+	if err := s.ensureShellRuntimeVersion(runtimeName, version); err != nil {
+		return err
+	}
+	site.ShellRuntime = runtimeName
+	site.ShellRuntimeVersion = version
+	if err := s.repo.Update(site, domainsFromModel(site.Domains)); err != nil {
+		return err
+	}
+	if err := s.applyPlatformRuntime(site, actor, ip); err != nil {
+		return err
+	}
+	s.audit.Record(actor, "website.runtime.update", "website", fmt.Sprintf("%d", id), ip, map[string]any{
+		"runtime": runtimeName,
+		"version": version,
+	})
+	return nil
+}
+
 func (s *WebsiteService) UpdatePhpSettings(id uint, phpVersion string, data PhpSettingsData) error {
 	site, err := s.repo.Find(id)
 	if err != nil {

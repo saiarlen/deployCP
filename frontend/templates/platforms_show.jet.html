@@ -1250,11 +1250,69 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
         <button class="btn btn-primary" type="submit">Save PHP Settings</button>
       </div>
     </form>
-  </div>
-  {{ end }}
+	  </div>
+	  {{ end }}
 
-  {{ if Item.Type == "proxy" || Item.ShellRuntime != "" }}
-  {{ if isset(LinkedApp) && LinkedApp != nil }}
+	  {{ if RuntimeSetupLocked }}
+	  <div class="surface p-5">
+	    <div class="settings-section-head">
+	      <div>
+	        <h3 class="settings-section-title">Platform Runtime</h3>
+	        <p class="settings-section-copy">Controls the runtime version used by the site user's SSH shell and deployment commands. If a managed service exists, it is reconfigured with the same version.</p>
+	      </div>
+	    </div>
+	    <form action="/websites/{{ Item.ID }}/manage/platform-runtime" method="post">
+	      <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+	      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+	        <label class="block text-sm font-medium">Runtime Type
+	          <input class="field mt-2" type="text" value="{{ RuntimeSetupLabel }}" readonly>
+	        </label>
+	        <label class="block text-sm font-medium">Runtime Version
+	          {{ if RuntimeSetupRuntime == "go" }}
+	          <select class="field mt-2" name="runtime_version" required>
+	            {{ if Item.ShellRuntimeVersion != "" }}
+	            <option value="{{ Item.ShellRuntimeVersion }}" selected>{{ Item.ShellRuntimeVersion }} (current)</option>
+	            {{ end }}
+	            {{ range _, v := GoVersions }}
+	            {{ if Item.ShellRuntimeVersion != v }}<option value="{{ v }}">{{ v }}</option>{{ end }}
+	            {{ end }}
+	          </select>
+	          {{ else if RuntimeSetupRuntime == "python" }}
+	          <select class="field mt-2" name="runtime_version" required>
+	            {{ if Item.ShellRuntimeVersion != "" }}
+	            <option value="{{ Item.ShellRuntimeVersion }}" selected>{{ Item.ShellRuntimeVersion }} (current)</option>
+	            {{ end }}
+	            {{ range _, v := PythonVersions }}
+	            {{ if Item.ShellRuntimeVersion != v }}<option value="{{ v }}">{{ v }}</option>{{ end }}
+	            {{ end }}
+	          </select>
+	          {{ else if RuntimeSetupRuntime == "node" }}
+	          <select class="field mt-2" name="runtime_version" required>
+	            {{ if Item.ShellRuntimeVersion != "" }}
+	            <option value="{{ Item.ShellRuntimeVersion }}" selected>{{ Item.ShellRuntimeVersion }} (current)</option>
+	            {{ end }}
+	            {{ range _, v := NodeVersions }}
+	            {{ if Item.ShellRuntimeVersion != v }}<option value="{{ v }}">{{ v }}</option>{{ end }}
+	            {{ end }}
+	          </select>
+	          {{ else }}
+	          <input type="hidden" name="runtime_version" value="">
+	          <input class="field mt-2" type="text" value="Not required for Binary / Other" readonly>
+	          {{ end }}
+	          <span class="text-xs opacity-50 mt-1">Open a new SSH session after changing this value.</span>
+	        </label>
+	      </div>
+	      {{ if RuntimeSetupRuntime != "binary" }}
+	      <div class="mt-4 flex justify-end">
+	        <button class="btn btn-primary" type="submit">Update Runtime Version</button>
+	      </div>
+	      {{ end }}
+	    </form>
+	  </div>
+	  {{ end }}
+
+	  {{ if Item.Type == "proxy" || Item.ShellRuntime != "" }}
+	  {{ if isset(LinkedApp) && LinkedApp != nil }}
   <!-- ── Runtime Info & Controls (app exists) ── -->
   <div class="surface p-5">
     <div class="settings-section-head">
@@ -1374,49 +1432,7 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
           <span class="text-xs opacity-50 mt-1">Updates bind/proxy port and reloads runtime config.</span>
         </label>
 
-        <label class="block text-sm font-medium">Runtime Version
-          {{ if LinkedApp.Runtime == "node" }}
-          <select class="field mt-2" name="runtime_version">
-            {{ if LinkedRuntimeVersion != "" }}
-            <option value="{{ LinkedRuntimeVersion }}" selected>{{ LinkedRuntimeVersion }} (current)</option>
-            {{ end }}
-            {{ range _, v := NodeVersions }}
-            {{ if LinkedRuntimeVersion != v }}<option value="{{ v }}">{{ v }}</option>{{ end }}
-            {{ end }}
-          </select>
-          {{ else if LinkedApp.Runtime == "python" }}
-          <select class="field mt-2" name="runtime_version">
-            {{ if LinkedRuntimeVersion != "" }}
-            <option value="{{ LinkedRuntimeVersion }}" selected>{{ LinkedRuntimeVersion }} (current)</option>
-            {{ end }}
-            {{ range _, v := PythonVersions }}
-            {{ if LinkedRuntimeVersion != v }}<option value="{{ v }}">{{ v }}</option>{{ end }}
-            {{ end }}
-          </select>
-          {{ else if LinkedApp.Runtime == "go" }}
-          <select class="field mt-2" name="runtime_version">
-            {{ if LinkedRuntimeVersion != "" }}
-            <option value="{{ LinkedRuntimeVersion }}" selected>{{ LinkedRuntimeVersion }} (current)</option>
-            {{ end }}
-            {{ range _, v := GoVersions }}
-            {{ if LinkedRuntimeVersion != v }}<option value="{{ v }}">{{ v }}</option>{{ end }}
-            {{ end }}
-          </select>
-          {{ else if LinkedApp.Runtime == "php" }}
-          <select class="field mt-2" name="runtime_version">
-            {{ if LinkedRuntimeVersion != "" }}
-            <option value="{{ LinkedRuntimeVersion }}" selected>{{ LinkedRuntimeVersion }} (current)</option>
-            {{ end }}
-            {{ range _, v := PHPVersions }}
-            {{ if LinkedRuntimeVersion != v }}<option value="{{ v }}">{{ v }}</option>{{ end }}
-            {{ end }}
-          </select>
-          {{ else }}
-          <input type="hidden" name="runtime_version" value="{{ LinkedRuntimeVersion }}">
-          <input class="field mt-2" type="text" value="Not applicable for this runtime" readonly>
-          {{ end }}
-          <span class="text-xs opacity-50 mt-1">Version is stored as <span class="font-mono">RUNTIME_VERSION</span>.</span>
-        </label>
+	        <input type="hidden" name="runtime_version" value="{{ LinkedRuntimeVersion }}">
 
         <label class="block text-sm font-medium">Max Memory
           <input class="field mt-2" type="text" name="max_memory" value="{{ LinkedApp.MaxMemory }}" placeholder="e.g. 512M">
@@ -1480,24 +1496,59 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
         <p class="settings-section-copy">Attach a managed application runtime when this platform should proxy to Go, Node, Python, PHP, or another long-running process.</p>
       </div>
     </div>
-    <form id="create-app-form" action="/websites/{{ Item.ID }}/manage/create-app" method="post">
-      <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+	    <form id="create-app-form" action="/websites/{{ Item.ID }}/manage/create-app" method="post">
+	      <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+	      {{ if RuntimeSetupLocked }}
+	      <input type="hidden" name="runtime_version" value="{{ Item.ShellRuntimeVersion }}">
+	      {{ end }}
+	      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 
-        <label class="block text-sm font-medium">Runtime
-          <select class="field mt-2" name="runtime" id="ca-runtime">
-            <option value="go" {{ if Item.AppRuntime == "go" || Item.ShellRuntime == "go" }}selected{{ end }}>Go</option>
-            <option value="python" {{ if Item.AppRuntime == "python" || Item.ShellRuntime == "python" }}selected{{ end }}>Python</option>
-            <option value="node" {{ if Item.AppRuntime == "node" || Item.ShellRuntime == "node" }}selected{{ end }}>Node.js</option>
-            <option value="binary" {{ if Item.AppRuntime == "binary" || Item.ShellRuntime == "binary" || Item.AppRuntime == "" && Item.ShellRuntime == "" }}selected{{ end }}>Binary / Other</option>
-          </select>
-        </label>
+	        <label class="block text-sm font-medium">Runtime
+	          {{ if RuntimeSetupLocked }}
+	          <input type="hidden" name="runtime" id="ca-runtime" value="{{ RuntimeSetupRuntime }}">
+	          <input class="field mt-2" type="text" value="{{ RuntimeSetupLabel }}" readonly>
+	          <span class="text-xs opacity-50 mt-1">Runtime type is locked to this platform.</span>
+	          {{ else }}
+	          <select class="field mt-2" name="runtime" id="ca-runtime">
+	            <option value="go">Go</option>
+	            <option value="python">Python</option>
+	            <option value="node">Node.js</option>
+	            <option value="binary" selected>Binary / Other</option>
+	          </select>
+		          {{ end }}
+		        </label>
 
-        <label class="block text-sm font-medium">Runtime Version
-          <input class="field mt-2" type="text" name="runtime_version" value="{{ Item.ShellRuntimeVersion }}" placeholder="Not required for Binary">
-        </label>
+		        {{ if !RuntimeSetupLocked }}
+		        <label class="block text-sm font-medium">Runtime Version
+		          <div class="ca-version-choice ca-version-go" style="display:none">
+		            <select class="field mt-2 ca-version-control" data-runtime-version="go" data-field-name="runtime_version">
+		              {{ range _, v := GoVersions }}
+		              <option value="{{ v }}">{{ v }}</option>
+		              {{ end }}
+		            </select>
+		          </div>
+		          <div class="ca-version-choice ca-version-python" style="display:none">
+		            <select class="field mt-2 ca-version-control" data-runtime-version="python" data-field-name="runtime_version">
+		              {{ range _, v := PythonVersions }}
+		              <option value="{{ v }}">{{ v }}</option>
+		              {{ end }}
+		            </select>
+		          </div>
+		          <div class="ca-version-choice ca-version-node" style="display:none">
+		            <select class="field mt-2 ca-version-control" data-runtime-version="node" data-field-name="runtime_version">
+		              {{ range _, v := NodeVersions }}
+		              <option value="{{ v }}">{{ v }}</option>
+		              {{ end }}
+		            </select>
+		          </div>
+		          <div class="ca-version-choice ca-version-binary" style="display:none">
+		            <input type="hidden" class="ca-version-control" data-runtime-version="binary" data-field-name="runtime_version" value="">
+		            <input class="field mt-2" type="text" value="Not required for Binary / Other" readonly>
+		          </div>
+		        </label>
+		        {{ end }}
 
-        <label class="block text-sm font-medium">Process Manager
+	        <label class="block text-sm font-medium">Process Manager
           <select class="field mt-2" name="process_manager" id="ca-pm">
           </select>
         </label>
@@ -4017,10 +4068,10 @@ $(function () {
       python: { gunicorn: 'app:app', uwsgi: 'app:app', pm2: 'app.py', systemd: 'app.py' },
       node:   { pm2: 'index.js', systemd: 'index.js' }
     };
-    function rebuildPmOptions(rt) {
-      var allowed = pmByRuntime[rt] || ['systemd'];
-      var $sel = $('#ca-pm');
-      var best = defaultPm[rt] || 'systemd';
+	    function rebuildPmOptions(rt) {
+	      var allowed = pmByRuntime[rt] || ['systemd'];
+	      var $sel = $('#ca-pm');
+	      var best = defaultPm[rt] || 'systemd';
       $sel.empty();
       $.each(allowed, function(_, pm) {
         $sel.append($('<option>').val(pm).text(pm));
@@ -4029,10 +4080,21 @@ $(function () {
         $sel.val(best);
       } else {
         $sel.val(allowed[0]);
-      }
-      $sel.trigger('change');
-    }
-    function updateBinaryHints() {
+	      }
+	      $sel.trigger('change');
+	    }
+	    function toggleCaVersion(rt) {
+	      $('.ca-version-choice').hide();
+	      $('.ca-version-control').prop('disabled', true).removeAttr('name');
+	      var $choice = $('.ca-version-' + rt);
+	      $choice.show();
+	      $choice.find('.ca-version-control').each(function() {
+	        var name = $(this).data('field-name');
+	        $(this).prop('disabled', false);
+	        if (name) $(this).attr('name', name);
+	      });
+	    }
+	    function updateBinaryHints() {
       var rt = $('#ca-runtime').val();
       var pm = $('#ca-pm').val() || 'systemd';
       var title, placeholder, hint;
@@ -4066,15 +4128,16 @@ $(function () {
         $('#ca-entry-label .text-xs').text('Leave blank to default to "' + epInfo + '"');
       }
     }
-    function toggleCaRuntime() {
-      var rt = $('#ca-runtime').val();
-      if (rt === 'python' || rt === 'node') {
-        $('.ca-interpreted').show();
-      } else {
-        $('.ca-interpreted').hide();
-      }
-      rebuildPmOptions(rt);
-    }
+	    function toggleCaRuntime() {
+	      var rt = $('#ca-runtime').val();
+	      if (rt === 'python' || rt === 'node') {
+	        $('.ca-interpreted').show();
+	      } else {
+	        $('.ca-interpreted').hide();
+	      }
+	      toggleCaVersion(rt);
+	      rebuildPmOptions(rt);
+	    }
     function toggleCaPm() {
       var pm = $('#ca-pm').val() || 'systemd';
       $('.ca-pm-field').hide();

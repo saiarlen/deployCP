@@ -73,6 +73,10 @@ func (s *AppService) Find(id uint) (*models.GoApp, error) {
 	return s.repo.Find(id)
 }
 
+func (s *AppService) FindByWebsiteID(websiteID uint) (*models.GoApp, error) {
+	return s.repo.FindByWebsiteID(websiteID)
+}
+
 func (s *AppService) RuntimeInspection(app *models.GoApp) RuntimeInspection {
 	if s.runtime == nil {
 		return RuntimeInspection{}

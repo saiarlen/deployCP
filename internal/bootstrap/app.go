@@ -421,6 +421,7 @@ func (a *Application) registerRoutes() {
 	secured.Post("/websites/:id/manage/ftp-users/:fid/password", a.WebsiteHandler.ManageResetFTPPassword)
 	secured.Post("/websites/:id/manage/ftp-users/:fid/delete", a.WebsiteHandler.ManageDeleteFTPUser)
 	secured.Post("/websites/:id/manage/php-settings", a.WebsiteHandler.ManageSavePhpSettings)
+	secured.Post("/websites/:id/manage/platform-runtime", a.WebsiteHandler.ManageUpdatePlatformRuntime)
 	secured.Post("/websites/:id/manage/create-app", a.WebsiteHandler.ManageCreateLinkedApp)
 	secured.Post("/websites/:id/manage/delete-app", a.WebsiteHandler.ManageDeleteLinkedApp)
 	secured.Get("/websites/:id/manage/log-files", a.WebsiteHandler.LogFiles)

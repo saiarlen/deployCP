@@ -229,6 +229,7 @@ func (h *WebsiteHandler) ShowByID(c *fiber.Ctx, id uint) error {
 			serverAddress = host
 		}
 	}
+	runtimeSetupRuntime := lockedWebsiteRuntime(item)
 
 	return h.base.Render(c, "platforms_show", fiber.Map{
 		"Title":                item.Name,
@@ -267,6 +268,9 @@ func (h *WebsiteHandler) ShowByID(c *fiber.Ctx, id uint) error {
 		"RootPathSuffix":       rootPathSuffix(item.RootPath),
 		"SSHUsers":             sshUsers,
 		"PrimarySSHUserID":     primarySSHUserID,
+		"RuntimeSetupRuntime":  runtimeSetupRuntime,
+		"RuntimeSetupLabel":    runtimeDisplayLabel(runtimeSetupRuntime),
+		"RuntimeSetupLocked":   runtimeSetupRuntime != "",
 	})
 }
 
@@ -1209,6 +1213,47 @@ func (h *WebsiteHandler) ManageDeleteFTPUser(c *fiber.Ctx) error {
 	return c.Redirect(platformURLWithTab("website", id, "ssh"))
 }
 
+func (h *WebsiteHandler) ManageUpdatePlatformRuntime(c *fiber.Ctx) error {
+	id, err := repositories.ParseID(c.Params("id"))
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	site, err := h.service.Find(id)
+	if err != nil {
+		return c.Status(404).SendString("website not found")
+	}
+	runtimeName := lockedWebsiteRuntime(site)
+	if runtimeName == "" {
+		h.base.Sessions.SetFlash(c, "runtime type is not configured for this platform")
+		return c.Redirect(platformURLWithTab("website", id, "settings"))
+	}
+	version := strings.TrimSpace(c.FormValue("runtime_version"))
+	if runtimeName != "binary" && version == "" {
+		h.base.Sessions.SetFlash(c, "runtime version is required")
+		return c.Redirect(platformURLWithTab("website", id, "settings"))
+	}
+	linkedApp := websiteRuntimeApp(site)
+	if h.appService != nil {
+		if app, appErr := h.appService.FindByWebsiteID(site.ID); appErr == nil && app != nil {
+			linkedApp = app
+		}
+	}
+	if linkedApp != nil {
+		if err := h.appService.UpdateRuntimeSettings(c.Context(), linkedApp.ID, linkedApp.ProcessManager, linkedApp.Workers, linkedApp.WorkerClass, linkedApp.MaxMemory, linkedApp.Timeout, linkedApp.ExecMode, linkedApp.RestartPolicy, linkedApp.Port, version, "reconfigure", currentUserID(c), c.IP()); err != nil {
+			h.base.Sessions.SetFlash(c, err.Error())
+			return c.Redirect(platformURLWithTab("website", id, "settings"))
+		}
+		h.base.Sessions.SetFlash(c, "Platform runtime updated and linked service reconfigured")
+		return c.Redirect(platformURLWithTab("website", id, "settings"))
+	}
+	if err := h.service.UpdateShellRuntime(c.Context(), id, runtimeName, version, currentUserID(c), c.IP()); err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+	} else {
+		h.base.Sessions.SetFlash(c, "Platform runtime updated")
+	}
+	return c.Redirect(platformURLWithTab("website", id, "settings"))
+}
+
 // ── Vhost Save ──
 
 func (h *WebsiteHandler) ManageSaveVhost(c *fiber.Ctx) error {
@@ -1685,6 +1730,34 @@ func (h *WebsiteHandler) runtimeVersions(runtime string) []string {
 	}
 }
 
+func lockedWebsiteRuntime(site *models.Website) string {
+	if site == nil {
+		return ""
+	}
+	for _, raw := range []string{site.AppRuntime, site.ShellRuntime} {
+		switch strings.ToLower(strings.TrimSpace(raw)) {
+		case "go", "python", "node", "binary":
+			return strings.ToLower(strings.TrimSpace(raw))
+		}
+	}
+	return ""
+}
+
+func runtimeDisplayLabel(runtime string) string {
+	switch strings.ToLower(strings.TrimSpace(runtime)) {
+	case "go":
+		return "Go"
+	case "python":
+		return "Python"
+	case "node":
+		return "Node.js"
+	case "binary":
+		return "Binary / Other"
+	default:
+		return "Runtime"
+	}
+}
+
 func containsStringFold(items []string, target string) bool {
 	target = strings.TrimSpace(target)
 	for _, item := range items {
@@ -1768,7 +1841,10 @@ func (h *WebsiteHandler) ManageCreateLinkedApp(c *fiber.Ctx) error {
 		return c.Redirect(platformURLWithTab("website", id, "settings"))
 	}
 
-	runtime := strings.TrimSpace(c.FormValue("runtime"))
+	runtime := lockedWebsiteRuntime(site)
+	if runtime == "" {
+		runtime = strings.TrimSpace(c.FormValue("runtime"))
+	}
 	if runtime == "" {
 		runtime = "binary"
 	}
@@ -1846,6 +1922,10 @@ func (h *WebsiteHandler) ManageCreateLinkedApp(c *fiber.Ctx) error {
 
 	workers, _ := strconv.Atoi(c.FormValue("workers"))
 	timeout, _ := strconv.Atoi(c.FormValue("timeout"))
+	runtimeVersion := strings.TrimSpace(c.FormValue("runtime_version"))
+	if lockedWebsiteRuntime(site) != "" {
+		runtimeVersion = strings.TrimSpace(site.ShellRuntimeVersion)
+	}
 
 	appName := strings.TrimSpace(site.Name)
 	if domain := primaryWebsiteDomain(site.Domains); domain != "" {
@@ -1872,7 +1952,7 @@ func (h *WebsiteHandler) ManageCreateLinkedApp(c *fiber.Ctx) error {
 		ExecMode:         strings.TrimSpace(c.FormValue("exec_mode")),
 		WebsiteID:        &site.ID,
 		Enabled:          true,
-		Env:              map[string]string{"RUNTIME_VERSION": strings.TrimSpace(c.FormValue("runtime_version")), "PORT": strconv.Itoa(port), "HOST": "127.0.0.1"},
+		Env:              map[string]string{"RUNTIME_VERSION": runtimeVersion, "PORT": strconv.Itoa(port), "HOST": "127.0.0.1"},
 	}, currentUserID(c), c.IP())
 	if err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
