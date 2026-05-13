@@ -49,6 +49,9 @@ func (m *serviceManager) Install(ctx context.Context, def platform.ServiceDefini
 	if err := utils.WriteFileAtomic(unitPath, []byte(content), 0o644); err != nil {
 		return "", err
 	}
+	if err := m.verifyUnitFile(ctx, unitPath); err != nil {
+		return "", err
+	}
 	if _, err := m.runner.Run(ctx, system.CommandRequest{Binary: m.cfg.Paths.SystemctlBinary, Args: []string{"daemon-reload"}, Timeout: 10 * time.Second, AuditAction: "systemd.daemon_reload"}); err != nil {
 		return "", err
 	}
@@ -57,7 +60,15 @@ func (m *serviceManager) Install(ctx context.Context, def platform.ServiceDefini
 
 func (m *serviceManager) Start(ctx context.Context, name string) error {
 	_, err := m.runner.Run(ctx, system.CommandRequest{Binary: m.cfg.Paths.SystemctlBinary, Args: []string{"start", name}, Timeout: 15 * time.Second, AuditAction: "service.start"})
-	return err
+	if err == nil {
+		return nil
+	}
+	status, _ := m.runner.Run(ctx, system.CommandRequest{Binary: m.cfg.Paths.SystemctlBinary, Args: []string{"status", name, "--no-pager", "-l"}, Timeout: 8 * time.Second})
+	detail := strings.TrimSpace(status.Stdout + "\n" + status.Stderr)
+	if detail == "" {
+		return err
+	}
+	return fmt.Errorf("%w\n%s", err, detail)
 }
 func (m *serviceManager) Stop(ctx context.Context, name string) error {
 	_, err := m.runner.Run(ctx, system.CommandRequest{Binary: m.cfg.Paths.SystemctlBinary, Args: []string{"stop", name}, Timeout: 15 * time.Second, AuditAction: "service.stop"})
@@ -96,6 +107,23 @@ func (m *serviceManager) Logs(ctx context.Context, name string, lines int) (stri
 		return res.Stdout + "\n" + res.Stderr, err
 	}
 	return res.Stdout, nil
+}
+
+func (m *serviceManager) verifyUnitFile(ctx context.Context, unitPath string) error {
+	binary, err := exec.LookPath("systemd-analyze")
+	if err != nil {
+		return nil
+	}
+	_, err = m.runner.Run(ctx, system.CommandRequest{
+		Binary:      binary,
+		Args:        []string{"verify", unitPath},
+		Timeout:     10 * time.Second,
+		AuditAction: "systemd.verify_unit",
+	})
+	if err != nil {
+		return fmt.Errorf("invalid systemd unit file %s: %w", unitPath, err)
+	}
+	return nil
 }
 
 func renderUnit(def platform.ServiceDefinition) string {
@@ -174,6 +202,17 @@ func validateServiceDefinition(def platform.ServiceDefinition) error {
 	case "", "no", "always", "on-success", "on-failure", "on-abnormal", "on-watchdog", "on-abort":
 	default:
 		return fmt.Errorf("invalid restart policy %q", def.RestartPolicy)
+	}
+	if !filepath.IsAbs(strings.TrimSpace(def.ExecPath)) {
+		return fmt.Errorf("systemd exec path must be absolute after runtime resolution: %s", def.ExecPath)
+	}
+	if strings.TrimSpace(def.WorkingDir) != "" && !filepath.IsAbs(strings.TrimSpace(def.WorkingDir)) {
+		return fmt.Errorf("systemd working directory must be absolute: %s", def.WorkingDir)
+	}
+	for label, path := range map[string]string{"stdout path": def.StdoutPath, "stderr path": def.StderrPath} {
+		if strings.TrimSpace(path) != "" && !filepath.IsAbs(strings.TrimSpace(path)) {
+			return fmt.Errorf("%s must be absolute: %s", label, path)
+		}
 	}
 	return nil
 }

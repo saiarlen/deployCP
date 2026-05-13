@@ -20,6 +20,31 @@ func TestValidateServiceDefinitionRejectsControlCharacters(t *testing.T) {
 	}
 }
 
+func TestValidateServiceDefinitionRejectsRelativeSystemdPaths(t *testing.T) {
+	err := validateServiceDefinition(platform.ServiceDefinition{
+		Name:          "deploycp-app-test",
+		Description:   "DeployCP app: test",
+		ExecPath:      "python3",
+		WorkingDir:    "/tmp",
+		RestartPolicy: "on-failure",
+	})
+	if err == nil || !strings.Contains(err.Error(), "exec path must be absolute") {
+		t.Fatalf("expected absolute exec path error, got %v", err)
+	}
+
+	err = validateServiceDefinition(platform.ServiceDefinition{
+		Name:          "deploycp-app-test",
+		Description:   "DeployCP app: test",
+		ExecPath:      "/usr/bin/python3",
+		WorkingDir:    "/tmp",
+		StdoutPath:    "storage/logs/stdout.log",
+		RestartPolicy: "on-failure",
+	})
+	if err == nil || !strings.Contains(err.Error(), "stdout path must be absolute") {
+		t.Fatalf("expected absolute stdout path error, got %v", err)
+	}
+}
+
 func TestRenderUnitQuotesExecArgsAndEnvironment(t *testing.T) {
 	unit := renderUnit(platform.ServiceDefinition{
 		Name:          "deploycp-app-test",

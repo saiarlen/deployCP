@@ -106,8 +106,9 @@ func TestCleanupDanglingNginxEnabledConfigs(t *testing.T) {
 	}
 	svc := &WebsiteService{cfg: &config.Config{}}
 	svc.cfg.Paths.NginxEnabledDir = enabledDir
+	svc.cfg.Paths.NginxAvailableDir = availableDir
 
-	if err := svc.cleanupDanglingNginxEnabledConfigs(); err != nil {
+	if err := svc.cleanupDanglingNginxConfigEntries(); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Lstat(badLink); !os.IsNotExist(err) {
@@ -115,5 +116,37 @@ func TestCleanupDanglingNginxEnabledConfigs(t *testing.T) {
 	}
 	if _, err := os.Lstat(goodLink); err != nil {
 		t.Fatalf("valid nginx symlink removed: %v", err)
+	}
+}
+
+func TestBuildAppServiceDefinitionMakesServicePathsAbsolute(t *testing.T) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := &models.GoApp{
+		Name:             "example.com",
+		ServiceName:      "deploycp-app-example-com",
+		Runtime:          "python",
+		ProcessManager:   "systemd",
+		BinaryPath:       "/usr/bin/python3",
+		EntryPoint:       "app.py",
+		WorkingDirectory: "storage/sites/example.com/htdocs",
+		StdoutLogPath:    "storage/logs/apps/example.com/stdout.log",
+		StderrLogPath:    "storage/logs/apps/example.com/stderr.log",
+	}
+
+	def := buildAppServiceDefinition(app, nil)
+	for label, path := range map[string]string{
+		"working dir": def.WorkingDir,
+		"stdout":      def.StdoutPath,
+		"stderr":      def.StderrPath,
+	} {
+		if !filepath.IsAbs(path) {
+			t.Fatalf("%s is not absolute: %s", label, path)
+		}
+		if !strings.HasPrefix(path, cwd) {
+			t.Fatalf("%s = %s, want path under %s", label, path, cwd)
+		}
 	}
 }

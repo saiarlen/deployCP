@@ -93,8 +93,8 @@ func (s *AppService) Create(ctx context.Context, in AppInput, actor *uint, ip st
 		return nil, err
 	}
 	serviceName := appSystemdServiceName(in.Name)
-	stdoutPath := filepath.Join(s.cfg.Paths.LogRoot, "apps", in.Name, "stdout.log")
-	stderrPath := filepath.Join(s.cfg.Paths.LogRoot, "apps", in.Name, "stderr.log")
+	stdoutPath := absoluteRuntimePath(filepath.Join(s.cfg.Paths.LogRoot, "apps", in.Name, "stdout.log"))
+	stderrPath := absoluteRuntimePath(filepath.Join(s.cfg.Paths.LogRoot, "apps", in.Name, "stderr.log"))
 	if err := os.MkdirAll(filepath.Dir(stdoutPath), 0o755); err != nil {
 		return nil, err
 	}
@@ -579,6 +579,7 @@ func (s *AppService) installService(ctx context.Context, app *models.GoApp, env 
 	if err := s.preparePythonRuntime(ctx, app, env); err != nil {
 		return err
 	}
+	app.BinaryPath = resolveAbsoluteExecutablePath(app.BinaryPath)
 	def := buildAppServiceDefinition(app, env)
 	unitPath, err := s.adapter.Services().Install(ctx, def)
 	if err != nil {
@@ -664,7 +665,7 @@ func (s *AppService) serviceRuntimeStateRoot(app *models.GoApp) string {
 	if app != nil && strings.TrimSpace(app.ServiceName) != "" {
 		serviceName = strings.TrimSpace(app.ServiceName)
 	}
-	return filepath.Join(s.cfg.Paths.StorageRoot, "runtime-state", serviceName)
+	return absoluteRuntimePath(filepath.Join(s.cfg.Paths.StorageRoot, "runtime-state", serviceName))
 }
 
 func (s *AppService) ensureServiceRuntimeStateDirs(app *models.GoApp) error {
@@ -925,6 +926,37 @@ func validatePythonBootstrapCommand(in AppInput, runtime *RuntimeService) (strin
 		return "", fmt.Errorf("python runtime bootstrap command is not available: %w", err)
 	}
 	return pythonBin, nil
+}
+
+func resolveAbsoluteExecutablePath(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return path
+	}
+	if filepath.IsAbs(path) {
+		return filepath.Clean(path)
+	}
+	if lookedUp, err := exec.LookPath(path); err == nil && strings.TrimSpace(lookedUp) != "" {
+		return filepath.Clean(lookedUp)
+	}
+	if _, err := os.Stat(path); err == nil {
+		return absoluteRuntimePath(path)
+	}
+	return path
+}
+
+func absoluteRuntimePath(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return path
+	}
+	if filepath.IsAbs(path) {
+		return filepath.Clean(path)
+	}
+	if abs, err := filepath.Abs(path); err == nil {
+		return filepath.Clean(abs)
+	}
+	return filepath.Clean(path)
 }
 
 func validateRuntimeServiceInput(in AppInput) error {
@@ -1420,11 +1452,11 @@ func buildAppServiceDefinition(app *models.GoApp, env map[string]string) platfor
 	base := platform.ServiceDefinition{
 		Name:          app.ServiceName,
 		Description:   "DeployCP app: " + app.Name,
-		WorkingDir:    appServiceWorkingDir(app),
+		WorkingDir:    absoluteRuntimePath(appServiceWorkingDir(app)),
 		Environment:   env,
 		RestartPolicy: app.RestartPolicy,
-		StdoutPath:    app.StdoutLogPath,
-		StderrPath:    app.StderrLogPath,
+		StdoutPath:    absoluteRuntimePath(app.StdoutLogPath),
+		StderrPath:    absoluteRuntimePath(app.StderrLogPath),
 	}
 	pm := normalizeProcessManager(app.ProcessManager)
 	switch pm {

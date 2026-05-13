@@ -382,7 +382,7 @@ func (s *WebsiteService) Delete(ctx context.Context, id uint, actor *uint, ip st
 		if err := s.EnsureNginxUnknownHostReject(); err != nil {
 			return err
 		}
-		if err := s.cleanupDanglingNginxEnabledConfigs(); err != nil {
+		if err := s.cleanupDanglingNginxConfigEntries(); err != nil {
 			return err
 		}
 		if err := s.adapter.Nginx().Validate(ctx, s.cfg.Paths.NginxBinary); err != nil {
@@ -453,6 +453,9 @@ func (s *WebsiteService) ToggleEnabled(ctx context.Context, id uint, enabled boo
 func (s *WebsiteService) ApplyAppProxy(ctx context.Context, websiteID *uint, host string, port int, actor *uint, ip string) error {
 	if websiteID == nil || *websiteID == 0 {
 		return nil
+	}
+	if err := s.cleanupDanglingNginxConfigEntries(); err != nil {
+		return err
 	}
 	site, err := s.repo.Find(*websiteID)
 	if err != nil {
@@ -773,7 +776,7 @@ func (s *WebsiteService) writeNginxConfig(ctx context.Context, site *models.Webs
 		BotBlocks:         botBlocks,
 		CloudflareEnabled: cloudflareEnabled,
 	})
-	if err := s.cleanupDanglingNginxEnabledConfigs(); err != nil {
+	if err := s.cleanupDanglingNginxConfigEntries(); err != nil {
 		return err
 	}
 	if err := s.removeStaleNginxDomainConfigs(site, cfg); err != nil {
@@ -799,6 +802,9 @@ func (s *WebsiteService) writeNginxConfig(ctx context.Context, site *models.Webs
 func (s *WebsiteService) EnsureNginxUnknownHostReject() error {
 	if !s.cfg.Features.EnableNginxManage {
 		return nil
+	}
+	if err := s.cleanupDanglingNginxConfigEntries(); err != nil {
+		return err
 	}
 	if err := s.disableStockNginxDefaultSite(); err != nil {
 		return err
@@ -895,8 +901,19 @@ func (s *WebsiteService) removeStaleNginxDomainConfigs(site *models.Website, cur
 	return nil
 }
 
-func (s *WebsiteService) cleanupDanglingNginxEnabledConfigs() error {
-	dir := strings.TrimSpace(s.cfg.Paths.NginxEnabledDir)
+func (s *WebsiteService) cleanupDanglingNginxConfigEntries() error {
+	if s == nil || s.cfg == nil {
+		return nil
+	}
+	for _, dir := range []string{s.cfg.Paths.NginxEnabledDir, s.cfg.Paths.NginxAvailableDir} {
+		if err := cleanupDanglingNginxDir(strings.TrimSpace(dir)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func cleanupDanglingNginxDir(dir string) error {
 	if dir == "" {
 		return nil
 	}
