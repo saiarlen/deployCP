@@ -57,7 +57,7 @@ func TestRenderUnitQuotesExecArgsAndEnvironment(t *testing.T) {
 	})
 
 	for _, want := range []string{
-		`WorkingDirectory="/opt/my app"`,
+		`WorkingDirectory=/opt/my\x20app`,
 		`ExecStart="/opt/my app/bin/server" "--message" "hello \"world\""`,
 		`Environment="APP_VALUE=100%% \"ok\""`,
 	} {

@@ -149,7 +149,7 @@ func renderUnit(def platform.ServiceDefinition) string {
 	if def.User != "" {
 		builder.WriteString(fmt.Sprintf("User=%s\n", def.User))
 	}
-	builder.WriteString(fmt.Sprintf("WorkingDirectory=%s\n", systemdQuote(def.WorkingDir)))
+	builder.WriteString(fmt.Sprintf("WorkingDirectory=%s\n", systemdPathValue(def.WorkingDir)))
 	builder.WriteString(fmt.Sprintf("ExecStart=%s%s\n", systemdQuote(def.ExecPath), args.String()))
 	for _, line := range env {
 		builder.WriteString(line + "\n")
@@ -247,6 +247,11 @@ func validEnvironmentKey(key string) bool {
 func systemdQuote(value string) string {
 	replacer := strings.NewReplacer(`\`, `\\`, `"`, `\"`, `%`, `%%`)
 	return `"` + replacer.Replace(value) + `"`
+}
+
+func systemdPathValue(value string) string {
+	replacer := strings.NewReplacer(`\`, `\\`, " ", `\x20`, "\t", `\x09`, "%", "%%")
+	return replacer.Replace(value)
 }
 
 type userManager struct {
