@@ -150,3 +150,21 @@ func TestBuildAppServiceDefinitionMakesServicePathsAbsolute(t *testing.T) {
 		}
 	}
 }
+
+func TestNormalizePythonProcessManagerEntryPoint(t *testing.T) {
+	tests := map[string]string{
+		"":              "app:app",
+		"app.py":        "app:app",
+		"server.py":     "server:app",
+		"src/server.py": "src.server:app",
+		"custom:wsgi":   "custom:wsgi",
+	}
+	for input, want := range tests {
+		if got := normalizePythonProcessManagerEntryPoint("python", "uwsgi", input); got != want {
+			t.Fatalf("entry %q = %q, want %q", input, got, want)
+		}
+	}
+	if got := normalizePythonProcessManagerEntryPoint("python", "systemd", "app.py"); got != "app.py" {
+		t.Fatalf("systemd entry changed to %q", got)
+	}
+}

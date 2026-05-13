@@ -465,6 +465,7 @@ func (s *AppService) UpdateRuntimeSettings(ctx context.Context, id uint, process
 	if pm := normalizeProcessManager(processManager); pm != "" {
 		app.ProcessManager = pm
 	}
+	app.EntryPoint = normalizePythonProcessManagerEntryPoint(app.Runtime, app.ProcessManager, app.EntryPoint)
 	app.Workers = workers
 	app.WorkerClass = workerClass
 	app.MaxMemory = maxMemory
@@ -1240,7 +1241,34 @@ func normalizeAppInput(in AppInput) AppInput {
 		in.ExecutionMode = defaultExecutionMode(in.Runtime)
 	}
 	in.ProcessManager = normalizeProcessManager(in.ProcessManager)
+	in.EntryPoint = normalizePythonProcessManagerEntryPoint(in.Runtime, in.ProcessManager, in.EntryPoint)
 	return in
+}
+
+func normalizePythonProcessManagerEntryPoint(runtime, processManager, entryPoint string) string {
+	entryPoint = strings.TrimSpace(entryPoint)
+	if !strings.EqualFold(strings.TrimSpace(runtime), "python") {
+		return entryPoint
+	}
+	pm := normalizeProcessManager(processManager)
+	switch pm {
+	case "gunicorn", "uwsgi":
+	default:
+		return entryPoint
+	}
+	if entryPoint == "" {
+		return "app:app"
+	}
+	if strings.Contains(entryPoint, ":") {
+		return entryPoint
+	}
+	withoutExt := strings.TrimSuffix(entryPoint, ".py")
+	withoutExt = strings.Trim(strings.ReplaceAll(withoutExt, "\\", "/"), "/")
+	if withoutExt == "" {
+		return "app:app"
+	}
+	module := strings.ReplaceAll(withoutExt, "/", ".")
+	return module + ":app"
 }
 
 func normalizeProcessManager(v string) string {

@@ -138,25 +138,25 @@
     {{ end }}
     {{ end }}
     <div class="flex flex-wrap gap-2 mb-5">
-      <form action="/apps/{{ Status.App.ID }}/actions/start" method="post">
+      <form action="/apps/{{ Status.App.ID }}/actions/start" method="post" data-runtime-loading>
         <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
-        <button class="btn btn-success" type="submit">Start</button>
+        <button class="btn btn-success" type="submit" data-loading-label="Starting...">Start</button>
       </form>
-      <form action="/apps/{{ Status.App.ID }}/actions/stop" method="post" data-confirm-message="Stop this service now?">
+      <form action="/apps/{{ Status.App.ID }}/actions/stop" method="post" data-confirm-message="Stop this service now?" data-runtime-loading>
         <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
-        <button class="btn btn-danger" type="submit">Stop</button>
+        <button class="btn btn-danger" type="submit" data-loading-label="Stopping...">Stop</button>
       </form>
-      <form action="/apps/{{ Status.App.ID }}/actions/restart" method="post">
+      <form action="/apps/{{ Status.App.ID }}/actions/restart" method="post" data-runtime-loading>
         <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
-        <button class="btn" type="submit">Restart</button>
+        <button class="btn" type="submit" data-loading-label="Restarting...">Restart</button>
       </form>
-      <form action="/apps/{{ Status.App.ID }}/actions/enable" method="post">
+      <form action="/apps/{{ Status.App.ID }}/actions/enable" method="post" data-runtime-loading>
         <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
-        <button class="btn btn-primary" type="submit">Enable</button>
+        <button class="btn btn-primary" type="submit" data-loading-label="Enabling...">Enable</button>
       </form>
-      <form action="/apps/{{ Status.App.ID }}/actions/disable" method="post" data-confirm-message="Disable autostart for this app unit?">
+      <form action="/apps/{{ Status.App.ID }}/actions/disable" method="post" data-confirm-message="Disable autostart for this app unit?" data-runtime-loading>
         <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
-        <button class="btn btn-warning" type="submit">Disable</button>
+        <button class="btn btn-warning" type="submit" data-loading-label="Disabling...">Disable</button>
       </form>
     </div>
 
@@ -197,7 +197,7 @@
   <!-- Runtime Settings -->
   <div class="surface p-5">
     <h3 class="text-sm font-semibold mb-4">Runtime Settings</h3>
-    <form id="runtime-settings-form" action="/apps/{{ Status.App.ID }}/manage/runtime-settings" method="post">
+    <form id="runtime-settings-form" action="/apps/{{ Status.App.ID }}/manage/runtime-settings" method="post" data-runtime-loading>
       <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 
@@ -302,8 +302,8 @@
 
       </div>
       <div class="mt-4 flex flex-wrap justify-end gap-2">
-        <button class="btn btn-primary" type="submit" name="runtime_apply" value="reconfigure">Reconfigure Runtime</button>
-        <button class="btn" type="submit" name="runtime_apply" value="reset">Reset Runtime Process</button>
+        <button class="btn btn-primary" type="submit" name="runtime_apply" value="reconfigure" data-loading-label="Reconfiguring...">Reconfigure Runtime</button>
+        <button class="btn" type="submit" name="runtime_apply" value="reset" data-loading-label="Resetting...">Reset Runtime Process</button>
       </div>
     </form>
   </div>
@@ -960,6 +960,19 @@ $(function () {
       copyNotify(false, 'Could not copy');
     });
   });
+  $(document).on('submit', 'form[data-runtime-loading]', function(e) {
+    if (e.isDefaultPrevented && e.isDefaultPrevented()) return;
+    var form = this;
+    var submitter = e.originalEvent && e.originalEvent.submitter ? e.originalEvent.submitter : $(form).find('button[type="submit"],input[type="submit"]').get(0);
+    var $btn = submitter ? $(submitter) : $();
+    $(form).find('input[data-runtime-submit-shadow]').remove();
+    if ($btn.length && $btn.attr('name')) {
+      $('<input>').attr({ type: 'hidden', name: $btn.attr('name'), value: $btn.val() || '', 'data-runtime-submit-shadow': '1' }).appendTo(form);
+    }
+    var label = $.trim(String(($btn.length ? $btn.data('loadingLabel') : '') || $(form).data('loadingLabel') || 'Working...'));
+    pageSetButtonLoading($btn, true, label);
+    $(form).find('button[type="submit"],input[type="submit"]').not($btn).prop('disabled', true);
+  });
 
   function togglePmFields() {
     var pm = $('#rt-pm').val() || 'systemd';
@@ -1261,7 +1274,7 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
 	        <p class="settings-section-copy">Controls the runtime version used by the site user's SSH shell and deployment commands. If a managed service exists, it is reconfigured with the same version.</p>
 	      </div>
 	    </div>
-	    <form action="/websites/{{ Item.ID }}/manage/platform-runtime" method="post">
+	    <form action="/websites/{{ Item.ID }}/manage/platform-runtime" method="post" data-runtime-loading>
 	      <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
 	      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 	        <label class="block text-sm font-medium">Runtime Type
@@ -1304,7 +1317,7 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
 	      </div>
 	      {{ if RuntimeSetupRuntime != "binary" }}
 	      <div class="mt-4 flex justify-end">
-	        <button class="btn btn-primary" type="submit">Update Runtime Version</button>
+	        <button class="btn btn-primary" type="submit" data-loading-label="Updating...">Update Runtime Version</button>
 	      </div>
 	      {{ end }}
 	    </form>
@@ -1339,11 +1352,11 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
           {{ end }}
         </div>
         <div class="runtime-service-actions">
-          <form action="/apps/{{ LinkedApp.ID }}/actions/start" method="post"><input type="hidden" name="_csrf" value="{{ CSRFToken }}"><button class="btn btn-success text-xs" type="submit"><i data-lucide="play"></i><span>Start</span></button></form>
-          <form action="/apps/{{ LinkedApp.ID }}/actions/stop" method="post" data-confirm-message="Stop this service now?"><input type="hidden" name="_csrf" value="{{ CSRFToken }}"><button class="btn btn-danger text-xs" type="submit"><i data-lucide="square"></i><span>Stop</span></button></form>
-          <form action="/apps/{{ LinkedApp.ID }}/actions/restart" method="post"><input type="hidden" name="_csrf" value="{{ CSRFToken }}"><button class="btn text-xs" type="submit"><i data-lucide="refresh-cw"></i><span>Restart</span></button></form>
-          <form action="/apps/{{ LinkedApp.ID }}/actions/enable" method="post"><input type="hidden" name="_csrf" value="{{ CSRFToken }}"><button class="btn btn-primary text-xs" type="submit"><i data-lucide="power"></i><span>Enable</span></button></form>
-          <form action="/apps/{{ LinkedApp.ID }}/actions/disable" method="post" data-confirm-message="Disable autostart?"><input type="hidden" name="_csrf" value="{{ CSRFToken }}"><button class="btn btn-warning text-xs" type="submit"><i data-lucide="power-off"></i><span>Disable</span></button></form>
+          <form action="/apps/{{ LinkedApp.ID }}/actions/start" method="post" data-runtime-loading><input type="hidden" name="_csrf" value="{{ CSRFToken }}"><button class="btn btn-success text-xs" type="submit" data-loading-label="Starting..."><i data-lucide="play"></i><span>Start</span></button></form>
+          <form action="/apps/{{ LinkedApp.ID }}/actions/stop" method="post" data-confirm-message="Stop this service now?" data-runtime-loading><input type="hidden" name="_csrf" value="{{ CSRFToken }}"><button class="btn btn-danger text-xs" type="submit" data-loading-label="Stopping..."><i data-lucide="square"></i><span>Stop</span></button></form>
+          <form action="/apps/{{ LinkedApp.ID }}/actions/restart" method="post" data-runtime-loading><input type="hidden" name="_csrf" value="{{ CSRFToken }}"><button class="btn text-xs" type="submit" data-loading-label="Restarting..."><i data-lucide="refresh-cw"></i><span>Restart</span></button></form>
+          <form action="/apps/{{ LinkedApp.ID }}/actions/enable" method="post" data-runtime-loading><input type="hidden" name="_csrf" value="{{ CSRFToken }}"><button class="btn btn-primary text-xs" type="submit" data-loading-label="Enabling..."><i data-lucide="power"></i><span>Enable</span></button></form>
+          <form action="/apps/{{ LinkedApp.ID }}/actions/disable" method="post" data-confirm-message="Disable autostart?" data-runtime-loading><input type="hidden" name="_csrf" value="{{ CSRFToken }}"><button class="btn btn-warning text-xs" type="submit" data-loading-label="Disabling..."><i data-lucide="power-off"></i><span>Disable</span></button></form>
         </div>
       </div>
       <div class="runtime-service-command">
@@ -1438,7 +1451,7 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
 
     <!-- Editable Runtime Tuning -->
     <h4 class="text-sm font-medium mb-3">Tuning</h4>
-    <form id="runtime-settings-form" action="/apps/{{ LinkedApp.ID }}/manage/runtime-settings" method="post">
+    <form id="runtime-settings-form" action="/apps/{{ LinkedApp.ID }}/manage/runtime-settings" method="post" data-runtime-loading>
       <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 
@@ -1500,8 +1513,8 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
 
       </div>
       <div class="mt-4 flex flex-wrap justify-end gap-2">
-        <button class="btn btn-primary" type="submit" name="runtime_apply" value="reconfigure">Reconfigure Runtime</button>
-        <button class="btn" type="submit" name="runtime_apply" value="reset">Reset Runtime Process</button>
+        <button class="btn btn-primary" type="submit" name="runtime_apply" value="reconfigure" data-loading-label="Reconfiguring...">Reconfigure Runtime</button>
+        <button class="btn" type="submit" name="runtime_apply" value="reset" data-loading-label="Resetting...">Reset Runtime Process</button>
       </div>
     </form>
 
@@ -1512,9 +1525,9 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
           <h4 class="text-sm font-semibold ">Delete Runtime &amp; Service</h4>
           <p class="text-xs opacity-50 mt-1">Removes the linked runtime process, service unit, and runtime configuration. The platform itself is kept.</p>
         </div>
-        <form action="/websites/{{ Item.ID }}/manage/delete-app" method="post" data-confirm-message="Delete the linked runtime and service? The platform will remain but the process will be removed.">
+        <form action="/websites/{{ Item.ID }}/manage/delete-app" method="post" data-confirm-message="Delete the linked runtime and service? The platform will remain but the process will be removed." data-runtime-loading>
           <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
-          <button class="btn btn-danger text-xs" type="submit">Delete Runtime</button>
+          <button class="btn btn-danger text-xs" type="submit" data-loading-label="Deleting...">Delete Runtime</button>
         </form>
       </div>
     </div>
@@ -1529,7 +1542,7 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
         <p class="settings-section-copy">Attach a managed application runtime when this platform should proxy to Go, Node, Python, PHP, or another long-running process.</p>
       </div>
     </div>
-	    <form id="create-app-form" action="/websites/{{ Item.ID }}/manage/create-app" method="post">
+	    <form id="create-app-form" action="/websites/{{ Item.ID }}/manage/create-app" method="post" data-runtime-loading>
 	      <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
 	      {{ if RuntimeSetupLocked }}
 	      <input type="hidden" name="runtime_version" value="{{ Item.ShellRuntimeVersion }}">
@@ -1647,7 +1660,7 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
 
       </div>
       <div class="mt-4 flex justify-end">
-        <button class="btn btn-primary" type="submit">Create Runtime Configuration</button>
+        <button class="btn btn-primary" type="submit" data-loading-label="Creating...">Create Runtime Configuration</button>
       </div>
     </form>
   </div>
@@ -3060,6 +3073,19 @@ $(function () {
     }, function () {
       copyNotify(false, 'Could not copy');
     });
+  });
+  $(document).on('submit', 'form[data-runtime-loading]', function(e) {
+    if (e.isDefaultPrevented && e.isDefaultPrevented()) return;
+    var form = this;
+    var submitter = e.originalEvent && e.originalEvent.submitter ? e.originalEvent.submitter : $(form).find('button[type="submit"],input[type="submit"]').get(0);
+    var $btn = submitter ? $(submitter) : $();
+    $(form).find('input[data-runtime-submit-shadow]').remove();
+    if ($btn.length && $btn.attr('name')) {
+      $('<input>').attr({ type: 'hidden', name: $btn.attr('name'), value: $btn.val() || '', 'data-runtime-submit-shadow': '1' }).appendTo(form);
+    }
+    var label = $.trim(String(($btn.length ? $btn.data('loadingLabel') : '') || $(form).data('loadingLabel') || 'Working...'));
+    pageSetButtonLoading($btn, true, label);
+    $(form).find('button[type="submit"],input[type="submit"]').not($btn).prop('disabled', true);
   });
 
   // ── Custom File Manager + Monaco Editor ──
