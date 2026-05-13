@@ -77,11 +77,24 @@ Runtime behavior on live Linux:
 - runtime add/remove actions are real host operations
 - runtime removal is blocked if a platform is still using that version
 - changing the system-wide Python default is intentionally disabled because it can break Linux OS and desktop dependencies
-- per-platform runtime selection is applied through `<platform-root>/.deploycp/runtime.env`
+- per-platform runtime selection is applied through `<platform-home>/.deploycp/runtime.env`
 - site-user SSH and extra SSH users for the same platform read the same platform runtime env
+- Go, Node, Python, and Binary/Other platforms do not create an application service during initial platform creation; the service is created only from Runtime Setup after an app binary/script and port are chosen
+- platform runtime type is fixed after creation, while the runtime version can be changed later from platform settings
+- changing a platform runtime version updates the site-user SSH environment and, when a runtime service exists, rewrites/restarts the service configuration to use the selected version
+- Runtime Setup checks both DeployCP-managed port conflicts and live local port availability before saving
 - PHP websites use real host `php-fpm`; PHP CLI/runtime management is separate from PHP-FPM service management
 - if a PHP website shell still falls back to a managed PHP CLI version, DeployCP blocks removing that managed version
 - direct `systemd` runtime platforms are verified more strictly than `pm2`, `gunicorn`, and `uwsgi`, which remain best-effort verified from live process inspection
+
+Python runtime setup:
+
+- Python app services use a per-platform virtualenv at `<platform-home>/.deploycp/python-venv`
+- selecting `gunicorn` or `uwsgi` installs that process manager inside the per-platform virtualenv, not globally
+- if `htdocs/requirements.txt` exists, Runtime Setup installs those app dependencies into the same virtualenv
+- Python `systemd` mode also uses the per-platform virtualenv Python
+- changing the Python runtime version recreates only DeployCP's managed virtualenv, then reinstalls the selected process manager and `requirements.txt`
+- deleting or resetting the linked runtime removes the managed Python virtualenv without deleting files under `htdocs`
 
 ## Production Readiness and Security
 
@@ -176,6 +189,7 @@ Per-site layout:
 
 ```text
 /home/deploycp/platforms/sites/<domain>/
+├── .deploycp/                    # runtime env, app venvs, DeployCP-managed metadata
 ├── htdocs/                       # nginx web root
 └── logs/                         # per-site access/error logs
 ```
@@ -185,8 +199,33 @@ Important:
 - SSH user home points to `/home/deploycp/platforms/sites/<domain>`
 - file manager root points to `/home/deploycp/platforms/sites/<domain>`
 - nginx serves `/home/deploycp/platforms/sites/<domain>/htdocs`
+- runtime-backed linked app services run with `htdocs` as their working directory
 - the primary platform domain is treated as fixed after creation
 - platform settings only allow editing the subpath inside `htdocs`, not the full absolute root path
+
+Runtime-backed platform workflow:
+
+1. Create the platform and choose its runtime type/version.
+2. Upload or create the app files in `htdocs`.
+3. Use Runtime Setup to choose the process manager, entry point/binary, and local bind port.
+4. DeployCP writes the nginx proxy vhost and creates a named systemd service such as `deploycp-app-example-com.service`.
+5. Site users with SSH access can use scoped sudo for `start`, `stop`, `restart`, `status`, and `is-active` on that one service only.
+
+For Python Flask/uWSGI, a minimal `htdocs` layout is:
+
+```text
+htdocs/
+├── app.py
+└── requirements.txt
+```
+
+with `requirements.txt` containing at least:
+
+```text
+flask
+```
+
+Then choose `uwsgi`, entry point `app:app`, and the app's local port in Runtime Setup.
 
 ## Documentation
 

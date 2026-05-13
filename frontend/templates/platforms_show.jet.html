@@ -4098,22 +4098,22 @@ $(function () {
       var rt = $('#ca-runtime').val();
       var pm = $('#ca-pm').val() || 'systemd';
       var title, placeholder, hint;
-	      if (rt === 'go') {
-	        title = 'Binary Path';
-	        placeholder = '{{ Item.RootPath }}/app';
-	        hint = 'Build or upload the Go binary under htdocs, then point to it here';
-	      } else if (rt === 'binary') {
-	        title = 'Binary / Command Path';
-	        placeholder = '{{ Item.RootPath }}/app';
-	        hint = 'Absolute path to the compiled binary (required)';
+      if (rt === 'go') {
+        title = 'Binary Path';
+        placeholder = '{{ Item.RootPath }}/app';
+        hint = 'Build or upload the Go binary under htdocs, then point to it here';
+      } else if (rt === 'binary') {
+        title = 'Binary / Command Path';
+        placeholder = '{{ Item.RootPath }}/app';
+        hint = 'Absolute path to the compiled binary (required)';
       } else if (pm === 'gunicorn') {
-        title = 'Gunicorn Command'; placeholder = 'gunicorn'; hint = 'Leave blank to default to "gunicorn"';
+        title = 'Gunicorn Command'; placeholder = 'gunicorn'; hint = 'DeployCP creates a per-site venv and installs gunicorn there';
       } else if (pm === 'uwsgi') {
-        title = 'uWSGI Command'; placeholder = 'uwsgi'; hint = 'Leave blank to default to "uwsgi"';
+        title = 'uWSGI Command'; placeholder = 'uwsgi'; hint = 'DeployCP creates a per-site venv and installs uwsgi there';
       } else if (pm === 'pm2') {
         title = 'PM2 Command'; placeholder = 'pm2'; hint = 'Leave blank to default to "pm2"';
       } else if (rt === 'python') {
-        title = 'Python Interpreter'; placeholder = 'python3'; hint = 'Leave blank to default to "python3"';
+        title = 'Python Interpreter'; placeholder = 'python3'; hint = 'DeployCP creates a per-site venv; add requirements.txt for app packages';
       } else if (rt === 'node') {
         title = 'Node Binary'; placeholder = 'node'; hint = 'Leave blank to default to "node"';
       } else {

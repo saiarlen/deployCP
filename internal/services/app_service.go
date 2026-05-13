@@ -226,6 +226,13 @@ func (s *AppService) Delete(ctx context.Context, id uint, actor *uint, ip string
 			return err
 		}
 	}
+	if strings.EqualFold(strings.TrimSpace(app.Runtime), "python") {
+		if venvPath := pythonRuntimeVenvPathForApp(app); venvPath != "" {
+			if err := removeTreeSafe(venvPath, s.cfg.Paths.DefaultSiteRoot, s.cfg.Paths.StorageRoot); err != nil {
+				return err
+			}
+		}
+	}
 	for _, logPath := range []string{app.StdoutLogPath, app.StderrLogPath} {
 		if strings.TrimSpace(logPath) == "" {
 			continue
@@ -520,6 +527,9 @@ func (s *AppService) installService(ctx context.Context, app *models.GoApp, env 
 			app.BinaryPath = resolvedBinary
 		}
 	}
+	if err := s.preparePythonRuntime(ctx, app, env); err != nil {
+		return err
+	}
 	def := buildAppServiceDefinition(app, env)
 	unitPath, err := s.adapter.Services().Install(ctx, def)
 	if err != nil {
@@ -626,6 +636,152 @@ func (s *AppService) ensureServiceRuntimeStateDirs(app *models.GoApp) error {
 	return nil
 }
 
+func (s *AppService) preparePythonRuntime(ctx context.Context, app *models.GoApp, env map[string]string) error {
+	if app == nil || !strings.EqualFold(strings.TrimSpace(app.Runtime), "python") {
+		return nil
+	}
+	pm := normalizeProcessManager(app.ProcessManager)
+	if !pythonUsesManagedVenv(pm) {
+		return nil
+	}
+	venvPath := pythonRuntimeVenvPathForApp(app)
+	if venvPath == "" {
+		return fmt.Errorf("python runtime venv path could not be resolved")
+	}
+	workingDir := appServiceWorkingDir(app)
+	if workingDir == "" || workingDir == "." {
+		return fmt.Errorf("python runtime working directory could not be resolved")
+	}
+	if err := os.MkdirAll(filepath.Dir(venvPath), 0o775); err != nil {
+		return err
+	}
+	selectedVersion := strings.TrimSpace(env["RUNTIME_VERSION"])
+	if err := s.recreatePythonVenvWhenVersionChanged(venvPath, selectedVersion); err != nil {
+		return err
+	}
+	pythonBin := "python3"
+	if s.runtime != nil {
+		if resolved, err := s.runtime.ResolveBinary("python", env["RUNTIME_VERSION"], "python3"); err == nil && strings.TrimSpace(resolved) != "" {
+			pythonBin = resolved
+		}
+	}
+	venvPython := filepath.Join(venvPath, "bin", "python")
+	if st, err := os.Stat(venvPython); err != nil || st.IsDir() {
+		if err := runAppSetupCommand(ctx, pythonBin, []string{"-m", "venv", venvPath}, workingDir, env, 3*time.Minute); err != nil {
+			return fmt.Errorf("create python virtualenv: %w", err)
+		}
+	}
+	pmBinary := ""
+	switch pm {
+	case "gunicorn", "uwsgi":
+		pmBinary = filepath.Join(venvPath, "bin", pm)
+		if st, err := os.Stat(pmBinary); err != nil || st.IsDir() {
+			if err := runAppSetupCommand(ctx, venvPython, []string{"-m", "pip", "install", "--disable-pip-version-check", pm}, workingDir, env, 5*time.Minute); err != nil {
+				return fmt.Errorf("install python process manager %s: %w", pm, err)
+			}
+		}
+		app.BinaryPath = pmBinary
+	default:
+		app.BinaryPath = venvPython
+	}
+	requirementsPath := filepath.Join(workingDir, "requirements.txt")
+	if st, err := os.Stat(requirementsPath); err == nil && !st.IsDir() {
+		if err := runAppSetupCommand(ctx, venvPython, []string{"-m", "pip", "install", "--disable-pip-version-check", "-r", requirementsPath}, workingDir, env, 5*time.Minute); err != nil {
+			return fmt.Errorf("install python requirements: %w", err)
+		}
+	}
+	if err := writePythonVenvVersionMarker(venvPath, selectedVersion); err != nil {
+		return err
+	}
+	return s.chownPythonRuntimeVenv(ctx, app, venvPath)
+}
+
+func (s *AppService) recreatePythonVenvWhenVersionChanged(venvPath, selectedVersion string) error {
+	if strings.TrimSpace(venvPath) == "" {
+		return nil
+	}
+	venvPython := filepath.Join(venvPath, "bin", "python")
+	if st, err := os.Stat(venvPython); err != nil || st.IsDir() {
+		return nil
+	}
+	existingVersion, err := os.ReadFile(pythonVenvVersionMarkerPath(venvPath))
+	if err != nil {
+		if os.IsNotExist(err) {
+			if strings.TrimSpace(selectedVersion) == "" {
+				return nil
+			}
+			return removeTreeSafe(venvPath, s.cfg.Paths.DefaultSiteRoot, s.cfg.Paths.StorageRoot)
+		}
+		return err
+	}
+	if strings.TrimSpace(string(existingVersion)) == strings.TrimSpace(selectedVersion) {
+		return nil
+	}
+	return removeTreeSafe(venvPath, s.cfg.Paths.DefaultSiteRoot, s.cfg.Paths.StorageRoot)
+}
+
+func pythonVenvVersionMarkerPath(venvPath string) string {
+	return filepath.Join(venvPath, ".deploycp-runtime-version")
+}
+
+func writePythonVenvVersionMarker(venvPath, selectedVersion string) error {
+	if strings.TrimSpace(venvPath) == "" || strings.TrimSpace(selectedVersion) == "" {
+		return nil
+	}
+	return os.WriteFile(pythonVenvVersionMarkerPath(venvPath), []byte(strings.TrimSpace(selectedVersion)+"\n"), 0o664)
+}
+
+func pythonUsesManagedVenv(processManager string) bool {
+	switch normalizeProcessManager(processManager) {
+	case "systemd", "gunicorn", "uwsgi":
+		return true
+	default:
+		return false
+	}
+}
+
+func runAppSetupCommand(ctx context.Context, binary string, args []string, dir string, env map[string]string, timeout time.Duration) error {
+	cmdCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	cmd := exec.CommandContext(cmdCtx, binary, args...)
+	cmd.Dir = dir
+	cmd.Env = appSetupCommandEnv(env)
+	output, err := cmd.CombinedOutput()
+	if cmdCtx.Err() == context.DeadlineExceeded {
+		return fmt.Errorf("%s timed out", strings.Join(append([]string{binary}, args...), " "))
+	}
+	if err != nil {
+		return fmt.Errorf("%s: %w: %s", strings.Join(append([]string{binary}, args...), " "), err, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
+func appSetupCommandEnv(env map[string]string) []string {
+	out := os.Environ()
+	for key, value := range env {
+		if validEnvName(key) {
+			out = append(out, key+"="+value)
+		}
+	}
+	return out
+}
+
+func (s *AppService) chownPythonRuntimeVenv(ctx context.Context, app *models.GoApp, venvPath string) error {
+	if app == nil || app.WebsiteID == nil || s.websites == nil || strings.TrimSpace(venvPath) == "" {
+		return nil
+	}
+	site, err := s.websites.Find(*app.WebsiteID)
+	if err != nil {
+		return err
+	}
+	for _, user := range runtimeSudoerUsersForSite(site, s.websites.siteUsers) {
+		if user.IsActive && strings.TrimSpace(user.Username) != "" {
+			return s.adapter.Users().ChownRecursive(ctx, user.Username, venvPath)
+		}
+	}
+	return nil
+}
+
 func (s *AppService) validate(in AppInput) error {
 	if err := validators.Require(in.Name, "name"); err != nil {
 		return err
@@ -660,8 +816,15 @@ func (s *AppService) validate(in AppInput) error {
 		}
 	}
 	if s.cfg.Features.PlatformMode != "dryrun" {
-		if err := validateExecutablePath(in.BinaryPath); err != nil {
-			return err
+		if !pythonUsesManagedVenvForInput(in, pm) {
+			if err := validateExecutablePath(in.BinaryPath); err != nil {
+				return err
+			}
+		}
+		if pythonUsesManagedVenvForInput(in, pm) {
+			if _, err := validatePythonBootstrapCommand(in, s.runtime); err != nil {
+				return err
+			}
 		}
 	}
 	if in.ExecutionMode == "interpreted" {
@@ -696,6 +859,23 @@ func (s *AppService) validate(in AppInput) error {
 		return err
 	}
 	return nil
+}
+
+func pythonUsesManagedVenvForInput(in AppInput, pm string) bool {
+	return strings.EqualFold(strings.TrimSpace(in.Runtime), "python") && pythonUsesManagedVenv(pm)
+}
+
+func validatePythonBootstrapCommand(in AppInput, runtime *RuntimeService) (string, error) {
+	pythonBin := "python3"
+	if runtime != nil {
+		if resolved, err := runtime.ResolveBinary("python", strings.TrimSpace(in.Env["RUNTIME_VERSION"]), "python3"); err == nil && strings.TrimSpace(resolved) != "" {
+			pythonBin = resolved
+		}
+	}
+	if err := validateExecutablePath(pythonBin); err != nil {
+		return "", fmt.Errorf("python runtime bootstrap command is not available: %w", err)
+	}
+	return pythonBin, nil
 }
 
 func validateRuntimeServiceInput(in AppInput) error {
@@ -763,7 +943,7 @@ func (s *AppService) ensureRuntimeScaffold(app *models.GoApp) error {
 	if app == nil {
 		return nil
 	}
-	root := platformRuntimeRootForApp(app)
+	root := appServiceWorkingDir(app)
 	if root == "" || root == "." {
 		return nil
 	}
@@ -1191,7 +1371,7 @@ func buildAppServiceDefinition(app *models.GoApp, env map[string]string) platfor
 	base := platform.ServiceDefinition{
 		Name:          app.ServiceName,
 		Description:   "DeployCP app: " + app.Name,
-		WorkingDir:    platformRuntimeRootForApp(app),
+		WorkingDir:    appServiceWorkingDir(app),
 		Environment:   env,
 		RestartPolicy: app.RestartPolicy,
 		StdoutPath:    app.StdoutLogPath,

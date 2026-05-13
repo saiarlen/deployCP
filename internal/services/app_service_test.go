@@ -1,10 +1,13 @@
 package services
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"deploycp/internal/config"
+	"deploycp/internal/models"
 )
 
 func TestAppSystemdServiceNameUsesStableDomainSlug(t *testing.T) {
@@ -45,5 +48,43 @@ func TestSiteUserRuntimeSudoersContentAllowsOnlyRuntimeServiceActions(t *testing
 	}
 	if strings.Contains(content, " enable ") || strings.Contains(content, " disable ") {
 		t.Fatalf("sudoers content should not grant enable/disable:\n%s", content)
+	}
+}
+
+func TestLinkedAppServiceUsesHtdocsWorkingDirectory(t *testing.T) {
+	websiteID := uint(42)
+	app := &models.GoApp{
+		Name:             "example.com",
+		ServiceName:      "deploycp-app-example-com",
+		Runtime:          "python",
+		ProcessManager:   "uwsgi",
+		BinaryPath:       "/srv/example/.deploycp/python-venv/bin/uwsgi",
+		EntryPoint:       "app:app",
+		WorkingDirectory: "/srv/example/htdocs",
+		WebsiteID:        &websiteID,
+		Host:             "127.0.0.1",
+		Port:             5000,
+	}
+
+	def := buildAppServiceDefinition(app, map[string]string{})
+	if def.WorkingDir != "/srv/example/htdocs" {
+		t.Fatalf("WorkingDir = %q, want htdocs", def.WorkingDir)
+	}
+	if got := pythonRuntimeVenvPathForApp(app); got != "/srv/example/.deploycp/python-venv" {
+		t.Fatalf("python venv path = %q", got)
+	}
+}
+
+func TestPythonVenvVersionMarker(t *testing.T) {
+	dir := t.TempDir()
+	if err := writePythonVenvVersionMarker(dir, "3.12.4"); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(filepath.Join(dir, ".deploycp-runtime-version"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(content)) != "3.12.4" {
+		t.Fatalf("marker = %q", string(content))
 	}
 }

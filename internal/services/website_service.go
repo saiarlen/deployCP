@@ -1133,6 +1133,13 @@ func (s *WebsiteService) deleteLinkedAppRuntime(ctx context.Context, app *models
 			return err
 		}
 	}
+	if strings.EqualFold(strings.TrimSpace(app.Runtime), "python") {
+		if venvPath := pythonRuntimeVenvPathForApp(app); venvPath != "" {
+			if err := removeTreeSafe(venvPath, s.cfg.Paths.DefaultSiteRoot, s.cfg.Paths.StorageRoot); err != nil {
+				return err
+			}
+		}
+	}
 	for _, logPath := range []string{app.StdoutLogPath, app.StderrLogPath} {
 		if strings.TrimSpace(logPath) == "" {
 			continue

@@ -26,6 +26,25 @@ func platformRuntimeRootForApp(app *models.GoApp) string {
 	return filepath.Clean(root)
 }
 
+func appServiceWorkingDir(app *models.GoApp) string {
+	if app == nil {
+		return ""
+	}
+	root := strings.TrimSpace(app.WorkingDirectory)
+	if root == "" {
+		return platformRuntimeRootForApp(app)
+	}
+	return filepath.Clean(root)
+}
+
+func pythonRuntimeVenvPathForApp(app *models.GoApp) string {
+	root := platformRuntimeRootForApp(app)
+	if root == "" || root == "." {
+		return ""
+	}
+	return filepath.Join(root, ".deploycp", "python-venv")
+}
+
 func appEnvValue(envVars []models.AppEnvVar, key string) string {
 	key = strings.TrimSpace(key)
 	for _, item := range envVars {
