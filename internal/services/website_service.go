@@ -382,6 +382,9 @@ func (s *WebsiteService) Delete(ctx context.Context, id uint, actor *uint, ip st
 		if err := s.EnsureNginxUnknownHostReject(); err != nil {
 			return err
 		}
+		if err := s.cleanupDanglingNginxEnabledConfigs(); err != nil {
+			return err
+		}
 		if err := s.adapter.Nginx().Validate(ctx, s.cfg.Paths.NginxBinary); err != nil {
 			return err
 		}
@@ -770,6 +773,9 @@ func (s *WebsiteService) writeNginxConfig(ctx context.Context, site *models.Webs
 		BotBlocks:         botBlocks,
 		CloudflareEnabled: cloudflareEnabled,
 	})
+	if err := s.cleanupDanglingNginxEnabledConfigs(); err != nil {
+		return err
+	}
 	if err := s.removeStaleNginxDomainConfigs(site, cfg); err != nil {
 		return err
 	}
@@ -883,6 +889,50 @@ func (s *WebsiteService) removeStaleNginxDomainConfigs(site *models.Website, cur
 			}
 			return nil
 		}); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *WebsiteService) cleanupDanglingNginxEnabledConfigs() error {
+	dir := strings.TrimSpace(s.cfg.Paths.NginxEnabledDir)
+	if dir == "" {
+		return nil
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	for _, entry := range entries {
+		path := filepath.Join(dir, entry.Name())
+		info, err := os.Lstat(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return err
+		}
+		if info.Mode()&os.ModeSymlink == 0 {
+			continue
+		}
+		target, err := os.Readlink(path)
+		if err != nil {
+			return err
+		}
+		if !filepath.IsAbs(target) {
+			target = filepath.Join(dir, target)
+		}
+		if _, err := os.Stat(target); err != nil {
+			if os.IsNotExist(err) {
+				if removeErr := os.Remove(path); removeErr != nil && !os.IsNotExist(removeErr) {
+					return removeErr
+				}
+				continue
+			}
 			return err
 		}
 	}

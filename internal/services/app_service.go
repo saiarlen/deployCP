@@ -125,8 +125,12 @@ func (s *AppService) Create(ctx context.Context, in AppInput, actor *uint, ip st
 	if err := s.repo.Create(app, in.Env); err != nil {
 		return nil, err
 	}
+	rollbackCreate := func(cause error) (*models.GoApp, error) {
+		_ = s.rollbackFailedCreate(ctx, app)
+		return nil, cause
+	}
 	if err := s.ensureRuntimeScaffold(app); err != nil {
-		return nil, err
+		return rollbackCreate(err)
 	}
 	if s.runtime != nil {
 		_ = s.runtime.ApplyPlatformRuntime(platformRuntimeRootForApp(app), app.Runtime, in.Env["RUNTIME_VERSION"], actor, ip)
@@ -135,13 +139,58 @@ func (s *AppService) Create(ctx context.Context, in AppInput, actor *uint, ip st
 		_ = s.websites.SyncShellRuntime(*app.WebsiteID, app.Runtime, in.Env["RUNTIME_VERSION"])
 	}
 	if err := s.websites.ApplyAppProxy(ctx, app.WebsiteID, app.Host, app.Port, actor, ip); err != nil {
-		return nil, err
+		return rollbackCreate(err)
 	}
 	if err := s.installService(ctx, app, in.Env); err != nil {
-		return nil, err
+		return rollbackCreate(err)
 	}
 	s.audit.Record(actor, "app.create", "app", fmt.Sprintf("%d", app.ID), ip, in)
 	return app, nil
+}
+
+func (s *AppService) rollbackFailedCreate(ctx context.Context, app *models.GoApp) error {
+	if app == nil {
+		return nil
+	}
+	if app.WebsiteID == nil {
+		return s.Delete(ctx, app.ID, nil, "")
+	}
+	serviceName := strings.TrimSpace(app.ServiceName)
+	unitPath := ""
+	if serviceName != "" {
+		if managed, err := s.services.FindByName(serviceName); err == nil && managed != nil {
+			unitPath = managed.UnitPath
+		}
+		_ = s.adapter.Services().Stop(ctx, serviceName)
+		_ = s.adapter.Services().Disable(ctx, serviceName)
+		if s.websites != nil {
+			if site, err := s.websites.Find(*app.WebsiteID); err == nil {
+				for _, user := range runtimeSudoerUsersForSite(site, s.websites.siteUsers) {
+					_ = removeSiteUserRuntimeSudoers(s.cfg, user.Username, serviceName)
+				}
+			}
+		}
+		_ = s.services.DeleteByName(serviceName)
+		_ = removeServiceUnitFile(s.cfg, s.adapter.Name(), serviceName, unitPath)
+	}
+	if strings.EqualFold(strings.TrimSpace(app.Runtime), "python") {
+		if venvPath := pythonRuntimeVenvPathForApp(app); venvPath != "" {
+			_ = removeTreeSafe(venvPath, s.cfg.Paths.DefaultSiteRoot, s.cfg.Paths.StorageRoot)
+		}
+	}
+	for _, logPath := range []string{app.StdoutLogPath, app.StderrLogPath} {
+		if strings.TrimSpace(logPath) == "" {
+			continue
+		}
+		_ = removeTreeSafe(filepath.Dir(logPath), s.cfg.Paths.LogRoot, s.cfg.Paths.StorageRoot)
+	}
+	if err := s.repo.ClearRuntime(*app.WebsiteID); err != nil {
+		return err
+	}
+	if s.websites != nil {
+		_ = s.websites.RefreshConfig(ctx, *app.WebsiteID)
+	}
+	return nil
 }
 
 func (s *AppService) Update(ctx context.Context, id uint, in AppInput, actor *uint, ip string) error {

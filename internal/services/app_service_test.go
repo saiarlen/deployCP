@@ -88,3 +88,32 @@ func TestPythonVenvVersionMarker(t *testing.T) {
 		t.Fatalf("marker = %q", string(content))
 	}
 }
+
+func TestCleanupDanglingNginxEnabledConfigs(t *testing.T) {
+	enabledDir := t.TempDir()
+	availableDir := t.TempDir()
+	goodTarget := filepath.Join(availableDir, "good.conf")
+	if err := os.WriteFile(goodTarget, []byte("server {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	goodLink := filepath.Join(enabledDir, "good.conf")
+	if err := os.Symlink(goodTarget, goodLink); err != nil {
+		t.Fatal(err)
+	}
+	badLink := filepath.Join(enabledDir, "missing.conf")
+	if err := os.Symlink(filepath.Join(availableDir, "missing.conf"), badLink); err != nil {
+		t.Fatal(err)
+	}
+	svc := &WebsiteService{cfg: &config.Config{}}
+	svc.cfg.Paths.NginxEnabledDir = enabledDir
+
+	if err := svc.cleanupDanglingNginxEnabledConfigs(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(badLink); !os.IsNotExist(err) {
+		t.Fatalf("dangling nginx symlink still exists: %v", err)
+	}
+	if _, err := os.Lstat(goodLink); err != nil {
+		t.Fatalf("valid nginx symlink removed: %v", err)
+	}
+}
