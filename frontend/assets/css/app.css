@@ -1491,6 +1491,7 @@ body.light-theme .settings-tab-active { color: var(--primary-dark); }
 
 .runtime-service-main,
 .runtime-service-command,
+.runtime-venv-command,
 .runtime-health-strip,
 .runtime-detail-grid,
 .runtime-issue-list {
@@ -1572,6 +1573,26 @@ body.light-theme .settings-tab-active { color: var(--primary-dark); }
   flex-direction: column;
   gap: var(--space-3);
   padding: var(--space-4);
+}
+
+.runtime-venv-command {
+  display: grid;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+  padding: var(--space-4);
+}
+
+.runtime-venv-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.runtime-venv-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
 }
 
 .runtime-copy-row {
@@ -1672,7 +1693,8 @@ body.light-theme .settings-tab-active { color: var(--primary-dark); }
 @media (max-width: 900px) {
   .runtime-service-panel,
   .runtime-detail-grid,
-  .runtime-health-strip {
+  .runtime-health-strip,
+  .runtime-venv-grid {
     grid-template-columns: 1fr;
   }
 

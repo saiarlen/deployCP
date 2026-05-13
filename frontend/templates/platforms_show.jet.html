@@ -1403,6 +1403,39 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
       <div class="runtime-detail-row is-wide"><span>Working Directory</span><code>{{ LinkedAppWorkingDir }}</code></div>
     </div>
 
+    {{ if LinkedApp.Runtime == "python" }}
+    <div class="runtime-venv-command">
+      <div class="runtime-venv-head">
+        <div>
+          <h4 class="text-sm font-semibold">Python venv commands</h4>
+          <p class="text-xs opacity-60 mt-1">Run these from the platform SSH home.</p>
+        </div>
+      </div>
+      <div class="runtime-venv-grid">
+        <div class="runtime-copy-row">
+          <span class="runtime-copy-label">Activate</span>
+          <code>source .deploycp/python-venv/bin/activate</code>
+          <button type="button" class="platform-copy-action" data-copy-value="source .deploycp/python-venv/bin/activate" data-copy-success="Activate command copied">Copy</button>
+        </div>
+        <div class="runtime-copy-row">
+          <span class="runtime-copy-label">Install package</span>
+          <code>.deploycp/python-venv/bin/pip install package-name</code>
+          <button type="button" class="platform-copy-action" data-copy-value=".deploycp/python-venv/bin/pip install package-name" data-copy-success="pip command copied">Copy</button>
+        </div>
+        <div class="runtime-copy-row">
+          <span class="runtime-copy-label">Install requirements</span>
+          <code>.deploycp/python-venv/bin/pip install -r {{ LinkedAppWorkingDir }}/requirements.txt</code>
+          <button type="button" class="platform-copy-action" data-copy-value=".deploycp/python-venv/bin/pip install -r {{ LinkedAppWorkingDir }}/requirements.txt" data-copy-success="requirements command copied">Copy</button>
+        </div>
+        <div class="runtime-copy-row">
+          <span class="runtime-copy-label">Python version</span>
+          <code>.deploycp/python-venv/bin/python --version</code>
+          <button type="button" class="platform-copy-action" data-copy-value=".deploycp/python-venv/bin/python --version" data-copy-success="version command copied">Copy</button>
+        </div>
+      </div>
+    </div>
+    {{ end }}
+
     <!-- Editable Runtime Tuning -->
     <h4 class="text-sm font-medium mb-3">Tuning</h4>
     <form id="runtime-settings-form" action="/apps/{{ LinkedApp.ID }}/manage/runtime-settings" method="post">
