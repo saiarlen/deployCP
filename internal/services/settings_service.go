@@ -174,25 +174,6 @@ func (s *SettingsService) RuntimeVersions(runtime string) []string {
 func (s *SettingsService) PHPFPMVersions() []string {
 	seen := map[string]struct{}{}
 	out := make([]string, 0, 8)
-	if entries, err := os.ReadDir("/etc/php"); err == nil {
-		for _, entry := range entries {
-			if !entry.IsDir() {
-				continue
-			}
-			version := strings.TrimSpace(entry.Name())
-			if version == "" || !isValidRuntimeVersion("php", version) {
-				continue
-			}
-			if _, err := os.Stat(filepath.Join("/etc/php", version, "fpm")); err != nil {
-				continue
-			}
-			if _, ok := seen[version]; ok {
-				continue
-			}
-			seen[version] = struct{}{}
-			out = append(out, version)
-		}
-	}
 	for _, version := range s.detectRPMPHPFPMVersions() {
 		if _, ok := seen[version]; ok {
 			continue
@@ -848,19 +829,17 @@ func (s *SettingsService) detectAptPHPFPMVersions() []string {
 	if s.detectPackageManager() != "apt" {
 		return []string{}
 	}
-	out, err := exec.Command("dpkg-query", "-W", "-f=${Package}\n", "php*-fpm").Output()
+	out, err := exec.Command("dpkg-query", "-W", "-f=${binary:Package}\t${db:Status-Abbrev}\n", "php*-fpm").Output()
 	if err != nil {
 		return []string{}
 	}
 	seen := map[string]struct{}{}
 	versions := make([]string, 0, 6)
 	for _, line := range strings.Split(string(out), "\n") {
-		pkg := strings.TrimSpace(line)
-		matches := aptPHPPkgRe.FindStringSubmatch(pkg)
-		if len(matches) != 3 || matches[2] != "fpm" {
+		version := aptInstalledPHPFPMVersionFromDpkgLine(line)
+		if version == "" {
 			continue
 		}
-		version := matches[1]
 		if _, ok := seen[version]; ok {
 			continue
 		}
@@ -871,8 +850,35 @@ func (s *SettingsService) detectAptPHPFPMVersions() []string {
 	return versions
 }
 
+func aptInstalledPHPFPMVersionFromDpkgLine(line string) string {
+	fields := strings.Fields(strings.TrimSpace(line))
+	if len(fields) == 0 {
+		return ""
+	}
+	if len(fields) > 1 && !strings.HasPrefix(fields[1], "ii") {
+		return ""
+	}
+	return aptPHPFPMVersionFromPackage(fields[0])
+}
+
+func aptPHPFPMVersionFromPackage(pkg string) string {
+	pkg = stripArchSuffix(strings.TrimSpace(pkg))
+	matches := aptPHPPkgRe.FindStringSubmatch(pkg)
+	if len(matches) != 3 || matches[2] != "fpm" {
+		return ""
+	}
+	version := strings.TrimSpace(matches[1])
+	if version == "" || !isValidRuntimeVersion("php", version) {
+		return ""
+	}
+	return version
+}
+
 func stripArchSuffix(pkg string) string {
 	pkg = strings.TrimSpace(pkg)
+	if idx := strings.LastIndex(pkg, ":"); idx > 0 {
+		pkg = pkg[:idx]
+	}
 	for _, arch := range []string{".x86_64", ".aarch64", ".noarch", ".src", ".i686", ".ppc64le", ".s390x"} {
 		if strings.HasSuffix(pkg, arch) {
 			return strings.TrimSuffix(pkg, arch)

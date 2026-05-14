@@ -8,8 +8,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	goruntime "runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -49,6 +51,8 @@ type PhpSettingsData struct {
 	UploadMaxFilesize    string `json:"upload_max_filesize"`
 	AdditionalDirectives string `json:"additional_directives"`
 }
+
+var phpIniDirectiveNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]*$`)
 
 type WebsiteService struct {
 	cfg        *config.Config
@@ -501,6 +505,11 @@ func ParsePhpSettings(raw string) PhpSettingsData {
 	if raw != "" {
 		_ = json.Unmarshal([]byte(raw), &data)
 	}
+	data, _ = normalizePhpSettings(data)
+	return data
+}
+
+func normalizePhpSettings(data PhpSettingsData) (PhpSettingsData, error) {
 	if data.MemoryLimit == "" {
 		data.MemoryLimit = "256M"
 	}
@@ -519,7 +528,88 @@ func ParsePhpSettings(raw string) PhpSettingsData {
 	if data.UploadMaxFilesize == "" {
 		data.UploadMaxFilesize = "64M"
 	}
-	return data
+	var err error
+	if data.MemoryLimit, err = normalizePHPSizeSetting("memory_limit", data.MemoryLimit); err != nil {
+		return data, err
+	}
+	if data.PostMaxSize, err = normalizePHPSizeSetting("post_max_size", data.PostMaxSize); err != nil {
+		return data, err
+	}
+	if data.UploadMaxFilesize, err = normalizePHPSizeSetting("upload_max_filesize", data.UploadMaxFilesize); err != nil {
+		return data, err
+	}
+	if data.MaxExecutionTime, err = normalizePHPIntSetting("max_execution_time", data.MaxExecutionTime, 1, 3600); err != nil {
+		return data, err
+	}
+	if data.MaxInputTime, err = normalizePHPIntSetting("max_input_time", data.MaxInputTime, 1, 3600); err != nil {
+		return data, err
+	}
+	if data.MaxInputVars, err = normalizePHPIntSetting("max_input_vars", data.MaxInputVars, 1, 100000); err != nil {
+		return data, err
+	}
+	if data.AdditionalDirectives, err = normalizePHPAdditionalDirectives(data.AdditionalDirectives); err != nil {
+		return data, err
+	}
+	return data, nil
+}
+
+func normalizePHPSizeSetting(name, value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", fmt.Errorf("%s is required", name)
+	}
+	suffix := ""
+	last := value[len(value)-1]
+	if last == 'k' || last == 'K' || last == 'm' || last == 'M' || last == 'g' || last == 'G' {
+		suffix = strings.ToUpper(string(last))
+		value = strings.TrimSpace(value[:len(value)-1])
+	}
+	n, err := strconv.Atoi(value)
+	if err != nil || n <= 0 {
+		return "", fmt.Errorf("%s must be a positive size such as 128M", name)
+	}
+	return fmt.Sprintf("%d%s", n, suffix), nil
+}
+
+func normalizePHPIntSetting(name, value string, minValue, maxValue int) (string, error) {
+	value = strings.TrimSpace(value)
+	n, err := strconv.Atoi(value)
+	if err != nil || n < minValue || n > maxValue {
+		return "", fmt.Errorf("%s must be between %d and %d", name, minValue, maxValue)
+	}
+	return strconv.Itoa(n), nil
+}
+
+func normalizePHPAdditionalDirectives(raw string) (string, error) {
+	lines := strings.Split(strings.ReplaceAll(raw, "\r\n", "\n"), "\n")
+	out := make([]string, 0, len(lines))
+	for i, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if strings.ContainsRune(line, '\x00') {
+			return "", fmt.Errorf("additional PHP directive line %d contains an invalid character", i+1)
+		}
+		if strings.HasPrefix(line, ";") || strings.HasPrefix(line, "#") {
+			out = append(out, line)
+			continue
+		}
+		if strings.HasPrefix(line, "[") {
+			return "", fmt.Errorf("additional PHP directive line %d must be a key = value directive, not a section", i+1)
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			return "", fmt.Errorf("additional PHP directive line %d must use key = value format", i+1)
+		}
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+		if !phpIniDirectiveNamePattern.MatchString(key) {
+			return "", fmt.Errorf("additional PHP directive line %d has an invalid directive name", i+1)
+		}
+		out = append(out, key+" = "+value)
+	}
+	return strings.Join(out, "\n"), nil
 }
 
 func (s *WebsiteService) UpdateAppRuntime(id uint, runtime string) error {
@@ -578,13 +668,17 @@ func (s *WebsiteService) UpdateShellRuntime(ctx context.Context, id uint, runtim
 	return nil
 }
 
-func (s *WebsiteService) UpdatePhpSettings(id uint, phpVersion string, data PhpSettingsData) error {
+func (s *WebsiteService) UpdatePhpSettings(ctx context.Context, id uint, phpVersion string, data PhpSettingsData, actor *uint, ip string) error {
 	site, err := s.repo.Find(id)
 	if err != nil {
 		return err
 	}
+	data, err = normalizePhpSettings(data)
+	if err != nil {
+		return err
+	}
 	if phpVersion != "" {
-		if err := s.ensurePHPFPMVersion(context.Background(), "php", strings.TrimSpace(phpVersion), nil, ""); err != nil {
+		if err := s.ensurePHPFPMVersion(ctx, "php", strings.TrimSpace(phpVersion), actor, ip); err != nil {
 			return err
 		}
 		site.PHPVersion = phpVersion
@@ -598,7 +692,22 @@ func (s *WebsiteService) UpdatePhpSettings(id uint, phpVersion string, data PhpS
 	if err := s.repo.Update(site, domains); err != nil {
 		return err
 	}
-	return s.applyPlatformRuntime(site, nil, "")
+	if err := s.ensureWebsiteFilesystem(ctx, site); err != nil {
+		return err
+	}
+	if err := s.applyPlatformRuntime(site, actor, ip); err != nil {
+		return err
+	}
+	if err := s.writeNginxConfig(ctx, site); err != nil {
+		return err
+	}
+	if err := s.restartPHPFPMVersion(ctx, strings.TrimSpace(site.PHPVersion)); err != nil {
+		return err
+	}
+	s.audit.Record(actor, "website.php_settings.update", "website", fmt.Sprintf("%d", id), ip, map[string]any{
+		"php_version": strings.TrimSpace(site.PHPVersion),
+	})
+	return nil
 }
 
 func (s *WebsiteService) ensurePHPFPMVersion(ctx context.Context, siteType, version string, actor *uint, ip string) error {
@@ -624,6 +733,23 @@ func (s *WebsiteService) ensurePHPFPMVersion(ctx context.Context, siteType, vers
 	_ = s.adapter.Services().Enable(ctx, unitName)
 	_ = s.adapter.Services().Start(ctx, unitName)
 	return nil
+}
+
+func (s *WebsiteService) restartPHPFPMVersion(ctx context.Context, version string) error {
+	if s == nil || s.adapter == nil || s.cfg == nil || s.cfg.Features.PlatformMode == "dryrun" {
+		return nil
+	}
+	serviceVersion := phpFPMRuntimeVersion(version)
+	if serviceVersion == "" {
+		return nil
+	}
+	serviceName := "php" + serviceVersion + "-fpm"
+	if s.packages != nil {
+		if unitName := s.packages.ResolveServiceUnit(ctx, serviceName); strings.TrimSpace(unitName) != "" {
+			serviceName = unitName
+		}
+	}
+	return s.adapter.Services().Restart(ctx, serviceName)
 }
 
 func (s *WebsiteService) RefreshConfig(ctx context.Context, id uint) error {
@@ -673,6 +799,9 @@ func (s *WebsiteService) ensureWebsiteFilesystem(ctx context.Context, site *mode
 		}
 	}
 	if err := s.ensurePublicWebRoot(site.RootPath); err != nil {
+		return err
+	}
+	if err := s.syncPHPUserINI(site); err != nil {
 		return err
 	}
 	memberNames := map[string]struct{}{}
@@ -1138,6 +1267,57 @@ p{margin:0;color:#94a3b8;line-height:1.7}
 		}
 	}
 	return nil
+}
+
+func (s *WebsiteService) syncPHPUserINI(site *models.Website) error {
+	if site == nil || strings.TrimSpace(site.RootPath) == "" {
+		return nil
+	}
+	path := filepath.Join(site.RootPath, ".user.ini")
+	if !strings.EqualFold(strings.TrimSpace(site.Type), "php") {
+		return removeManagedPHPUserINI(path)
+	}
+	data := ParsePhpSettings(site.PhpSettings)
+	content := renderPHPUserINI(data)
+	if err := utils.WriteFileAtomic(path, []byte(content), 0o664); err != nil {
+		return fmt.Errorf("write PHP .user.ini: %w", err)
+	}
+	return nil
+}
+
+func removeManagedPHPUserINI(path string) error {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if !strings.HasPrefix(string(content), "; Managed by DeployCP") {
+		return nil
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+func renderPHPUserINI(data PhpSettingsData) string {
+	data, _ = normalizePhpSettings(data)
+	var b strings.Builder
+	b.WriteString("; Managed by DeployCP. Changes may be overwritten from the panel.\n")
+	b.WriteString("memory_limit = " + data.MemoryLimit + "\n")
+	b.WriteString("max_execution_time = " + data.MaxExecutionTime + "\n")
+	b.WriteString("max_input_time = " + data.MaxInputTime + "\n")
+	b.WriteString("max_input_vars = " + data.MaxInputVars + "\n")
+	b.WriteString("post_max_size = " + data.PostMaxSize + "\n")
+	b.WriteString("upload_max_filesize = " + data.UploadMaxFilesize + "\n")
+	if strings.TrimSpace(data.AdditionalDirectives) != "" {
+		b.WriteString("\n; Additional directives\n")
+		b.WriteString(strings.TrimSpace(data.AdditionalDirectives))
+		b.WriteString("\n")
+	}
+	return b.String()
 }
 
 func (s *WebsiteService) ensureBasicAuthFile(site *models.Website, auth *models.BasicAuth) (string, error) {

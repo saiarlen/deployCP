@@ -1821,9 +1821,11 @@ func (h *WebsiteHandler) ManageSavePhpSettings(c *fiber.Ctx) error {
 		UploadMaxFilesize:    c.FormValue("upload_max_filesize", "64M"),
 		AdditionalDirectives: c.FormValue("additional_directives", ""),
 	}
-	if err := h.service.UpdatePhpSettings(id, phpVersion, data); err != nil {
+	if err := h.service.UpdatePhpSettings(c.Context(), id, phpVersion, data, currentUserID(c), c.IP()); err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
 		return c.Redirect(platformURLWithTab("website", id, "settings"))
 	}
+	h.base.Sessions.SetFlash(c, "PHP settings updated and nginx reloaded")
 	return c.Redirect(platformURLWithTab("website", id, "settings"))
 }
 

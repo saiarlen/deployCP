@@ -1,0 +1,133 @@
+package services
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"deploycp/internal/config"
+	"deploycp/internal/models"
+	"deploycp/internal/platform/dryrun"
+	"deploycp/internal/repositories"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+)
+
+func TestUpdatePhpSettingsRewritesNginxSocket(t *testing.T) {
+	tmp := t.TempDir()
+	cfg := &config.Config{}
+	cfg.Features.PlatformMode = "dryrun"
+	cfg.Features.EnableNginxManage = true
+	cfg.Paths.NginxAvailableDir = filepath.Join(tmp, "sites-available")
+	cfg.Paths.NginxEnabledDir = filepath.Join(tmp, "sites-enabled")
+	cfg.Paths.NginxBinary = "/bin/echo"
+
+	db, err := gorm.Open(sqlite.Open(filepath.Join(tmp, "deploycp.sqlite")), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&models.Website{}, &models.WebsiteDomain{}, &models.NginxSiteConfig{}, &models.AuditLog{}, &models.ActivityLog{}); err != nil {
+		t.Fatalf("migrate db: %v", err)
+	}
+	repos := repositories.New(db)
+	audit := NewAuditService(repos.Audit, repos.Activity)
+	svc := NewWebsiteService(
+		cfg,
+		repos.Websites,
+		repos.NginxSites,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		dryrun.New(cfg),
+		audit,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	site := &models.Website{
+		Name:          "example.com",
+		RootPath:      filepath.Join(tmp, "sites", "example.com", "htdocs"),
+		Type:          "php",
+		PHPVersion:    "8.3",
+		AccessLogPath: filepath.Join(tmp, "sites", "example.com", "logs", "access.log"),
+		ErrorLogPath:  filepath.Join(tmp, "sites", "example.com", "logs", "error.log"),
+		Enabled:       true,
+	}
+	if err := repos.Websites.Create(site, []string{"example.com"}); err != nil {
+		t.Fatalf("create website: %v", err)
+	}
+	if err := svc.RefreshConfig(context.Background(), site.ID); err != nil {
+		t.Fatalf("refresh config: %v", err)
+	}
+	configPath := filepath.Join(cfg.Paths.NginxAvailableDir, "example.com.conf")
+	before, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read initial config: %v", err)
+	}
+	if !strings.Contains(string(before), "8.3-fpm.sock") {
+		t.Fatalf("initial config does not contain php8.3 socket:\n%s", before)
+	}
+
+	if err := svc.UpdatePhpSettings(context.Background(), site.ID, "8.4", PhpSettingsData{
+		MemoryLimit:          "512M",
+		MaxExecutionTime:     "120",
+		MaxInputTime:         "60",
+		MaxInputVars:         "5000",
+		PostMaxSize:          "128M",
+		UploadMaxFilesize:    "64M",
+		AdditionalDirectives: "display_errors = Off",
+	}, nil, ""); err != nil {
+		t.Fatalf("update php settings: %v", err)
+	}
+	after, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read updated config: %v", err)
+	}
+	if !strings.Contains(string(after), "8.4-fpm.sock") {
+		t.Fatalf("updated config does not contain php8.4 socket:\n%s", after)
+	}
+	if strings.Contains(string(after), "8.3-fpm.sock") {
+		t.Fatalf("updated config still contains old php8.3 socket:\n%s", after)
+	}
+	userINI, err := os.ReadFile(filepath.Join(site.RootPath, ".user.ini"))
+	if err != nil {
+		t.Fatalf("read .user.ini: %v", err)
+	}
+	userINIText := string(userINI)
+	for _, want := range []string{
+		"memory_limit = 512M",
+		"max_execution_time = 120",
+		"max_input_vars = 5000",
+		"post_max_size = 128M",
+		"upload_max_filesize = 64M",
+		"display_errors = Off",
+	} {
+		if !strings.Contains(userINIText, want) {
+			t.Fatalf(".user.ini missing %q:\n%s", want, userINIText)
+		}
+	}
+}
+
+func TestNormalizePHPAdditionalDirectivesRejectsInvalidLines(t *testing.T) {
+	if _, err := normalizePHPAdditionalDirectives("[bad]\ndisplay_errors = Off"); err == nil {
+		t.Fatalf("expected section syntax to be rejected")
+	}
+	if _, err := normalizePHPAdditionalDirectives("display_errors Off"); err == nil {
+		t.Fatalf("expected missing equals syntax to be rejected")
+	}
+}

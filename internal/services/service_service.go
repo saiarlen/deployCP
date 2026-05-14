@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -23,7 +21,6 @@ import (
 var (
 	serviceNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,179}$`)
 	serviceTypePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{1,39}$`)
-	phpVersionPattern  = regexp.MustCompile(`^[0-9]+(\.[0-9]+){0,2}$`)
 	serviceTagPattern  = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,31}$`)
 )
 
@@ -490,24 +487,12 @@ func (s *ServiceService) findByRef(ref string) (*models.ManagedService, error) {
 func (s *ServiceService) phpVersions() []string {
 	seen := map[string]struct{}{}
 	found := make([]string, 0, 6)
-	if entries, err := os.ReadDir("/etc/php"); err == nil {
-		for _, entry := range entries {
-			if !entry.IsDir() {
-				continue
-			}
-			v := strings.TrimSpace(entry.Name())
-			if v == "" || !phpVersionPattern.MatchString(v) {
-				continue
-			}
-			if _, err := os.Stat(filepath.Join("/etc/php", v, "fpm")); err != nil {
-				continue
-			}
-			if _, ok := seen[v]; ok {
-				continue
-			}
-			seen[v] = struct{}{}
-			found = append(found, v)
+	for _, v := range s.aptPHPFPMVersions() {
+		if _, ok := seen[v]; ok {
+			continue
 		}
+		seen[v] = struct{}{}
+		found = append(found, v)
 	}
 	for _, v := range s.rpmPHPFPMVersions() {
 		if _, ok := seen[v]; ok {
@@ -521,6 +506,31 @@ func (s *ServiceService) phpVersions() []string {
 		return found
 	}
 	return []string{}
+}
+
+func (s *ServiceService) aptPHPFPMVersions() []string {
+	if _, err := exec.LookPath("dpkg-query"); err != nil {
+		return []string{}
+	}
+	out, err := exec.Command("dpkg-query", "-W", "-f=${binary:Package}\t${db:Status-Abbrev}\n", "php*-fpm").Output()
+	if err != nil {
+		return []string{}
+	}
+	seen := map[string]struct{}{}
+	versions := make([]string, 0, 6)
+	for _, line := range strings.Split(string(out), "\n") {
+		version := aptInstalledPHPFPMVersionFromDpkgLine(line)
+		if version == "" {
+			continue
+		}
+		if _, ok := seen[version]; ok {
+			continue
+		}
+		seen[version] = struct{}{}
+		versions = append(versions, version)
+	}
+	sort.SliceStable(versions, func(i, j int) bool { return versions[i] > versions[j] })
+	return versions
 }
 
 func (s *ServiceService) rpmPHPFPMVersions() []string {

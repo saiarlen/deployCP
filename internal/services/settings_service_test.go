@@ -166,3 +166,38 @@ func TestFilterOutFullyInstalledPHPVersionsKeepsHostImportWithoutFPM(t *testing.
 		}
 	}
 }
+
+func TestAptPHPFPMVersionFromPackage(t *testing.T) {
+	cases := []struct {
+		pkg  string
+		want string
+	}{
+		{pkg: "php8.3-fpm", want: "8.3"},
+		{pkg: "php8.4-fpm:amd64", want: "8.4"},
+		{pkg: "php8.4-cli", want: ""},
+		{pkg: "php-fpm", want: ""},
+		{pkg: "nginx", want: ""},
+	}
+	for _, tc := range cases {
+		if got := aptPHPFPMVersionFromPackage(tc.pkg); got != tc.want {
+			t.Fatalf("aptPHPFPMVersionFromPackage(%q) = %q, want %q", tc.pkg, got, tc.want)
+		}
+	}
+}
+
+func TestAptInstalledPHPFPMVersionFromDpkgLine(t *testing.T) {
+	cases := []struct {
+		line string
+		want string
+	}{
+		{line: "php8.3-fpm ii", want: "8.3"},
+		{line: "php8.4-fpm:amd64 ii", want: "8.4"},
+		{line: "php8.4-fpm rc", want: ""},
+		{line: "php8.4-fpm deinstall", want: ""},
+	}
+	for _, tc := range cases {
+		if got := aptInstalledPHPFPMVersionFromDpkgLine(tc.line); got != tc.want {
+			t.Fatalf("aptInstalledPHPFPMVersionFromDpkgLine(%q) = %q, want %q", tc.line, got, tc.want)
+		}
+	}
+}

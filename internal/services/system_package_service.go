@@ -136,7 +136,11 @@ func (s *SystemPackageService) RemoveInstalled(ctx context.Context, serviceName 
 	if err == nil && !installed {
 		return nil
 	}
-	return s.removePackage(ctx, manager, pkg, actor, ip)
+	if err := s.removePackage(ctx, manager, pkg, actor, ip); err != nil {
+		return err
+	}
+	s.cleanupRemovedPackage(ctx, manager, pkg, actor, ip)
+	return nil
 }
 
 func (s *SystemPackageService) IsInstalled(ctx context.Context, serviceName string) bool {
@@ -260,6 +264,7 @@ func (s *SystemPackageService) RemovePHPCLIInstalled(ctx context.Context, versio
 		if err := s.removePackage(ctx, manager, pkg, actor, ip); err != nil {
 			return err
 		}
+		s.cleanupRemovedPackage(ctx, manager, pkg, actor, ip)
 	}
 	return nil
 }
@@ -487,7 +492,7 @@ func (s *SystemPackageService) removePackage(ctx context.Context, manager, pkg s
 	switch manager {
 	case "apt":
 		req.Binary = "apt-get"
-		req.Args = []string{"remove", "-y", pkg}
+		req.Args = []string{"purge", "-y", pkg}
 	case "dnf":
 		req.Binary = "dnf"
 		req.Args = []string{"remove", "-y", pkg}
@@ -505,6 +510,27 @@ func (s *SystemPackageService) removePackage(ctx context.Context, manager, pkg s
 	}
 	_, err := s.runner.Run(ctx, req)
 	return err
+}
+
+func (s *SystemPackageService) cleanupRemovedPackage(ctx context.Context, manager, pkg string, actor *uint, ip string) {
+	if s == nil || s.cfg == nil || s.runner == nil {
+		return
+	}
+	manager = strings.ToLower(strings.TrimSpace(manager))
+	pkg = strings.ToLower(strings.TrimSpace(pkg))
+	if manager != "apt" || !aptVersionedPHPPackage.MatchString(pkg) {
+		return
+	}
+	for _, args := range [][]string{{"daemon-reload"}, {"reset-failed"}} {
+		_, _ = s.runner.Run(ctx, system.CommandRequest{
+			Binary:      s.cfg.Paths.SystemctlBinary,
+			Args:        args,
+			Timeout:     30 * time.Second,
+			AuditAction: "systemd.cleanup_removed_package",
+			ActorUserID: actor,
+			IP:          ip,
+		})
+	}
 }
 
 func (s *SystemPackageService) reinstallPackage(ctx context.Context, manager, pkg string, actor *uint, ip string) error {
