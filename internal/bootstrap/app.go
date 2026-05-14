@@ -490,6 +490,7 @@ func (a *Application) registerRoutes() {
 	secured.Post("/settings/runtime-versions/:runtime/add", adminOnly, a.SettingsHandler.RuntimeVersionAdd)
 	secured.Post("/settings/runtime-versions/:runtime/remove", adminOnly, a.SettingsHandler.RuntimeVersionRemove)
 	secured.Post("/settings/runtime-versions/:runtime/default", adminOnly, a.SettingsHandler.RuntimeVersionDefault)
+	secured.Post("/settings/runtime-versions/php/repository", adminOnly, a.SettingsHandler.RuntimePHPRepositoryRefresh)
 	secured.Post("/settings/firewall", adminOnly, a.SettingsHandler.FirewallCreate)
 	secured.Post("/settings/firewall/:id", adminOnly, a.SettingsHandler.FirewallUpdate)
 	secured.Post("/settings/firewall/:id/delete", adminOnly, a.SettingsHandler.FirewallDelete)

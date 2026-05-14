@@ -75,7 +75,8 @@ Runtime behavior on live Linux:
 - host-imported runtime entries are marked as protected and cannot be removed from Runtime Version Management
 - fresh install attempts to install at least one real PHP-FPM version by default
 - runtime add/remove actions are real host operations
-- PHP runtime add choices are based on package-manager PHP-FPM availability, not only the managed remote PHP CLI catalog
+- PHP runtime add choices come from discovered package-manager PHP-FPM availability; a host-imported PHP CLI version remains selectable only when the matching FPM package is still missing
+- on Ubuntu, Settings provides a PHP repository refresh action that enables `ppa:ondrej/php` and updates apt metadata so additional PHP-FPM versions can be discovered before install
 - runtime removal is blocked if a platform is still using that version
 - changing the system-wide Python default is intentionally disabled because it can break Linux OS and desktop dependencies
 - per-platform runtime selection is applied through `<platform-home>/.deploycp/runtime.env`

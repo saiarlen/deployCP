@@ -200,6 +200,13 @@ func (s *SettingsService) PHPFPMVersions() []string {
 		seen[version] = struct{}{}
 		out = append(out, version)
 	}
+	for _, version := range s.detectAptPHPFPMVersions() {
+		if _, ok := seen[version]; ok {
+			continue
+		}
+		seen[version] = struct{}{}
+		out = append(out, version)
+	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i] > out[j] })
 	return out
 }
@@ -265,14 +272,7 @@ func (s *SettingsService) availableRuntimeVersions(runtime, profile string) []st
 		return filterOutInstalledVersions(s.configuredRuntimeVersions(runtime), installedSet)
 	}
 	if runtime == "php" {
-		switch s.detectPackageManager() {
-		case "apt":
-			return filterOutInstalledVersions(s.aptAvailableRuntimeVersions(runtime), installedSet)
-		case "dnf", "yum":
-			return filterOutInstalledVersions(s.rhelAvailableRuntimeVersions(runtime), installedSet)
-		default:
-			return []string{}
-		}
+		return filterOutFullyInstalledPHPVersions(s.phpInstallableRuntimeVersions(profile), s.installedRuntimeVersions(runtime), s.PHPFPMVersions())
 	}
 	if managed := s.managedAvailableRuntimeVersions(runtime, profile); len(managed) > 0 {
 		return filterOutInstalledVersions(managed, installedSet)
@@ -322,6 +322,17 @@ func (s *SettingsService) managedAvailableRuntimeVersions(runtime, profile strin
 		versions = append(versions, version)
 	}
 	return versions
+}
+
+func (s *SettingsService) phpInstallableRuntimeVersions(profile string) []string {
+	versions := []string{}
+	switch s.detectPackageManager() {
+	case "apt":
+		versions = appendUniqueStrings(versions, s.aptAvailableRuntimeVersions("php")...)
+	case "dnf", "yum":
+		versions = appendUniqueStrings(versions, s.rhelAvailableRuntimeVersions("php")...)
+	}
+	return sortRuntimeVersionsDesc(versions)
 }
 
 func (s *SettingsService) SyncInstalledRuntimeCatalogs() error {
@@ -829,6 +840,33 @@ func (s *SettingsService) detectRPMPHPFPMVersions() []string {
 	return versions
 }
 
+func (s *SettingsService) detectAptPHPFPMVersions() []string {
+	if s.detectPackageManager() != "apt" {
+		return []string{}
+	}
+	out, err := exec.Command("dpkg-query", "-W", "-f=${Package}\n", "php*-fpm").Output()
+	if err != nil {
+		return []string{}
+	}
+	seen := map[string]struct{}{}
+	versions := make([]string, 0, 6)
+	for _, line := range strings.Split(string(out), "\n") {
+		pkg := strings.TrimSpace(line)
+		matches := aptPHPPkgRe.FindStringSubmatch(pkg)
+		if len(matches) != 3 || matches[2] != "fpm" {
+			continue
+		}
+		version := matches[1]
+		if _, ok := seen[version]; ok {
+			continue
+		}
+		seen[version] = struct{}{}
+		versions = append(versions, version)
+	}
+	sort.SliceStable(versions, func(i, j int) bool { return versions[i] > versions[j] })
+	return versions
+}
+
 func stripArchSuffix(pkg string) string {
 	pkg = strings.TrimSpace(pkg)
 	for _, arch := range []string{".x86_64", ".aarch64", ".noarch", ".src", ".i686", ".ppc64le", ".s390x"} {
@@ -939,6 +977,40 @@ func filterOutInstalledVersions(items []string, installed map[string]struct{}) [
 			continue
 		}
 		out = append(out, item)
+	}
+	return out
+}
+
+func filterOutFullyInstalledPHPVersions(candidates, installedRuntime, installedFPM []string) []string {
+	runtimeSet := map[string]struct{}{}
+	for _, version := range installedRuntime {
+		if normalized := phpSystemPackageVersion(version); normalized != "" {
+			runtimeSet[normalized] = struct{}{}
+		}
+	}
+	fpmSet := map[string]struct{}{}
+	for _, version := range installedFPM {
+		if normalized := phpSystemPackageVersion(version); normalized != "" {
+			fpmSet[normalized] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(candidates))
+	seen := map[string]struct{}{}
+	for _, item := range candidates {
+		version := phpSystemPackageVersion(item)
+		if version == "" {
+			continue
+		}
+		if _, ok := seen[version]; ok {
+			continue
+		}
+		seen[version] = struct{}{}
+		_, runtimeInstalled := runtimeSet[version]
+		_, fpmInstalled := fpmSet[version]
+		if runtimeInstalled && fpmInstalled {
+			continue
+		}
+		out = append(out, version)
 	}
 	return out
 }

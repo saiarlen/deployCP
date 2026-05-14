@@ -641,6 +641,18 @@ func (h *SettingsHandler) RuntimeVersionDefault(c *fiber.Ctx) error {
 	return h.runtimeActionSuccess(c, fmt.Sprintf("%s default set to %s", strings.ToUpper(runtime), version), result)
 }
 
+func (h *SettingsHandler) RuntimePHPRepositoryRefresh(c *fiber.Ctx) error {
+	if h.runtimeService == nil {
+		return h.runtimeActionError(c, fmt.Errorf("runtime service not available"), services.RuntimeActionResult{})
+	}
+	result, err := h.runtimeService.RefreshPHPPackageRepository(c.Context(), currentUserID(c), c.IP())
+	if err != nil {
+		return h.runtimeActionError(c, err, result)
+	}
+	_ = h.service.SyncInstalledRuntimeCatalogs()
+	return h.runtimeActionSuccess(c, "PHP package repository refreshed", result)
+}
+
 func (h *SettingsHandler) runtimeActionError(c *fiber.Ctx, err error, result services.RuntimeActionResult) error {
 	if h.runtimeAsync(c) {
 		return c.Status(400).JSON(fiber.Map{

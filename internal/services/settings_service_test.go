@@ -149,3 +149,20 @@ func TestPHPFPMVersionChoicesOnlyUsesInstalledFPMOnLiveMode(t *testing.T) {
 		}
 	}
 }
+
+func TestFilterOutFullyInstalledPHPVersionsKeepsHostImportWithoutFPM(t *testing.T) {
+	candidates := []string{"8.3", "8.4", "8.5"}
+	installedRuntime := []string{"8.3", "8.4.2"}
+	installedFPM := []string{"8.4"}
+
+	got := filterOutFullyInstalledPHPVersions(candidates, installedRuntime, installedFPM)
+	want := []string{"8.3", "8.5"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+	}
+}

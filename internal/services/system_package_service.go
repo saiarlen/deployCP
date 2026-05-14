@@ -87,6 +87,14 @@ func (s *SystemPackageService) EnsureInstalled(ctx context.Context, serviceName 
 		}); err != nil {
 			return err
 		}
+		if aptVersionedPHPPackage.MatchString(pkg) {
+			available, _ := s.packageAvailable(ctx, manager, pkg)
+			if !available {
+				if err := s.ensureAptPHPRepository(ctx, actor, ip); err != nil {
+					return err
+				}
+			}
+		}
 		req.Binary = "apt-get"
 		req.Args = []string{"install", "-y", pkg}
 	case "dnf":
@@ -288,6 +296,98 @@ func (s *SystemPackageService) packageInstalled(ctx context.Context, manager, pk
 	}
 	_, err := s.runner.Run(ctx, req)
 	return err == nil, nil
+}
+
+func (s *SystemPackageService) packageAvailable(ctx context.Context, manager, pkg string) (bool, error) {
+	req := system.CommandRequest{Timeout: 30 * time.Second}
+	switch manager {
+	case "apt":
+		req.Binary = "apt-cache"
+		req.Args = []string{"show", pkg}
+	case "dnf":
+		req.Binary = "dnf"
+		req.Args = []string{"list", "--available", pkg}
+	case "yum":
+		req.Binary = "yum"
+		req.Args = []string{"list", "available", pkg}
+	case "zypper":
+		req.Binary = "zypper"
+		req.Args = []string{"--non-interactive", "search", "--match-exact", pkg}
+	case "pacman":
+		req.Binary = "pacman"
+		req.Args = []string{"-Si", pkg}
+	default:
+		return false, fmt.Errorf("unsupported package manager")
+	}
+	_, err := s.runner.Run(ctx, req)
+	return err == nil, nil
+}
+
+func (s *SystemPackageService) EnsurePHPPackageRepository(ctx context.Context, actor *uint, ip string) error {
+	if s == nil || s.cfg == nil || s.cfg.Features.PlatformMode == "dryrun" {
+		return nil
+	}
+	switch s.DetectManager() {
+	case "apt":
+		return s.ensureAptPHPRepository(ctx, actor, ip)
+	default:
+		return nil
+	}
+}
+
+func (s *SystemPackageService) ensureAptPHPRepository(ctx context.Context, actor *uint, ip string) error {
+	osInfo := readLinuxOSRelease()
+	if strings.ToLower(osInfo["ID"]) != "ubuntu" {
+		return nil
+	}
+	if _, err := s.runner.Run(ctx, system.CommandRequest{
+		Binary:      "apt-get",
+		Args:        []string{"install", "-y", "software-properties-common", "ca-certificates", "lsb-release", "gnupg"},
+		Timeout:     10 * time.Minute,
+		AuditAction: "package.install.php-repo-prereqs",
+		ActorUserID: actor,
+		IP:          ip,
+	}); err != nil {
+		return err
+	}
+	if _, err := s.runner.Run(ctx, system.CommandRequest{
+		Binary:      "add-apt-repository",
+		Args:        []string{"-y", "ppa:ondrej/php"},
+		Timeout:     10 * time.Minute,
+		AuditAction: "package.repo.php",
+		ActorUserID: actor,
+		IP:          ip,
+	}); err != nil {
+		return err
+	}
+	_, err := s.runner.Run(ctx, system.CommandRequest{
+		Binary:      "apt-get",
+		Args:        []string{"update", "-y"},
+		Timeout:     10 * time.Minute,
+		AuditAction: "package.install.update",
+		ActorUserID: actor,
+		IP:          ip,
+	})
+	return err
+}
+
+func readLinuxOSRelease() map[string]string {
+	data, err := os.ReadFile("/etc/os-release")
+	if err != nil {
+		return map[string]string{}
+	}
+	out := map[string]string{}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") || !strings.Contains(line, "=") {
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		key := strings.TrimSpace(parts[0])
+		value := strings.Trim(strings.TrimSpace(parts[1]), `"`)
+		out[key] = value
+	}
+	return out
 }
 
 func (s *SystemPackageService) installPackage(ctx context.Context, manager, pkg string, actor *uint, ip string) error {

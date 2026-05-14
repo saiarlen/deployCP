@@ -171,6 +171,20 @@ func (s *RuntimeService) removePHPRuntimePackages(ctx context.Context, version s
 	return packages.RemovePHPCLIInstalled(ctx, serviceVersion, actor, ip)
 }
 
+func (s *RuntimeService) RefreshPHPPackageRepository(ctx context.Context, actor *uint, ip string) (RuntimeActionResult, error) {
+	if s == nil || s.cfg == nil {
+		return RuntimeActionResult{}, fmt.Errorf("runtime service not available")
+	}
+	if s.cfg.Features.PlatformMode == "dryrun" {
+		return RuntimeActionResult{Stdout: "Dry run mode: PHP package repository refresh skipped."}, nil
+	}
+	packages := NewSystemPackageService(s.cfg, s.runner)
+	if err := packages.EnsurePHPPackageRepository(ctx, actor, ip); err != nil {
+		return RuntimeActionResult{}, err
+	}
+	return RuntimeActionResult{Stdout: "PHP package repository refreshed. Reload Settings to see discovered PHP-FPM versions."}, nil
+}
+
 func (s *RuntimeService) SetSystemDefaultVersion(ctx context.Context, runtime, version string, actor *uint, ip string) (RuntimeActionResult, error) {
 	runtime = strings.ToLower(strings.TrimSpace(runtime))
 	version = strings.TrimSpace(version)
