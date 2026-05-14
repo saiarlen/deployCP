@@ -342,6 +342,10 @@ func (s *RuntimeService) SystemDefaultVersion(runtime string) RuntimeDefaultStat
 	if err != nil {
 		return RuntimeDefaultStatus{Runtime: runtime}
 	}
+	resolvedBinary := binary
+	if resolved, err := filepath.EvalSymlinks(binary); err == nil && strings.TrimSpace(resolved) != "" {
+		resolvedBinary = resolved
+	}
 	version := detectRuntimeVersion(runtime, binary)
 	status := RuntimeDefaultStatus{
 		Runtime: runtime,
@@ -349,8 +353,11 @@ func (s *RuntimeService) SystemDefaultVersion(runtime string) RuntimeDefaultStat
 		Binary:  binary,
 	}
 	runtimeRoot := filepath.Clean(strings.TrimSpace(s.cfg.Paths.RuntimeRoot))
-	if runtimeRoot != "" && strings.HasPrefix(filepath.Clean(binary), runtimeRoot+string(filepath.Separator)) {
+	if runtimeRoot != "" && strings.HasPrefix(filepath.Clean(resolvedBinary), runtimeRoot+string(filepath.Separator)) {
 		status.Managed = true
+		if managedVersion := s.managedRuntimeVersionFromBinary(runtime, resolvedBinary); managedVersion != "" {
+			status.Version = managedVersion
+		}
 	}
 	return status
 }
@@ -363,6 +370,12 @@ func (s *RuntimeService) ImportSystemDefaultRuntime(runtime string) (string, err
 	}
 	if managed := s.runtimeManagedBinary(runtime, status.Version); managed != "" {
 		return status.Version, nil
+	}
+	if runtime == "php" {
+		canonical := phpFPMRuntimeVersion(status.Version)
+		if managed := s.runtimeManagedBinary(runtime, canonical); managed != "" {
+			return canonical, nil
+		}
 	}
 	return status.Version, s.importHostRuntimeBinary(runtime, status.Version, status.Binary)
 }
@@ -825,6 +838,28 @@ func (s *RuntimeService) runtimeManagedBinary(runtime, version string) string {
 		return candidate
 	}
 	return ""
+}
+
+func (s *RuntimeService) managedRuntimeVersionFromBinary(runtime, binary string) string {
+	runtime = strings.ToLower(strings.TrimSpace(runtime))
+	binary = filepath.Clean(strings.TrimSpace(binary))
+	root := filepath.Clean(strings.TrimSpace(s.cfg.Paths.RuntimeRoot))
+	if runtime == "" || binary == "" || root == "" {
+		return ""
+	}
+	rel, err := filepath.Rel(root, binary)
+	if err != nil || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." {
+		return ""
+	}
+	parts := strings.Split(rel, string(filepath.Separator))
+	if len(parts) < 4 || parts[0] != runtime || parts[2] != "bin" {
+		return ""
+	}
+	version := strings.TrimSpace(parts[1])
+	if !isValidRuntimeVersion(runtime, version) {
+		return ""
+	}
+	return version
 }
 
 func (s *RuntimeService) importPackageRuntimeBinary(runtime, version, binary string) error {

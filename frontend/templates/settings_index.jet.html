@@ -445,9 +445,9 @@
             {{ range _, v := GoRuntimeEntries }}
             <div class="runtime-version-chip">
               <span class="badge badge-neutral runtime-version-badge">{{ v.Version }}</span>
-              {{ if v.Imported }}<span class="badge badge-neutral runtime-version-state">host import</span>{{ end }}
+              {{ if GoRuntimeDefault.Version == v.Version }}<span class="badge badge-neutral runtime-version-state">{{ if GoRuntimeDefault.Managed }}deploycp default{{ else }}host default{{ end }}</span>{{ else if v.Imported }}<span class="badge badge-neutral runtime-version-state">host import</span>{{ end }}
               {{ if v.Verified }}<span class="badge badge-ok runtime-version-state">ready</span>{{ else }}<span class="badge badge-danger runtime-version-state">needs repair</span>{{ end }}
-              {{ if !v.Protected || !v.Verified }}
+              {{ if GoRuntimeDefault.Version != v.Version && (!v.Protected || !v.Verified) }}
               <form action="/settings/runtime-versions/go/remove" method="post" class="runtime-version-remove-form runtime-version-action-form" data-confirm-message="Remove {{ v.Version }} from Go versions? If any platform uses this version, removal will be blocked." data-runtime-action="remove" data-runtime-kind="go" data-runtime-version="{{ v.Version }}">
                 <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
                 <input type="hidden" name="version" value="{{ v.Version }}">
@@ -483,9 +483,9 @@
             {{ range _, v := NodeRuntimeEntries }}
             <div class="runtime-version-chip">
               <span class="badge badge-neutral runtime-version-badge">{{ v.Version }}</span>
-              {{ if v.Imported }}<span class="badge badge-neutral runtime-version-state">host import</span>{{ end }}
+              {{ if NodeRuntimeDefault.Version == v.Version }}<span class="badge badge-neutral runtime-version-state">{{ if NodeRuntimeDefault.Managed }}deploycp default{{ else }}host default{{ end }}</span>{{ else if v.Imported }}<span class="badge badge-neutral runtime-version-state">host import</span>{{ end }}
               {{ if v.Verified }}<span class="badge badge-ok runtime-version-state">ready</span>{{ else }}<span class="badge badge-danger runtime-version-state">needs repair</span>{{ end }}
-              {{ if !v.Protected || !v.Verified }}
+              {{ if NodeRuntimeDefault.Version != v.Version && (!v.Protected || !v.Verified) }}
               <form action="/settings/runtime-versions/node/remove" method="post" class="runtime-version-remove-form runtime-version-action-form" data-confirm-message="Remove {{ v.Version }} from Node versions? If any platform uses this version, removal will be blocked." data-runtime-action="remove" data-runtime-kind="node" data-runtime-version="{{ v.Version }}">
                 <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
                 <input type="hidden" name="version" value="{{ v.Version }}">
@@ -521,9 +521,9 @@
             {{ range _, v := PythonRuntimeEntries }}
             <div class="runtime-version-chip">
               <span class="badge badge-neutral runtime-version-badge">{{ v.Version }}</span>
-              {{ if v.Imported }}<span class="badge badge-neutral runtime-version-state">host import</span>{{ end }}
+              {{ if PythonRuntimeDefault.Version == v.Version }}<span class="badge badge-neutral runtime-version-state">{{ if PythonRuntimeDefault.Managed }}deploycp default{{ else }}host default{{ end }}</span>{{ else if v.Imported }}<span class="badge badge-neutral runtime-version-state">host import</span>{{ end }}
               {{ if v.Verified }}<span class="badge badge-ok runtime-version-state">ready</span>{{ else }}<span class="badge badge-danger runtime-version-state">needs repair</span>{{ end }}
-              {{ if !v.Protected || !v.Verified }}
+              {{ if PythonRuntimeDefault.Version != v.Version && (!v.Protected || !v.Verified) }}
               <form action="/settings/runtime-versions/python/remove" method="post" class="runtime-version-remove-form runtime-version-action-form" data-confirm-message="Remove {{ v.Version }} from Python versions? If any platform uses this version, removal will be blocked." data-runtime-action="remove" data-runtime-kind="python" data-runtime-version="{{ v.Version }}">
                 <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
                 <input type="hidden" name="version" value="{{ v.Version }}">
@@ -568,9 +568,9 @@
             {{ range _, v := PHPRuntimeEntries }}
             <div class="runtime-version-chip">
               <span class="badge badge-neutral runtime-version-badge">{{ v.Version }}</span>
-              {{ if v.Imported }}<span class="badge badge-neutral runtime-version-state">host import</span>{{ end }}
+              {{ if PHPRuntimeDefault.Version == v.Version }}<span class="badge badge-neutral runtime-version-state">host default</span>{{ else if v.Imported }}<span class="badge badge-neutral runtime-version-state">host import</span>{{ end }}
               {{ if v.Verified }}<span class="badge badge-ok runtime-version-state">ready</span>{{ else }}<span class="badge badge-danger runtime-version-state">needs repair</span>{{ end }}
-              {{ if !v.Protected || !v.Verified }}
+              {{ if PHPRuntimeDefault.Version != v.Version && (!v.Protected || !v.Verified) }}
               <form action="/settings/runtime-versions/php/remove" method="post" class="runtime-version-remove-form runtime-version-action-form" data-confirm-message="Remove {{ v.Version }} from PHP versions? If any platform uses this version, removal will be blocked." data-runtime-action="remove" data-runtime-kind="php" data-runtime-version="{{ v.Version }}">
                 <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
                 <input type="hidden" name="version" value="{{ v.Version }}">

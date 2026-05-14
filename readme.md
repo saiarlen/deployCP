@@ -90,6 +90,7 @@ Runtime behavior on live Linux:
 - Runtime Setup checks both DeployCP-managed port conflicts and live local port availability before saving
 - PHP websites use real host `php-fpm`; Settings runtime add/remove owns PHP-FPM package installation/removal for managed PHP versions
 - PHP runtime install is package-managed only: it installs/repairs PHP-FPM and PHP CLI packages, verifies FPM is active, and registers a CLI wrapper without compiling PHP from source
+- first install registers the bootstrap PHP runtime as a package-managed DeployCP runtime, not as a protected host import
 - PHP-FPM platform choices are limited to already installed FPM versions on live Linux; managed PHP CLI catalog entries and package-manager-available-but-not-installed versions are not enough to create a PHP website
 - PHP platform create/update never installs PHP-FPM implicitly; install the PHP version from Settings first, then select it on the platform
 - removing a managed PHP version removes the matching versioned FPM/CLI package when the OS package name is safe to remove, and skips shared generic packages such as `php-fpm`

@@ -301,28 +301,114 @@ install_db_ui_helper_packages() {
 }
 
 install_default_php_runtime() {
-  local helper=""
+  local manager=""
   local candidate=""
   local runtime_root="${CORE_DIR}/storage/runtimes"
-
-  for helper in "${CORE_DIR}/scripts/linux/runtime-manager.sh" "${PACKAGE_ROOT}/scripts/linux/runtime-manager.sh"; do
-    if [[ -x "$helper" ]]; then
-      break
-    fi
-    helper=""
-  done
-  if [[ -z "$helper" ]]; then
-    return 0
-  fi
+  manager="$(detect_pkg_manager)"
 
   mkdir -p "$runtime_root"
   for candidate in 8.4 8.3 8.2 8.1; do
-    if /bin/bash "$helper" install php "$candidate" "$runtime_root" >/dev/null 2>&1; then
+    if install_package_php_runtime "$manager" "$candidate" "$runtime_root"; then
       chown -R "${APP_USER}:${APP_USER}" "$runtime_root"
       return 0
     fi
   done
   return 0
+}
+
+install_package_php_runtime() {
+  local manager="$1"
+  local version="$2"
+  local runtime_root="$3"
+  local cli_pkg=""
+  local fpm_pkg=""
+  local fpm_unit=""
+  local php_bin=""
+  local version_dir="${runtime_root}/php/${version}"
+  local bin_dir="${version_dir}/bin"
+
+  case "$manager" in
+    apt)
+      cli_pkg="php${version}-cli"
+      fpm_pkg="php${version}-fpm"
+      fpm_unit="php${version}-fpm"
+      ;;
+    dnf|yum)
+      local digits="${version//./}"
+      if package_available "$manager" "php${digits}-php-cli" && package_available "$manager" "php${digits}-php-fpm"; then
+        cli_pkg="php${digits}-php-cli"
+        fpm_pkg="php${digits}-php-fpm"
+        fpm_unit="php${digits}-php-fpm"
+      else
+        return 1
+      fi
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+
+  package_available "$manager" "$cli_pkg" || return 1
+  package_available "$manager" "$fpm_pkg" || return 1
+  install_named_packages "$manager" "$cli_pkg" "$fpm_pkg" || return 1
+
+  php_bin="$(find_php_package_binary "$manager" "$version" "$cli_pkg")"
+  [[ -x "$php_bin" ]] || return 1
+
+  mkdir -p "$bin_dir"
+  cat >"${bin_dir}/php" <<EOF
+#!/bin/sh
+exec $(printf '%q' "$php_bin") "\$@"
+EOF
+  chmod 0755 "${bin_dir}/php"
+  cat >"${version_dir}/.deploycp-origin" <<EOF
+mode=package
+binary=${php_bin}
+runtime=php
+version=${version}
+EOF
+
+  if command -v systemctl >/dev/null 2>&1 && [[ -n "$fpm_unit" ]]; then
+    systemctl enable "$fpm_unit" >/dev/null 2>&1 || true
+    systemctl start "$fpm_unit" >/dev/null 2>&1 || true
+  fi
+  return 0
+}
+
+find_php_package_binary() {
+  local manager="$1"
+  local version="$2"
+  local cli_pkg="$3"
+  local candidate=""
+  for candidate in "php${version}" "php${version//./}" "/usr/bin/php${version}" "/usr/local/bin/php${version}" "/bin/php${version}"; do
+    if command -v "$candidate" >/dev/null 2>&1; then
+      command -v "$candidate"
+      return 0
+    fi
+    if [[ -x "$candidate" ]]; then
+      echo "$candidate"
+      return 0
+    fi
+  done
+  case "$manager" in
+    apt)
+      while IFS= read -r candidate; do
+        if [[ -x "$candidate" && "$(basename "$candidate")" == "php${version}" ]]; then
+          echo "$candidate"
+          return 0
+        fi
+      done < <(dpkg-query -L "$cli_pkg" 2>/dev/null || true)
+      ;;
+    dnf|yum)
+      while IFS= read -r candidate; do
+        if [[ -x "$candidate" && "$(basename "$candidate")" == "php" ]]; then
+          echo "$candidate"
+          return 0
+        fi
+      done < <(rpm -ql "$cli_pkg" 2>/dev/null || true)
+      ;;
+  esac
+  return 1
 }
 
 command_path() {
