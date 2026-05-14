@@ -224,20 +224,6 @@ func (s *SettingsService) PHPFPMVersionChoices() []string {
 			out = append(out, version)
 		}
 	}
-	var available []string
-	switch s.detectPackageManager() {
-	case "apt":
-		available = s.aptAvailableRuntimeVersions("php")
-	case "dnf", "yum":
-		available = s.rhelAvailableRuntimeVersions("php")
-	}
-	for _, version := range available {
-		if _, ok := seen[version]; ok {
-			continue
-		}
-		seen[version] = struct{}{}
-		out = append(out, version)
-	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i] > out[j] })
 	return out
 }
@@ -277,6 +263,16 @@ func (s *SettingsService) availableRuntimeVersions(runtime, profile string) []st
 	}
 	if strings.EqualFold(strings.TrimSpace(s.cfg.Features.PlatformMode), "dryrun") {
 		return filterOutInstalledVersions(s.configuredRuntimeVersions(runtime), installedSet)
+	}
+	if runtime == "php" {
+		switch s.detectPackageManager() {
+		case "apt":
+			return filterOutInstalledVersions(s.aptAvailableRuntimeVersions(runtime), installedSet)
+		case "dnf", "yum":
+			return filterOutInstalledVersions(s.rhelAvailableRuntimeVersions(runtime), installedSet)
+		default:
+			return []string{}
+		}
 	}
 	if managed := s.managedAvailableRuntimeVersions(runtime, profile); len(managed) > 0 {
 		return filterOutInstalledVersions(managed, installedSet)

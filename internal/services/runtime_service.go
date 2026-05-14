@@ -66,6 +66,11 @@ func (s *RuntimeService) InstallVersion(ctx context.Context, runtime, version st
 	if s.cfg.Features.PlatformMode == "dryrun" {
 		return RuntimeActionResult{}, s.ensureRuntimeBinDir(runtime, version)
 	}
+	if runtime == "php" {
+		if err := s.ensurePHPRuntimePackages(ctx, version, actor, ip); err != nil {
+			return RuntimeActionResult{}, err
+		}
+	}
 	result, err := s.runRuntimeAction(ctx, "install", runtime, version, 15*time.Minute, "runtime.install", actor, ip)
 	if err != nil {
 		_ = os.RemoveAll(s.runtimeVersionDir(runtime, version))
@@ -84,12 +89,86 @@ func (s *RuntimeService) RemoveVersion(ctx context.Context, runtime, version str
 	if s.cfg.Features.PlatformMode == "dryrun" {
 		return RuntimeActionResult{}, os.RemoveAll(s.runtimeVersionDir(runtime, version))
 	}
+	if runtime == "php" {
+		if err := s.removePHPRuntimePackages(ctx, version, actor, ip); err != nil {
+			return RuntimeActionResult{}, err
+		}
+	}
 	result, err := s.runRuntimeAction(ctx, "remove", runtime, version, 10*time.Minute, "runtime.remove", actor, ip)
 	if err != nil {
 		return result, err
 	}
 	s.audit.Record(actor, "runtime.remove", "runtime_version", runtime+":"+version, ip, nil)
 	return result, nil
+}
+
+func (s *RuntimeService) ensurePHPRuntimePackages(ctx context.Context, version string, actor *uint, ip string) error {
+	if s == nil || s.cfg == nil || s.cfg.Features.PlatformMode == "dryrun" {
+		return nil
+	}
+	serviceVersion := phpFPMRuntimeVersion(version)
+	serviceName := "php" + serviceVersion + "-fpm"
+	packages := NewSystemPackageService(s.cfg, s.runner)
+	if err := packages.EnsureInstalled(ctx, serviceName, actor, ip); err != nil {
+		return err
+	}
+	if err := packages.EnsurePHPCLIInstalled(ctx, serviceVersion, actor, ip); err != nil {
+		return err
+	}
+	unitName := packages.ResolveServiceUnit(ctx, serviceName)
+	if unitName == "" {
+		unitName = serviceName
+	}
+	_, _ = s.runner.Run(ctx, system.CommandRequest{
+		Binary:      s.cfg.Paths.SystemctlBinary,
+		Args:        []string{"enable", unitName},
+		Timeout:     30 * time.Second,
+		AuditAction: "service.enable",
+		ActorUserID: actor,
+		IP:          ip,
+	})
+	_, _ = s.runner.Run(ctx, system.CommandRequest{
+		Binary:      s.cfg.Paths.SystemctlBinary,
+		Args:        []string{"start", unitName},
+		Timeout:     30 * time.Second,
+		AuditAction: "service.start",
+		ActorUserID: actor,
+		IP:          ip,
+	})
+	return nil
+}
+
+func (s *RuntimeService) removePHPRuntimePackages(ctx context.Context, version string, actor *uint, ip string) error {
+	if s == nil || s.cfg == nil || s.cfg.Features.PlatformMode == "dryrun" {
+		return nil
+	}
+	serviceVersion := phpFPMRuntimeVersion(version)
+	serviceName := "php" + serviceVersion + "-fpm"
+	packages := NewSystemPackageService(s.cfg, s.runner)
+	unitName := packages.ResolveServiceUnit(ctx, serviceName)
+	if unitName == "" {
+		unitName = serviceName
+	}
+	_, _ = s.runner.Run(ctx, system.CommandRequest{
+		Binary:      s.cfg.Paths.SystemctlBinary,
+		Args:        []string{"stop", unitName},
+		Timeout:     30 * time.Second,
+		AuditAction: "service.stop",
+		ActorUserID: actor,
+		IP:          ip,
+	})
+	_, _ = s.runner.Run(ctx, system.CommandRequest{
+		Binary:      s.cfg.Paths.SystemctlBinary,
+		Args:        []string{"disable", unitName},
+		Timeout:     30 * time.Second,
+		AuditAction: "service.disable",
+		ActorUserID: actor,
+		IP:          ip,
+	})
+	if err := packages.RemoveInstalled(ctx, serviceName, actor, ip); err != nil {
+		return err
+	}
+	return packages.RemovePHPCLIInstalled(ctx, serviceVersion, actor, ip)
 }
 
 func (s *RuntimeService) SetSystemDefaultVersion(ctx context.Context, runtime, version string, actor *uint, ip string) (RuntimeActionResult, error) {

@@ -1164,6 +1164,24 @@ func (h *SettingsHandler) runtimeVersionUsage(runtime, version string) (int, []s
 	}
 
 	if rt == "php" && h.websiteService != nil {
+		websites, err := h.websiteService.List()
+		if err != nil {
+			return 0, nil, err
+		}
+		targetFPMVersion := phpFPMUsageVersion(ver)
+		for _, site := range websites {
+			if !strings.EqualFold(strings.TrimSpace(site.Type), "php") {
+				continue
+			}
+			if !strings.EqualFold(phpFPMUsageVersion(site.PHPVersion), targetFPMVersion) {
+				continue
+			}
+			name := strings.TrimSpace(site.Name)
+			if name == "" {
+				name = fmt.Sprintf("platform#%d", site.ID)
+			}
+			usage[name] = struct{}{}
+		}
 		items, err := h.websiteService.ManagedPHPShellFallbackUsage(ver)
 		if err != nil {
 			return 0, nil, err
@@ -1179,4 +1197,12 @@ func (h *SettingsHandler) runtimeVersionUsage(runtime, version string) (int, []s
 	}
 	sort.Strings(names)
 	return len(names), names, nil
+}
+
+func phpFPMUsageVersion(version string) string {
+	parts := strings.Split(strings.TrimSpace(version), ".")
+	if len(parts) >= 2 {
+		return parts[0] + "." + parts[1]
+	}
+	return strings.TrimSpace(version)
 }

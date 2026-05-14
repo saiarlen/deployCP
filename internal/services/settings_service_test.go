@@ -137,7 +137,7 @@ func TestProtectedRuntimeVersionCannotBeRemoved(t *testing.T) {
 	}
 }
 
-func TestPHPFPMVersionChoicesIgnoreConfiguredManagedPHPOnLiveMode(t *testing.T) {
+func TestPHPFPMVersionChoicesOnlyUsesInstalledFPMOnLiveMode(t *testing.T) {
 	service, repos := testSettingsService(t)
 	if err := repos.Settings.Set("php_versions", "99.9", false); err != nil {
 		t.Fatalf("seed php versions: %v", err)

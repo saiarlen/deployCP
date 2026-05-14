@@ -431,7 +431,7 @@
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 class="text-lg font-semibold">Runtime Version Management</h2>
-          <p class="text-sm opacity-70 mt-1">Installed versions are discovered from the host runtime root and validated through real runtime wrappers. Detected host defaults are auto-imported and protected. Add-version dropdowns prefer the managed remote runtime catalog, with package-manager fallback only when the managed backend is unavailable. PHP here refers to managed PHP CLI runtimes, not host PHP-FPM website services.</p>
+          <p class="text-sm opacity-70 mt-1">Installed versions are discovered from the host runtime root and validated through real runtime wrappers. Detected host defaults are auto-imported and protected. Add-version dropdowns prefer the managed remote runtime catalog, with package-manager fallback only when the managed backend is unavailable. PHP add/remove uses package-manager PHP-FPM availability and manages the matching host PHP-FPM and CLI packages used by PHP websites.</p>
         </div>
         <label class="inline-flex items-center gap-2 text-sm font-medium">
           <input type="checkbox" id="runtime-show-older-toggle">

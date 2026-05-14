@@ -75,6 +75,7 @@ Runtime behavior on live Linux:
 - host-imported runtime entries are marked as protected and cannot be removed from Runtime Version Management
 - fresh install attempts to install at least one real PHP-FPM version by default
 - runtime add/remove actions are real host operations
+- PHP runtime add choices are based on package-manager PHP-FPM availability, not only the managed remote PHP CLI catalog
 - runtime removal is blocked if a platform is still using that version
 - changing the system-wide Python default is intentionally disabled because it can break Linux OS and desktop dependencies
 - per-platform runtime selection is applied through `<platform-home>/.deploycp/runtime.env`
@@ -86,8 +87,10 @@ Runtime behavior on live Linux:
 - deleting a linked runtime stops/disables/removes the service and unit, removes scoped sudoers and app logs, removes DeployCP-managed Python/Node runtime metadata, clears proxy/runtime fields, and refreshes nginx back to static `htdocs` serving
 - platform/user/FTP/database create flows roll back external resources when the panel database step fails, so failed creates should not leave orphan Linux users, FTP users, managed DB users, or partial platform rows
 - Runtime Setup checks both DeployCP-managed port conflicts and live local port availability before saving
-- PHP websites use real host `php-fpm`; PHP CLI/runtime management is separate from PHP-FPM service management
-- PHP-FPM platform choices are limited to installed or package-manager-available FPM versions on live Linux; managed PHP CLI catalog entries are not enough to create a PHP website
+- PHP websites use real host `php-fpm`; Settings runtime add/remove owns PHP-FPM package installation/removal for managed PHP versions
+- PHP-FPM platform choices are limited to already installed FPM versions on live Linux; managed PHP CLI catalog entries and package-manager-available-but-not-installed versions are not enough to create a PHP website
+- PHP platform create/update never installs PHP-FPM implicitly; install the PHP version from Settings first, then select it on the platform
+- removing a managed PHP version removes the matching versioned FPM/CLI package when the OS package name is safe to remove, and skips shared generic packages such as `php-fpm`
 - if a PHP website shell still falls back to a managed PHP CLI version, DeployCP blocks removing that managed version
 - direct `systemd` runtime platforms are verified more strictly than `pm2`, `gunicorn`, and `uwsgi`, which remain best-effort verified from live process inspection
 

@@ -615,11 +615,8 @@ func (s *WebsiteService) ensurePHPFPMVersion(ctx context.Context, siteType, vers
 	serviceVersion := phpFPMRuntimeVersion(version)
 	serviceName := "php" + serviceVersion + "-fpm"
 	if !s.packages.IsInstalled(ctx, serviceName) {
-		if err := s.packages.EnsureInstalled(ctx, serviceName, actor, ip); err != nil {
-			return err
-		}
+		return fmt.Errorf("PHP-FPM %s is not installed. Install PHP %s from Settings before creating or updating this PHP platform", serviceVersion, serviceVersion)
 	}
-	_ = s.packages.EnsurePHPCLIInstalled(ctx, serviceVersion, actor, ip)
 	unitName := s.packages.ResolveServiceUnit(ctx, serviceName)
 	if unitName == "" {
 		unitName = serviceName

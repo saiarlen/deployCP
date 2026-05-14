@@ -108,6 +108,29 @@ func (s *SystemPackageService) EnsureInstalled(ctx context.Context, serviceName 
 	return err
 }
 
+func (s *SystemPackageService) RemoveInstalled(ctx context.Context, serviceName string, actor *uint, ip string) error {
+	if s == nil || s.cfg == nil || s.cfg.Features.PlatformMode == "dryrun" {
+		return nil
+	}
+	spec, ok := s.serviceSpec(serviceName)
+	if !ok {
+		return nil
+	}
+	manager := s.DetectManager()
+	if manager == "" {
+		return fmt.Errorf("no supported linux package manager found")
+	}
+	pkg := spec.packageFor(manager)
+	if pkg == "" || !safePackageRemoval(manager, pkg) {
+		return nil
+	}
+	installed, err := s.packageInstalled(ctx, manager, pkg)
+	if err == nil && !installed {
+		return nil
+	}
+	return s.removePackage(ctx, manager, pkg, actor, ip)
+}
+
 func (s *SystemPackageService) IsInstalled(ctx context.Context, serviceName string) bool {
 	if s == nil || s.cfg == nil || s.cfg.Features.PlatformMode == "dryrun" {
 		return true
@@ -157,6 +180,33 @@ func (s *SystemPackageService) EnsurePHPCLIInstalled(ctx context.Context, versio
 		}
 	}
 	return fmt.Errorf("unable to install PHP CLI %s", version)
+}
+
+func (s *SystemPackageService) RemovePHPCLIInstalled(ctx context.Context, version string, actor *uint, ip string) error {
+	if s == nil || s.cfg == nil || s.cfg.Features.PlatformMode == "dryrun" {
+		return nil
+	}
+	version = strings.TrimSpace(version)
+	if version == "" {
+		return nil
+	}
+	manager := s.DetectManager()
+	if manager == "" {
+		return fmt.Errorf("no supported linux package manager found")
+	}
+	for _, pkg := range phpCLIPackagesForManager(manager, version) {
+		if pkg == "" || !safePackageRemoval(manager, pkg) {
+			continue
+		}
+		installed, err := s.packageInstalled(ctx, manager, pkg)
+		if err == nil && !installed {
+			continue
+		}
+		if err := s.removePackage(ctx, manager, pkg, actor, ip); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *SystemPackageService) ResolveServiceUnit(ctx context.Context, serviceName string) string {
@@ -280,6 +330,36 @@ func (s *SystemPackageService) installPackage(ctx context.Context, manager, pkg 
 	return err
 }
 
+func (s *SystemPackageService) removePackage(ctx context.Context, manager, pkg string, actor *uint, ip string) error {
+	req := system.CommandRequest{
+		Timeout:     10 * time.Minute,
+		AuditAction: "package.remove",
+		ActorUserID: actor,
+		IP:          ip,
+	}
+	switch manager {
+	case "apt":
+		req.Binary = "apt-get"
+		req.Args = []string{"remove", "-y", pkg}
+	case "dnf":
+		req.Binary = "dnf"
+		req.Args = []string{"remove", "-y", pkg}
+	case "yum":
+		req.Binary = "yum"
+		req.Args = []string{"remove", "-y", pkg}
+	case "zypper":
+		req.Binary = "zypper"
+		req.Args = []string{"--non-interactive", "remove", pkg}
+	case "pacman":
+		req.Binary = "pacman"
+		req.Args = []string{"-Rns", "--noconfirm", pkg}
+	default:
+		return fmt.Errorf("unsupported package manager")
+	}
+	_, err := s.runner.Run(ctx, req)
+	return err
+}
+
 type servicePackageSpec struct {
 	basePackages map[string]string
 	baseUnits    map[string][]string
@@ -330,7 +410,24 @@ func phpSystemPackageVersion(version string) string {
 	return strings.TrimSpace(version)
 }
 
-var phpFPMServicePattern = regexp.MustCompile(`^php([0-9]+(?:\.[0-9]+){1,2})-fpm$`)
+var (
+	phpFPMServicePattern   = regexp.MustCompile(`^php([0-9]+(?:\.[0-9]+){1,2})-fpm$`)
+	aptVersionedPHPPackage = regexp.MustCompile(`^php[0-9]+\.[0-9]+-(?:cli|fpm)$`)
+	rpmVersionedPHPPackage = regexp.MustCompile(`^php[0-9]+-php-(?:cli|fpm)$`)
+)
+
+func safePackageRemoval(manager, pkg string) bool {
+	manager = strings.ToLower(strings.TrimSpace(manager))
+	pkg = strings.ToLower(strings.TrimSpace(pkg))
+	switch manager {
+	case "apt":
+		return aptVersionedPHPPackage.MatchString(pkg)
+	case "dnf", "yum":
+		return rpmVersionedPHPPackage.MatchString(pkg)
+	default:
+		return false
+	}
+}
 
 func (s *SystemPackageService) serviceSpec(serviceName string) (servicePackageSpec, bool) {
 	name := strings.ToLower(strings.TrimSpace(serviceName))
