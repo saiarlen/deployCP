@@ -283,18 +283,25 @@ func (s *WebsiteService) Create(ctx context.Context, in WebsiteInput, actor *uin
 	if err := s.repo.Create(site, in.Domains); err != nil {
 		return nil, err
 	}
+	rollbackCreate := func(cause error) (*models.Website, error) {
+		_ = s.repo.Delete(site.ID)
+		if strings.TrimSpace(platformHome) != "" {
+			_ = removeTreeSafe(platformHome, s.cfg.Paths.DefaultSiteRoot, s.cfg.Paths.StorageRoot)
+		}
+		return nil, cause
+	}
 	// Re-fetch so Domains association is loaded for nginx config generation.
 	if created, err := s.repo.Find(site.ID); err == nil {
 		site = created
 	}
 	if err := s.ensureWebsiteFilesystem(ctx, site); err != nil {
-		return nil, err
+		return rollbackCreate(err)
 	}
 	if err := s.applyPlatformRuntime(site, actor, ip); err != nil {
-		return nil, err
+		return rollbackCreate(err)
 	}
 	if err := s.writeNginxConfig(ctx, site); err != nil {
-		return nil, err
+		return rollbackCreate(err)
 	}
 	s.audit.Record(actor, "website.create", "website", fmt.Sprintf("%d", site.ID), ip, in)
 	return site, nil

@@ -73,6 +73,16 @@ func (s *FTPService) Create(ctx context.Context, item *models.FTPUser, actor *ui
 		}
 	}
 	if err := s.repo.Create(item); err != nil {
+		if s.cfg.Features.PlatformMode != "dryrun" {
+			_, _ = s.runner.Run(ctx, system.CommandRequest{
+				Binary:      "/usr/sbin/userdel",
+				Args:        []string{item.Username},
+				Timeout:     20 * time.Second,
+				AuditAction: "ftp.user.rollback",
+				ActorUserID: actor,
+				IP:          ip,
+			})
+		}
 		return err
 	}
 	s.audit.Record(actor, "ftp_user.create", "ftp_user", fmt.Sprintf("%d", item.ID), ip, map[string]any{"username": item.Username, "website_id": item.WebsiteID})

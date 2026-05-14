@@ -97,6 +97,7 @@ func (s *SiteUserService) Create(ctx context.Context, in SiteUserInput, actor *u
 		WebsiteID:        in.WebsiteID,
 	}
 	if err := s.repo.Create(model); err != nil {
+		_ = s.adapter.Users().Delete(ctx, in.Username)
 		return nil, "", err
 	}
 	s.audit.Record(actor, "site_user.create", "site_user", fmt.Sprintf("%d", model.ID), ip, map[string]any{"username": in.Username, "allowed_root": in.AllowedRoot})

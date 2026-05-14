@@ -177,25 +177,6 @@ func (h *AppHandler) SitesAppsCreate(c *fiber.Ctx) error {
 		if root == "" {
 			root = strings.TrimSuffix(h.base.Config.Paths.DefaultSiteRoot, "/") + "/" + strings.ReplaceAll(domain, "*.", "wildcard-") + "/htdocs"
 		}
-		var siteUserID *uint
-		if siteUsername != "" {
-			platformHome := platformHomeFromRoot(root)
-			user, generatedPassword, err := h.siteUserService.Create(c.Context(), services.SiteUserInput{
-				Username:      siteUsername,
-				HomeDirectory: platformHome,
-				AllowedRoot:   platformHome,
-				Password:      sitePassword,
-				SSHEnabled:    true,
-			}, currentUserID(c), c.IP())
-			if err != nil {
-				h.base.Sessions.SetFlash(c, err.Error())
-				return c.Redirect("/platforms/new")
-			}
-			siteUserID = &user.ID
-			if strings.TrimSpace(sitePassword) == "" {
-				h.base.Sessions.SetFlash(c, "Site user created. Generated password: "+generatedPassword)
-			}
-		}
 		in := services.WebsiteInput{
 			Name:                 name,
 			RootPath:             root,
@@ -204,7 +185,6 @@ func (h *AppHandler) SitesAppsCreate(c *fiber.Ctx) error {
 			Domains:              []string{domain},
 			CustomDirectives:     "",
 			MaintenanceBypassIPs: "",
-			SiteUserID:           siteUserID,
 			Enabled:              true,
 		}
 		if kind == "php" {
@@ -221,12 +201,42 @@ func (h *AppHandler) SitesAppsCreate(c *fiber.Ctx) error {
 				return c.Redirect("/platforms/new")
 			}
 		}
+		var siteUserID *uint
+		var createdSiteUserID uint
+		var generatedPassword string
+		if siteUsername != "" {
+			platformHome := platformHomeFromRoot(root)
+			user, password, err := h.siteUserService.Create(c.Context(), services.SiteUserInput{
+				Username:      siteUsername,
+				HomeDirectory: platformHome,
+				AllowedRoot:   platformHome,
+				Password:      sitePassword,
+				SSHEnabled:    true,
+			}, currentUserID(c), c.IP())
+			if err != nil {
+				h.base.Sessions.SetFlash(c, err.Error())
+				return c.Redirect("/platforms/new")
+			}
+			siteUserID = &user.ID
+			createdSiteUserID = user.ID
+			if strings.TrimSpace(sitePassword) == "" {
+				generatedPassword = password
+			}
+			in.SiteUserID = siteUserID
+		}
 		site, err := h.websiteService.Create(c.Context(), in, currentUserID(c), c.IP())
 		if err != nil {
+			if createdSiteUserID != 0 {
+				_ = h.siteUserService.Delete(c.Context(), createdSiteUserID, currentUserID(c), c.IP())
+			}
 			h.base.Sessions.SetFlash(c, err.Error())
 			return c.Redirect("/platforms/new")
 		}
-		h.base.Sessions.SetFlash(c, "Platform created")
+		if generatedPassword != "" {
+			h.base.Sessions.SetFlash(c, "Platform created. SSH user password: "+generatedPassword)
+		} else {
+			h.base.Sessions.SetFlash(c, "Platform created")
+		}
 		return c.Redirect(platformURL("website", site.ID))
 	case "go", "python", "node", "binary":
 		runtimeVersion := strings.TrimSpace(c.FormValue("runtime_version"))
@@ -240,9 +250,11 @@ func (h *AppHandler) SitesAppsCreate(c *fiber.Ctx) error {
 			root = strings.TrimSuffix(h.base.Config.Paths.DefaultSiteRoot, "/") + "/" + strings.ReplaceAll(domain, "*.", "wildcard-") + "/htdocs"
 		}
 		var siteUserID *uint
+		var createdSiteUserID uint
+		var generatedPassword string
 		if siteUsername != "" {
 			platformHome := platformHomeFromRoot(root)
-			user, generatedPassword, err := h.siteUserService.Create(c.Context(), services.SiteUserInput{
+			user, password, err := h.siteUserService.Create(c.Context(), services.SiteUserInput{
 				Username:      siteUsername,
 				HomeDirectory: platformHome,
 				AllowedRoot:   platformHome,
@@ -254,8 +266,9 @@ func (h *AppHandler) SitesAppsCreate(c *fiber.Ctx) error {
 				return c.Redirect("/platforms/new")
 			}
 			siteUserID = &user.ID
+			createdSiteUserID = user.ID
 			if strings.TrimSpace(sitePassword) == "" {
-				h.base.Sessions.SetFlash(c, "Site user created. Generated password: "+generatedPassword)
+				generatedPassword = password
 			}
 		}
 		site, err := h.websiteService.Create(c.Context(), services.WebsiteInput{
@@ -269,10 +282,17 @@ func (h *AppHandler) SitesAppsCreate(c *fiber.Ctx) error {
 			Enabled:             true,
 		}, currentUserID(c), c.IP())
 		if err != nil {
+			if createdSiteUserID != 0 {
+				_ = h.siteUserService.Delete(c.Context(), createdSiteUserID, currentUserID(c), c.IP())
+			}
 			h.base.Sessions.SetFlash(c, err.Error())
 			return c.Redirect("/platforms/new")
 		}
-		h.base.Sessions.SetFlash(c, "Platform created")
+		if generatedPassword != "" {
+			h.base.Sessions.SetFlash(c, "Platform created. SSH user password: "+generatedPassword)
+		} else {
+			h.base.Sessions.SetFlash(c, "Platform created")
+		}
 		return c.Redirect(platformURL("website", site.ID))
 	default:
 		h.base.Sessions.SetFlash(c, "select a valid platform tile")

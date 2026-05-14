@@ -963,6 +963,7 @@ $(function () {
   $(document).on('submit', 'form[data-runtime-loading]', function(e) {
     if (e.isDefaultPrevented && e.isDefaultPrevented()) return;
     var form = this;
+    if ($(form).is('[data-confirm],[data-confirm-message]') && $(form).data('confirmBypassed') !== 'true') return;
     var submitter = e.originalEvent && e.originalEvent.submitter ? e.originalEvent.submitter : $(form).find('button[type="submit"],input[type="submit"]').get(0);
     var $btn = submitter ? $(submitter) : $();
     $(form).find('input[data-runtime-submit-shadow]').remove();
@@ -3077,6 +3078,7 @@ $(function () {
   $(document).on('submit', 'form[data-runtime-loading]', function(e) {
     if (e.isDefaultPrevented && e.isDefaultPrevented()) return;
     var form = this;
+    if ($(form).is('[data-confirm],[data-confirm-message]') && $(form).data('confirmBypassed') !== 'true') return;
     var submitter = e.originalEvent && e.originalEvent.submitter ? e.originalEvent.submitter : $(form).find('button[type="submit"],input[type="submit"]').get(0);
     var $btn = submitter ? $(submitter) : $();
     $(form).find('input[data-runtime-submit-shadow]').remove();

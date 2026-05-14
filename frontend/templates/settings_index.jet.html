@@ -1210,6 +1210,8 @@ $(function () {
   });
 
   $(document).on('submit', '.runtime-version-action-form', function (e) {
+    var $form = $(this);
+    if ($form.is('[data-confirm],[data-confirm-message]') && $form.data('confirmBypassed') !== 'true') return;
     e.preventDefault();
     var form = this;
     var action = String(form.getAttribute('data-runtime-action') || 'install').toLowerCase();

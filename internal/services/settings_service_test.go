@@ -136,3 +136,16 @@ func TestProtectedRuntimeVersionCannotBeRemoved(t *testing.T) {
 		t.Fatalf("unexpected runtime state: %+v", states)
 	}
 }
+
+func TestPHPFPMVersionChoicesIgnoreConfiguredManagedPHPOnLiveMode(t *testing.T) {
+	service, repos := testSettingsService(t)
+	if err := repos.Settings.Set("php_versions", "99.9", false); err != nil {
+		t.Fatalf("seed php versions: %v", err)
+	}
+
+	for _, version := range service.PHPFPMVersionChoices() {
+		if version == "99.9" {
+			t.Fatalf("configured PHP CLI/runtime version should not be offered as PHP-FPM choice: %#v", service.PHPFPMVersionChoices())
+		}
+	}
+}

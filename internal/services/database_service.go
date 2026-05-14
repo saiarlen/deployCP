@@ -117,6 +117,7 @@ func (s *DatabaseService) CreateDatabase(in DBConnectionInput, actor *uint, ip s
 		GoAppID:     in.GoAppID,
 	}
 	if err := s.dbRepo.Create(item); err != nil {
+		_ = s.dropManagedDatabase(item)
 		return err
 	}
 	s.audit.Record(actor, "database.create", "database_connection", fmt.Sprintf("%d", item.ID), ip, map[string]any{"engine": in.Engine, "host": in.Host})

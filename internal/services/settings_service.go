@@ -215,12 +215,14 @@ func (s *SettingsService) PHPFPMVersionChoices() []string {
 		seen[version] = struct{}{}
 		out = append(out, version)
 	}
-	for _, version := range s.RuntimeVersions("php") {
-		if _, ok := seen[version]; ok {
-			continue
+	if strings.EqualFold(strings.TrimSpace(s.cfg.Features.PlatformMode), "dryrun") {
+		for _, version := range s.RuntimeVersions("php") {
+			if _, ok := seen[version]; ok {
+				continue
+			}
+			seen[version] = struct{}{}
+			out = append(out, version)
 		}
-		seen[version] = struct{}{}
-		out = append(out, version)
 	}
 	var available []string
 	switch s.detectPackageManager() {

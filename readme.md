@@ -80,10 +80,14 @@ Runtime behavior on live Linux:
 - per-platform runtime selection is applied through `<platform-home>/.deploycp/runtime.env`
 - site-user SSH and extra SSH users for the same platform read the same platform runtime env
 - Go, Node, Python, and Binary/Other platforms do not create an application service during initial platform creation; the service is created only from Runtime Setup after an app binary/script and port are chosen
+- linked app services run as the platform's active primary site user when one exists; root still has access, and additional SSH/FTP users keep shared group access to the platform tree
 - platform runtime type is fixed after creation, while the runtime version can be changed later from platform settings
 - changing a platform runtime version updates the site-user SSH environment and, when a runtime service exists, rewrites/restarts the service configuration to use the selected version
+- deleting a linked runtime stops/disables/removes the service and unit, removes scoped sudoers and app logs, removes DeployCP-managed Python/Node runtime metadata, clears proxy/runtime fields, and refreshes nginx back to static `htdocs` serving
+- platform/user/FTP/database create flows roll back external resources when the panel database step fails, so failed creates should not leave orphan Linux users, FTP users, managed DB users, or partial platform rows
 - Runtime Setup checks both DeployCP-managed port conflicts and live local port availability before saving
 - PHP websites use real host `php-fpm`; PHP CLI/runtime management is separate from PHP-FPM service management
+- PHP-FPM platform choices are limited to installed or package-manager-available FPM versions on live Linux; managed PHP CLI catalog entries are not enough to create a PHP website
 - if a PHP website shell still falls back to a managed PHP CLI version, DeployCP blocks removing that managed version
 - direct `systemd` runtime platforms are verified more strictly than `pm2`, `gunicorn`, and `uwsgi`, which remain best-effort verified from live process inspection
 
@@ -101,6 +105,7 @@ Node runtime setup:
 - Node app services use the selected managed Node version from the platform runtime selection
 - if `htdocs/package.json` exists, Runtime Setup installs app dependencies with `npm ci --omit=dev` when `package-lock.json` exists, otherwise `npm install --omit=dev`
 - selecting `pm2` installs PM2 into `<platform-home>/.deploycp/node-tools` and runs `pm2-runtime`; a global `pm2` install is not required
+- `pm2-runtime` units must not receive the normal `pm2 start --exec-mode` flag; worker count is still passed with `-i`
 - changing the Node runtime version recreates DeployCP's managed PM2 tools directory and reinstalls PM2
 - deleting or resetting the linked runtime removes only the managed Node tools directory; app files and `htdocs/node_modules` are left under the platform owner
 
@@ -217,7 +222,8 @@ Runtime-backed platform workflow:
 2. Upload or create the app files in `htdocs`.
 3. Use Runtime Setup to choose the process manager, entry point/binary, and local bind port.
 4. DeployCP writes the nginx proxy vhost and creates a named systemd service such as `deploycp-app-example-com.service`.
-5. Site users with SSH access can use scoped sudo for `start`, `stop`, `restart`, `status`, and `is-active` on that one service only.
+5. The service runs as the platform's primary site user when available.
+6. Site users with SSH access can use scoped sudo for `start`, `stop`, `restart`, `status`, and `is-active` on that one service only.
 
 For Python Flask/uWSGI, a minimal `htdocs` layout is:
 
