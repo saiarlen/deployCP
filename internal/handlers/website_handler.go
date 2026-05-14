@@ -221,14 +221,6 @@ func (h *WebsiteHandler) ShowByID(c *fiber.Ctx, id uint) error {
 	primaryDomain := primaryWebsiteDomain(item.Domains)
 	scopedSSL := websiteSSLItems(item, sslItems)
 	serverAddress := displayServerAddress(h.base.Config, c.Hostname())
-	if linkedApp != nil {
-		host := strings.TrimSpace(linkedApp.Host)
-		switch host {
-		case "", "0.0.0.0", "::":
-		default:
-			serverAddress = host
-		}
-	}
 	runtimeSetupRuntime := lockedWebsiteRuntime(item)
 
 	return h.base.Render(c, "platforms_show", fiber.Map{

@@ -372,11 +372,7 @@ func (h *AppHandler) ShowByID(c *fiber.Ctx, id uint) error {
 	if defaultHomeDir == "" && status.App.WorkingDirectory != "" {
 		defaultHomeDir = platformHomeFromRoot(status.App.WorkingDirectory)
 	}
-	serverAddress := strings.TrimSpace(status.App.Host)
-	switch serverAddress {
-	case "", "0.0.0.0", "::":
-		serverAddress = displayServerAddress(h.base.Config, c.Hostname())
-	}
+	serverAddress := displayServerAddress(h.base.Config, c.Hostname())
 
 	return h.base.Render(c, "platforms_show", fiber.Map{
 		"Title":            status.App.Name,

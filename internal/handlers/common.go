@@ -2,12 +2,15 @@ package handlers
 
 import (
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -15,6 +18,12 @@ import (
 	"deploycp/internal/config"
 	"deploycp/internal/middleware"
 )
+
+var publicIPv4Cache = struct {
+	sync.Mutex
+	value     string
+	checkedAt time.Time
+}{}
 
 type BaseHandler struct {
 	Config   *config.Config
@@ -124,11 +133,25 @@ func displayServerAddress(cfg *config.Config, requestHost string) string {
 		if host == "" {
 			continue
 		}
-		if ip := net.ParseIP(host); ip != nil && !ip.IsLoopback() && !ip.IsUnspecified() {
+		if ip := net.ParseIP(host); ip != nil && !ip.IsLoopback() && !ip.IsUnspecified() && !isPrivateIPv4(ip) {
 			return ip.String()
 		}
 	}
 
+	if external := detectedExternalPublicIPv4(); external != "" {
+		return external
+	}
+
+	for _, raw := range candidates {
+		host := normalizeHostCandidate(raw)
+		if host == "" || isLocalHostName(host) {
+			continue
+		}
+		if ip := net.ParseIP(host); ip != nil {
+			continue
+		}
+		return host
+	}
 	if detected := detectedServerIP(); detected != "" {
 		return detected
 	}
@@ -145,6 +168,59 @@ func displayServerAddress(cfg *config.Config, requestHost string) string {
 		}
 	}
 	return "127.0.0.1"
+}
+
+func isLocalHostName(host string) bool {
+	switch strings.ToLower(strings.TrimSpace(host)) {
+	case "", "localhost", "0.0.0.0", "::", "[::]":
+		return true
+	default:
+		return false
+	}
+}
+
+func detectedExternalPublicIPv4() string {
+	publicIPv4Cache.Lock()
+	if publicIPv4Cache.value != "" && time.Since(publicIPv4Cache.checkedAt) < 10*time.Minute {
+		value := publicIPv4Cache.value
+		publicIPv4Cache.Unlock()
+		if value == "Unavailable" {
+			return ""
+		}
+		return value
+	}
+	publicIPv4Cache.Unlock()
+
+	client := &http.Client{Timeout: 1500 * time.Millisecond}
+	resp, err := client.Get("https://api.ipify.org")
+	if err != nil {
+		rememberExternalPublicIPv4("Unavailable")
+		return ""
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 64))
+	if err != nil {
+		rememberExternalPublicIPv4("Unavailable")
+		return ""
+	}
+	ipText := strings.TrimSpace(string(raw))
+	ip := net.ParseIP(ipText)
+	if ip == nil || ip.To4() == nil || ip.IsLoopback() || ip.IsUnspecified() || isPrivateIPv4(ip) {
+		rememberExternalPublicIPv4("Unavailable")
+		return ""
+	}
+	return rememberExternalPublicIPv4(ip.String())
+}
+
+func rememberExternalPublicIPv4(value string) string {
+	publicIPv4Cache.Lock()
+	defer publicIPv4Cache.Unlock()
+	publicIPv4Cache.value = value
+	publicIPv4Cache.checkedAt = time.Now()
+	if value == "Unavailable" {
+		return ""
+	}
+	return value
 }
 
 func detectedServerIP() string {
