@@ -89,6 +89,45 @@ func TestPythonVenvVersionMarker(t *testing.T) {
 	}
 }
 
+func TestNodeRuntimeToolsPathForLinkedApp(t *testing.T) {
+	websiteID := uint(42)
+	app := &models.GoApp{
+		WorkingDirectory: "/srv/example/htdocs",
+		WebsiteID:        &websiteID,
+	}
+
+	if got := nodeRuntimeToolsPathForApp(app); got != "/srv/example/.deploycp/node-tools" {
+		t.Fatalf("node tools path = %q", got)
+	}
+}
+
+func TestNodeToolsVersionMarker(t *testing.T) {
+	dir := t.TempDir()
+	if err := writeNodeToolsVersionMarker(dir, "node22.16.0"); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(filepath.Join(dir, ".deploycp-runtime-version"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(content)) != "node22.16.0" {
+		t.Fatalf("marker = %q", string(content))
+	}
+}
+
+func TestNodeInstallArgsUsesPackageLockWhenPresent(t *testing.T) {
+	dir := t.TempDir()
+	if got := strings.Join(nodeInstallArgs(dir), " "); got != "install --omit=dev" {
+		t.Fatalf("node install args without lock = %q", got)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "package-lock.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(nodeInstallArgs(dir), " "); got != "ci --omit=dev" {
+		t.Fatalf("node install args with lock = %q", got)
+	}
+}
+
 func TestCleanupDanglingNginxEnabledConfigs(t *testing.T) {
 	enabledDir := t.TempDir()
 	availableDir := t.TempDir()

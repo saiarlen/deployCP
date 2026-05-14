@@ -45,6 +45,14 @@ func pythonRuntimeVenvPathForApp(app *models.GoApp) string {
 	return filepath.Join(root, ".deploycp", "python-venv")
 }
 
+func nodeRuntimeToolsPathForApp(app *models.GoApp) string {
+	root := platformRuntimeRootForApp(app)
+	if root == "" || root == "." {
+		return ""
+	}
+	return filepath.Join(root, ".deploycp", "node-tools")
+}
+
 func appEnvValue(envVars []models.AppEnvVar, key string) string {
 	key = strings.TrimSpace(key)
 	for _, item := range envVars {

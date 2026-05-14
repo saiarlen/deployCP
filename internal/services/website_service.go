@@ -1208,6 +1208,13 @@ func (s *WebsiteService) deleteLinkedAppRuntime(ctx context.Context, app *models
 			}
 		}
 	}
+	if strings.EqualFold(strings.TrimSpace(app.Runtime), "node") {
+		if toolsPath := nodeRuntimeToolsPathForApp(app); toolsPath != "" {
+			if err := removeTreeSafe(toolsPath, s.cfg.Paths.DefaultSiteRoot, s.cfg.Paths.StorageRoot); err != nil {
+				return err
+			}
+		}
+	}
 	for _, logPath := range []string{app.StdoutLogPath, app.StderrLogPath} {
 		if strings.TrimSpace(logPath) == "" {
 			continue
@@ -1644,6 +1651,9 @@ func (s *WebsiteService) ListLogFiles(id uint) ([]LogFileInfo, error) {
 		if strings.EqualFold(strings.TrimSpace(app.Runtime), "python") {
 			addNamed("python-venv-info.txt", "python", pythonRuntimeVenvPathForApp(app))
 		}
+		if strings.EqualFold(strings.TrimSpace(app.Runtime), "node") {
+			addNamed("node-runtime-info.txt", "node", nodeRuntimeToolsPathForApp(app))
+		}
 	}
 	if s.nginxRepo != nil {
 		if nginxCfg, err := s.nginxRepo.FindByWebsite(site.ID); err == nil && nginxCfg != nil && strings.TrimSpace(nginxCfg.ConfigPath) != "" {
@@ -1798,6 +1808,11 @@ func (s *WebsiteService) readPlatformVirtualLog(site *models.Website, name strin
 			return "", true, fmt.Errorf("python runtime is not configured")
 		}
 		return s.pythonVenvDebugInfo(app), true, nil
+	case "node-runtime-info.txt":
+		if app == nil || !strings.EqualFold(strings.TrimSpace(app.Runtime), "node") {
+			return "", true, fmt.Errorf("node runtime is not configured")
+		}
+		return s.nodeRuntimeDebugInfo(app), true, nil
 	default:
 		return "", false, nil
 	}
@@ -1957,6 +1972,39 @@ func (s *WebsiteService) pythonVenvDebugInfo(app *models.GoApp) string {
 	requirementsPath := filepath.Join(appServiceWorkingDir(app), "requirements.txt")
 	if content, err := os.ReadFile(requirementsPath); err == nil {
 		b.WriteString("\n[requirements.txt]\n")
+		b.Write(content)
+		if !strings.HasSuffix(string(content), "\n") {
+			b.WriteByte('\n')
+		}
+	}
+	return b.String()
+}
+
+func (s *WebsiteService) nodeRuntimeDebugInfo(app *models.GoApp) string {
+	toolsPath := nodeRuntimeToolsPathForApp(app)
+	workingDir := appServiceWorkingDir(app)
+	var b strings.Builder
+	fmt.Fprintf(&b, "tools=%s\n", toolsPath)
+	fmt.Fprintf(&b, "working_directory=%s\n", workingDir)
+	fmt.Fprintf(&b, "runtime_version=%s\n", appEnvValue(app.EnvVars, "RUNTIME_VERSION"))
+	if marker, err := os.ReadFile(nodeToolsVersionMarkerPath(toolsPath)); err == nil {
+		fmt.Fprintf(&b, "tools_marker=%s\n", strings.TrimSpace(string(marker)))
+	}
+	nodeBin := strings.TrimSpace(app.BinaryPath)
+	if s.runtime != nil {
+		if resolved, err := s.runtime.ResolveBinary("node", appEnvValue(app.EnvVars, "RUNTIME_VERSION"), "node"); err == nil && strings.TrimSpace(resolved) != "" {
+			nodeBin = resolved
+		}
+	}
+	b.WriteString("\n[node]\n")
+	b.WriteString(runDebugCommand(nodeBin, "--version"))
+	if normalizeProcessManager(app.ProcessManager) == "pm2" {
+		b.WriteString("\n[pm2]\n")
+		b.WriteString(runDebugCommand(filepath.Join(toolsPath, "node_modules", ".bin", "pm2-runtime"), "--version"))
+	}
+	packagePath := filepath.Join(workingDir, "package.json")
+	if content, err := os.ReadFile(packagePath); err == nil {
+		b.WriteString("\n[package.json]\n")
 		b.Write(content)
 		if !strings.HasSuffix(string(content), "\n") {
 			b.WriteByte('\n')

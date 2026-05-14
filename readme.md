@@ -96,6 +96,14 @@ Python runtime setup:
 - changing the Python runtime version recreates only DeployCP's managed virtualenv, then reinstalls the selected process manager and `requirements.txt`
 - deleting or resetting the linked runtime removes the managed Python virtualenv without deleting files under `htdocs`
 
+Node runtime setup:
+
+- Node app services use the selected managed Node version from the platform runtime selection
+- if `htdocs/package.json` exists, Runtime Setup installs app dependencies with `npm ci --omit=dev` when `package-lock.json` exists, otherwise `npm install --omit=dev`
+- selecting `pm2` installs PM2 into `<platform-home>/.deploycp/node-tools` and runs `pm2-runtime`; a global `pm2` install is not required
+- changing the Node runtime version recreates DeployCP's managed PM2 tools directory and reinstalls PM2
+- deleting or resetting the linked runtime removes only the managed Node tools directory; app files and `htdocs/node_modules` are left under the platform owner
+
 ## Production Readiness and Security
 
 DeployCP is designed for real Linux servers and controlled multi-app hosting, but it should be operated with the same care as any root-level hosting control panel.

@@ -178,6 +178,11 @@ func (s *AppService) rollbackFailedCreate(ctx context.Context, app *models.GoApp
 			_ = removeTreeSafe(venvPath, s.cfg.Paths.DefaultSiteRoot, s.cfg.Paths.StorageRoot)
 		}
 	}
+	if strings.EqualFold(strings.TrimSpace(app.Runtime), "node") {
+		if toolsPath := nodeRuntimeToolsPathForApp(app); toolsPath != "" {
+			_ = removeTreeSafe(toolsPath, s.cfg.Paths.DefaultSiteRoot, s.cfg.Paths.StorageRoot)
+		}
+	}
 	for _, logPath := range []string{app.StdoutLogPath, app.StderrLogPath} {
 		if strings.TrimSpace(logPath) == "" {
 			continue
@@ -278,6 +283,13 @@ func (s *AppService) Delete(ctx context.Context, id uint, actor *uint, ip string
 	if strings.EqualFold(strings.TrimSpace(app.Runtime), "python") {
 		if venvPath := pythonRuntimeVenvPathForApp(app); venvPath != "" {
 			if err := removeTreeSafe(venvPath, s.cfg.Paths.DefaultSiteRoot, s.cfg.Paths.StorageRoot); err != nil {
+				return err
+			}
+		}
+	}
+	if strings.EqualFold(strings.TrimSpace(app.Runtime), "node") {
+		if toolsPath := nodeRuntimeToolsPathForApp(app); toolsPath != "" {
+			if err := removeTreeSafe(toolsPath, s.cfg.Paths.DefaultSiteRoot, s.cfg.Paths.StorageRoot); err != nil {
 				return err
 			}
 		}
@@ -580,8 +592,22 @@ func (s *AppService) installService(ctx context.Context, app *models.GoApp, env 
 	if err := s.preparePythonRuntime(ctx, app, env); err != nil {
 		return err
 	}
+	if err := s.prepareNodeRuntime(ctx, app, env); err != nil {
+		return err
+	}
+	if err := s.syncPlatformSharedAccess(ctx, app); err != nil {
+		return err
+	}
 	app.BinaryPath = resolveAbsoluteExecutablePath(app.BinaryPath)
 	def := buildAppServiceDefinition(app, env)
+	serviceUser, err := s.appServiceUser(app)
+	if err != nil {
+		return err
+	}
+	def.User = serviceUser
+	if err := s.ensureServiceWritablePaths(ctx, app, serviceUser); err != nil {
+		return err
+	}
 	unitPath, err := s.adapter.Services().Install(ctx, def)
 	if err != nil {
 		return err
@@ -621,6 +647,54 @@ func (s *AppService) syncSiteUserRuntimeSudoers(ctx context.Context, app *models
 		}
 	}
 	return nil
+}
+
+func (s *AppService) appServiceUser(app *models.GoApp) (string, error) {
+	if app == nil || app.WebsiteID == nil || s.websites == nil {
+		return "", nil
+	}
+	site, err := s.websites.Find(*app.WebsiteID)
+	if err != nil {
+		return "", err
+	}
+	if site.SiteUser == nil || strings.TrimSpace(site.SiteUser.Username) == "" || !site.SiteUser.IsActive {
+		return "", nil
+	}
+	return strings.TrimSpace(site.SiteUser.Username), nil
+}
+
+func (s *AppService) ensureServiceWritablePaths(ctx context.Context, app *models.GoApp, serviceUser string) error {
+	serviceUser = strings.TrimSpace(serviceUser)
+	if serviceUser == "" {
+		return nil
+	}
+	for _, path := range []string{
+		s.serviceRuntimeStateRoot(app),
+		filepath.Dir(strings.TrimSpace(app.StdoutLogPath)),
+		filepath.Dir(strings.TrimSpace(app.StderrLogPath)),
+	} {
+		if path == "" || path == "." {
+			continue
+		}
+		if err := os.MkdirAll(path, 0o775); err != nil {
+			return err
+		}
+		if err := s.adapter.Users().ChownRecursive(ctx, serviceUser, path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *AppService) syncPlatformSharedAccess(ctx context.Context, app *models.GoApp) error {
+	if app == nil || app.WebsiteID == nil || s.websites == nil {
+		return nil
+	}
+	site, err := s.websites.Find(*app.WebsiteID)
+	if err != nil {
+		return err
+	}
+	return s.websites.ensureWebsiteFilesystem(ctx, site)
 }
 
 func (s *AppService) serviceRuntimeEnv(app *models.GoApp, env map[string]string) map[string]string {
@@ -791,6 +865,183 @@ func pythonUsesManagedVenv(processManager string) bool {
 	}
 }
 
+func (s *AppService) prepareNodeRuntime(ctx context.Context, app *models.GoApp, env map[string]string) error {
+	if app == nil || !strings.EqualFold(strings.TrimSpace(app.Runtime), "node") {
+		return nil
+	}
+	pm := normalizeProcessManager(app.ProcessManager)
+	if !nodeUsesManagedRuntime(pm) {
+		return nil
+	}
+	workingDir := appServiceWorkingDir(app)
+	if workingDir == "" || workingDir == "." {
+		return fmt.Errorf("node runtime working directory could not be resolved")
+	}
+	nodeBin, err := s.resolveNodeRuntimeCommand(env, "node")
+	if err != nil {
+		return err
+	}
+	app.BinaryPath = nodeBin
+	if hasNodePackageManifest(workingDir) {
+		npmBin, err := s.resolveNodeRuntimeCommand(env, "npm")
+		if err != nil {
+			return err
+		}
+		if err := runAppSetupCommand(ctx, npmBin, nodeInstallArgs(workingDir), workingDir, env, 7*time.Minute); err != nil {
+			return fmt.Errorf("install node dependencies: %w", err)
+		}
+		if err := s.chownNodeDependencyArtifacts(ctx, app, workingDir); err != nil {
+			return err
+		}
+	}
+	if pm != "pm2" {
+		return nil
+	}
+	toolsPath := nodeRuntimeToolsPathForApp(app)
+	if toolsPath == "" {
+		return fmt.Errorf("node runtime tools path could not be resolved")
+	}
+	if err := os.MkdirAll(toolsPath, 0o775); err != nil {
+		return err
+	}
+	selectedVersion := strings.TrimSpace(env["RUNTIME_VERSION"])
+	if err := s.recreateNodeToolsWhenVersionChanged(toolsPath, selectedVersion); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(toolsPath, 0o775); err != nil {
+		return err
+	}
+	pm2Runtime := filepath.Join(toolsPath, "node_modules", ".bin", "pm2-runtime")
+	if st, err := os.Stat(pm2Runtime); err != nil || st.IsDir() {
+		npmBin, err := s.resolveNodeRuntimeCommand(env, "npm")
+		if err != nil {
+			return err
+		}
+		if err := runAppSetupCommand(ctx, npmBin, []string{"install", "--prefix", toolsPath, "--omit=dev", "pm2"}, workingDir, env, 7*time.Minute); err != nil {
+			return fmt.Errorf("install node process manager pm2: %w", err)
+		}
+	}
+	if err := writeNodeToolsVersionMarker(toolsPath, selectedVersion); err != nil {
+		return err
+	}
+	if err := s.chownNodeRuntimeTools(ctx, app, toolsPath); err != nil {
+		return err
+	}
+	app.BinaryPath = pm2Runtime
+	return nil
+}
+
+func (s *AppService) resolveNodeRuntimeCommand(env map[string]string, command string) (string, error) {
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return "", fmt.Errorf("node runtime command is required")
+	}
+	binary := command
+	if s.runtime != nil {
+		if resolved, err := s.runtime.ResolveBinary("node", strings.TrimSpace(env["RUNTIME_VERSION"]), command); err == nil && strings.TrimSpace(resolved) != "" {
+			binary = resolved
+		}
+	}
+	if err := validateExecutablePath(binary); err != nil {
+		return "", fmt.Errorf("node runtime command %s is not available: %w", command, err)
+	}
+	return binary, nil
+}
+
+func nodeUsesManagedRuntime(processManager string) bool {
+	switch normalizeProcessManager(processManager) {
+	case "systemd", "pm2":
+		return true
+	default:
+		return false
+	}
+}
+
+func hasNodePackageManifest(workingDir string) bool {
+	st, err := os.Stat(filepath.Join(workingDir, "package.json"))
+	return err == nil && !st.IsDir()
+}
+
+func nodeInstallArgs(workingDir string) []string {
+	if st, err := os.Stat(filepath.Join(workingDir, "package-lock.json")); err == nil && !st.IsDir() {
+		return []string{"ci", "--omit=dev"}
+	}
+	return []string{"install", "--omit=dev"}
+}
+
+func (s *AppService) recreateNodeToolsWhenVersionChanged(toolsPath, selectedVersion string) error {
+	if strings.TrimSpace(toolsPath) == "" {
+		return nil
+	}
+	pm2Runtime := filepath.Join(toolsPath, "node_modules", ".bin", "pm2-runtime")
+	if st, err := os.Stat(pm2Runtime); err != nil || st.IsDir() {
+		return nil
+	}
+	existingVersion, err := os.ReadFile(nodeToolsVersionMarkerPath(toolsPath))
+	if err != nil {
+		if os.IsNotExist(err) {
+			if strings.TrimSpace(selectedVersion) == "" {
+				return nil
+			}
+			return removeTreeSafe(toolsPath, s.cfg.Paths.DefaultSiteRoot, s.cfg.Paths.StorageRoot)
+		}
+		return err
+	}
+	if strings.TrimSpace(string(existingVersion)) == strings.TrimSpace(selectedVersion) {
+		return nil
+	}
+	return removeTreeSafe(toolsPath, s.cfg.Paths.DefaultSiteRoot, s.cfg.Paths.StorageRoot)
+}
+
+func nodeToolsVersionMarkerPath(toolsPath string) string {
+	return filepath.Join(toolsPath, ".deploycp-runtime-version")
+}
+
+func writeNodeToolsVersionMarker(toolsPath, selectedVersion string) error {
+	if strings.TrimSpace(toolsPath) == "" || strings.TrimSpace(selectedVersion) == "" {
+		return nil
+	}
+	return os.WriteFile(nodeToolsVersionMarkerPath(toolsPath), []byte(strings.TrimSpace(selectedVersion)+"\n"), 0o664)
+}
+
+func (s *AppService) chownNodeRuntimeTools(ctx context.Context, app *models.GoApp, toolsPath string) error {
+	if strings.TrimSpace(toolsPath) == "" {
+		return nil
+	}
+	return s.chownFirstSiteUserPath(ctx, app, toolsPath)
+}
+
+func (s *AppService) chownNodeDependencyArtifacts(ctx context.Context, app *models.GoApp, workingDir string) error {
+	for _, path := range []string{
+		filepath.Join(workingDir, "node_modules"),
+		filepath.Join(workingDir, "package-lock.json"),
+	} {
+		if _, err := os.Stat(path); err != nil {
+			continue
+		}
+		if err := s.chownFirstSiteUserPath(ctx, app, path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *AppService) chownFirstSiteUserPath(ctx context.Context, app *models.GoApp, path string) error {
+	if app == nil || app.WebsiteID == nil || s.websites == nil || strings.TrimSpace(path) == "" {
+		return nil
+	}
+	site, err := s.websites.Find(*app.WebsiteID)
+	if err != nil {
+		return err
+	}
+	for _, user := range runtimeSudoerUsersForSite(site, s.websites.siteUsers) {
+		if user.IsActive && strings.TrimSpace(user.Username) != "" {
+			return s.adapter.Users().ChownRecursive(ctx, user.Username, path)
+		}
+	}
+	return nil
+}
+
 func runAppSetupCommand(ctx context.Context, binary string, args []string, dir string, env map[string]string, timeout time.Duration) error {
 	cmdCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -867,13 +1118,18 @@ func (s *AppService) validate(in AppInput) error {
 		}
 	}
 	if s.cfg.Features.PlatformMode != "dryrun" {
-		if !pythonUsesManagedVenvForInput(in, pm) {
+		if !pythonUsesManagedVenvForInput(in, pm) && !nodeUsesManagedRuntimeForInput(in, pm) {
 			if err := validateExecutablePath(in.BinaryPath); err != nil {
 				return err
 			}
 		}
 		if pythonUsesManagedVenvForInput(in, pm) {
 			if _, err := validatePythonBootstrapCommand(in, s.runtime); err != nil {
+				return err
+			}
+		}
+		if nodeUsesManagedRuntimeForInput(in, pm) {
+			if err := validateNodeBootstrapCommands(in, s.runtime); err != nil {
 				return err
 			}
 		}
@@ -916,6 +1172,10 @@ func pythonUsesManagedVenvForInput(in AppInput, pm string) bool {
 	return strings.EqualFold(strings.TrimSpace(in.Runtime), "python") && pythonUsesManagedVenv(pm)
 }
 
+func nodeUsesManagedRuntimeForInput(in AppInput, pm string) bool {
+	return strings.EqualFold(strings.TrimSpace(in.Runtime), "node") && nodeUsesManagedRuntime(pm)
+}
+
 func validatePythonBootstrapCommand(in AppInput, runtime *RuntimeService) (string, error) {
 	pythonBin := "python3"
 	if runtime != nil {
@@ -927,6 +1187,33 @@ func validatePythonBootstrapCommand(in AppInput, runtime *RuntimeService) (strin
 		return "", fmt.Errorf("python runtime bootstrap command is not available: %w", err)
 	}
 	return pythonBin, nil
+}
+
+func validateNodeBootstrapCommands(in AppInput, runtime *RuntimeService) error {
+	nodeBin := "node"
+	npmBin := "npm"
+	if runtime != nil {
+		version := strings.TrimSpace(in.Env["RUNTIME_VERSION"])
+		if resolved, err := runtime.ResolveBinary("node", version, "node"); err == nil && strings.TrimSpace(resolved) != "" {
+			nodeBin = resolved
+		}
+		if resolved, err := runtime.ResolveBinary("node", version, "npm"); err == nil && strings.TrimSpace(resolved) != "" {
+			npmBin = resolved
+		}
+	}
+	if err := validateExecutablePath(nodeBin); err != nil {
+		return fmt.Errorf("node runtime command node is not available: %w", err)
+	}
+	needsNPM := normalizeProcessManager(in.ProcessManager) == "pm2"
+	if strings.TrimSpace(in.WorkingDirectory) != "" && hasNodePackageManifest(in.WorkingDirectory) {
+		needsNPM = true
+	}
+	if needsNPM {
+		if err := validateExecutablePath(npmBin); err != nil {
+			return fmt.Errorf("node runtime command npm is not available: %w", err)
+		}
+	}
+	return nil
 }
 
 func resolveAbsoluteExecutablePath(path string) string {

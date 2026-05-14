@@ -4170,11 +4170,11 @@ $(function () {
       } else if (pm === 'uwsgi') {
         title = 'uWSGI Command'; placeholder = 'uwsgi'; hint = 'DeployCP creates a per-site venv and installs uwsgi there';
       } else if (pm === 'pm2') {
-        title = 'PM2 Command'; placeholder = 'pm2'; hint = 'Leave blank to default to "pm2"';
+        title = 'PM2 Command'; placeholder = 'pm2'; hint = rt === 'node' ? 'DeployCP installs PM2 per-site; package.json dependencies are installed during setup' : 'Leave blank to default to "pm2"';
       } else if (rt === 'python') {
         title = 'Python Interpreter'; placeholder = 'python3'; hint = 'DeployCP creates a per-site venv; add requirements.txt for app packages';
       } else if (rt === 'node') {
-        title = 'Node Binary'; placeholder = 'node'; hint = 'Leave blank to default to "node"';
+        title = 'Node Binary'; placeholder = 'node'; hint = 'DeployCP uses the selected Node version; add package.json to install app dependencies during setup';
       } else {
         title = 'Binary / Command Path'; placeholder = '/usr/local/bin/myapp'; hint = 'Absolute path to binary';
       }
