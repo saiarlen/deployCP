@@ -190,6 +190,53 @@ func (s *SystemPackageService) EnsurePHPCLIInstalled(ctx context.Context, versio
 	return fmt.Errorf("unable to install PHP CLI %s", version)
 }
 
+func (s *SystemPackageService) IsPHPCLIInstalled(ctx context.Context, version string) bool {
+	if s == nil || s.cfg == nil || s.cfg.Features.PlatformMode == "dryrun" {
+		return true
+	}
+	version = strings.TrimSpace(version)
+	if version == "" {
+		return false
+	}
+	manager := s.DetectManager()
+	if manager == "" {
+		return false
+	}
+	for _, pkg := range phpCLIPackagesForManager(manager, version) {
+		if pkg == "" {
+			continue
+		}
+		installed, err := s.packageInstalled(ctx, manager, pkg)
+		if err == nil && installed {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *SystemPackageService) ReinstallPHPCLI(ctx context.Context, version string, actor *uint, ip string) error {
+	if s == nil || s.cfg == nil || s.cfg.Features.PlatformMode == "dryrun" {
+		return nil
+	}
+	version = strings.TrimSpace(version)
+	if version == "" {
+		return nil
+	}
+	manager := s.DetectManager()
+	if manager == "" {
+		return fmt.Errorf("no supported linux package manager found")
+	}
+	for _, pkg := range phpCLIPackagesForManager(manager, version) {
+		if pkg == "" {
+			continue
+		}
+		if err := s.reinstallPackage(ctx, manager, pkg, actor, ip); err == nil {
+			return nil
+		}
+	}
+	return fmt.Errorf("unable to reinstall PHP CLI %s", version)
+}
+
 func (s *SystemPackageService) RemovePHPCLIInstalled(ctx context.Context, version string, actor *uint, ip string) error {
 	if s == nil || s.cfg == nil || s.cfg.Features.PlatformMode == "dryrun" {
 		return nil
@@ -453,6 +500,46 @@ func (s *SystemPackageService) removePackage(ctx context.Context, manager, pkg s
 	case "pacman":
 		req.Binary = "pacman"
 		req.Args = []string{"-Rns", "--noconfirm", pkg}
+	default:
+		return fmt.Errorf("unsupported package manager")
+	}
+	_, err := s.runner.Run(ctx, req)
+	return err
+}
+
+func (s *SystemPackageService) reinstallPackage(ctx context.Context, manager, pkg string, actor *uint, ip string) error {
+	req := system.CommandRequest{
+		Timeout:     10 * time.Minute,
+		AuditAction: "package.reinstall",
+		ActorUserID: actor,
+		IP:          ip,
+	}
+	switch manager {
+	case "apt":
+		if _, err := s.runner.Run(ctx, system.CommandRequest{
+			Binary:      "apt-get",
+			Args:        []string{"update", "-y"},
+			Timeout:     10 * time.Minute,
+			AuditAction: "package.install.update",
+			ActorUserID: actor,
+			IP:          ip,
+		}); err != nil {
+			return err
+		}
+		req.Binary = "apt-get"
+		req.Args = []string{"install", "--reinstall", "-y", pkg}
+	case "dnf":
+		req.Binary = "dnf"
+		req.Args = []string{"reinstall", "-y", pkg}
+	case "yum":
+		req.Binary = "yum"
+		req.Args = []string{"reinstall", "-y", pkg}
+	case "zypper":
+		req.Binary = "zypper"
+		req.Args = []string{"--non-interactive", "install", "--force", pkg}
+	case "pacman":
+		req.Binary = "pacman"
+		req.Args = []string{"-S", "--noconfirm", pkg}
 	default:
 		return fmt.Errorf("unsupported package manager")
 	}

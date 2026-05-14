@@ -68,21 +68,32 @@ func (s *RuntimeService) InstallVersion(ctx context.Context, runtime, version st
 	}
 	if runtime == "php" {
 		previousDefault := s.currentPHPDefault()
+		previousPackages := s.phpPackageState(ctx, version)
 		if err := s.ensurePHPRuntimePackages(ctx, version, actor, ip); err != nil {
+			s.rollbackPHPInstall(ctx, version, previousPackages, actor, ip)
 			return RuntimeActionResult{}, err
 		}
 		if err := s.restorePHPDefault(ctx, previousDefault, actor, ip); err != nil {
+			s.rollbackPHPInstall(ctx, version, previousPackages, actor, ip)
 			return RuntimeActionResult{}, err
 		}
 		binary := s.findSystemPHPBinary(version)
 		if binary == "" {
-			return RuntimeActionResult{}, fmt.Errorf("PHP CLI %s was installed but no matching php%s binary was found", phpFPMRuntimeVersion(version), phpFPMRuntimeVersion(version))
+			packages := NewSystemPackageService(s.cfg, s.runner)
+			_ = packages.ReinstallPHPCLI(ctx, phpFPMRuntimeVersion(version), actor, ip)
+			binary = s.findSystemPHPBinary(version)
+		}
+		if binary == "" {
+			s.rollbackPHPInstall(ctx, version, previousPackages, actor, ip)
+			return RuntimeActionResult{}, fmt.Errorf("PHP CLI %s was installed but no matching php%s binary was found after package repair", phpFPMRuntimeVersion(version), phpFPMRuntimeVersion(version))
 		}
 		actual := detectRuntimeVersion("php", binary)
 		if actual == "" || !runtimeVersionMatches("php", version, actual) {
+			s.rollbackPHPInstall(ctx, version, previousPackages, actor, ip)
 			return RuntimeActionResult{}, fmt.Errorf("PHP CLI binary %s resolves %s, expected %s", binary, actual, version)
 		}
 		if err := s.importPackageRuntimeBinary("php", version, binary); err != nil {
+			s.rollbackPHPInstall(ctx, version, previousPackages, actor, ip)
 			return RuntimeActionResult{}, err
 		}
 		s.audit.Record(actor, "runtime.install", "runtime_version", runtime+":"+version, ip, nil)
@@ -124,6 +135,11 @@ func (s *RuntimeService) RemoveVersion(ctx context.Context, runtime, version str
 	return result, nil
 }
 
+type phpPackageState struct {
+	FPMInstalled bool
+	CLIInstalled bool
+}
+
 func (s *RuntimeService) ensurePHPRuntimePackages(ctx context.Context, version string, actor *uint, ip string) error {
 	if s == nil || s.cfg == nil || s.cfg.Features.PlatformMode == "dryrun" {
 		return nil
@@ -141,23 +157,63 @@ func (s *RuntimeService) ensurePHPRuntimePackages(ctx context.Context, version s
 	if unitName == "" {
 		unitName = serviceName
 	}
-	_, _ = s.runner.Run(ctx, system.CommandRequest{
+	if _, err := s.runner.Run(ctx, system.CommandRequest{
 		Binary:      s.cfg.Paths.SystemctlBinary,
 		Args:        []string{"enable", unitName},
 		Timeout:     30 * time.Second,
 		AuditAction: "service.enable",
 		ActorUserID: actor,
 		IP:          ip,
-	})
-	_, _ = s.runner.Run(ctx, system.CommandRequest{
+	}); err != nil {
+		return fmt.Errorf("failed to enable PHP-FPM service %s: %w", unitName, err)
+	}
+	if _, err := s.runner.Run(ctx, system.CommandRequest{
 		Binary:      s.cfg.Paths.SystemctlBinary,
 		Args:        []string{"start", unitName},
 		Timeout:     30 * time.Second,
 		AuditAction: "service.start",
 		ActorUserID: actor,
 		IP:          ip,
-	})
+	}); err != nil {
+		return fmt.Errorf("failed to start PHP-FPM service %s: %w", unitName, err)
+	}
+	if _, err := s.runner.Run(ctx, system.CommandRequest{
+		Binary:  s.cfg.Paths.SystemctlBinary,
+		Args:    []string{"is-active", "--quiet", unitName},
+		Timeout: 10 * time.Second,
+	}); err != nil {
+		return fmt.Errorf("PHP-FPM service %s is not active after install: %w", unitName, err)
+	}
 	return nil
+}
+
+func (s *RuntimeService) phpPackageState(ctx context.Context, version string) phpPackageState {
+	if s == nil || s.cfg == nil || s.cfg.Features.PlatformMode == "dryrun" {
+		return phpPackageState{}
+	}
+	serviceVersion := phpFPMRuntimeVersion(version)
+	serviceName := "php" + serviceVersion + "-fpm"
+	packages := NewSystemPackageService(s.cfg, s.runner)
+	return phpPackageState{
+		FPMInstalled: packages.IsInstalled(ctx, serviceName),
+		CLIInstalled: packages.IsPHPCLIInstalled(ctx, serviceVersion),
+	}
+}
+
+func (s *RuntimeService) rollbackPHPInstall(ctx context.Context, version string, previous phpPackageState, actor *uint, ip string) {
+	if s == nil || s.cfg == nil || s.cfg.Features.PlatformMode == "dryrun" {
+		return
+	}
+	serviceVersion := phpFPMRuntimeVersion(version)
+	serviceName := "php" + serviceVersion + "-fpm"
+	packages := NewSystemPackageService(s.cfg, s.runner)
+	if !previous.FPMInstalled {
+		_ = packages.RemoveInstalled(ctx, serviceName, actor, ip)
+	}
+	if !previous.CLIInstalled {
+		_ = packages.RemovePHPCLIInstalled(ctx, serviceVersion, actor, ip)
+	}
+	_ = os.RemoveAll(s.runtimeVersionDir("php", version))
 }
 
 func (s *RuntimeService) removePHPRuntimePackages(ctx context.Context, version string, actor *uint, ip string) error {
@@ -551,20 +607,71 @@ func (s *RuntimeService) applyDirectBinaryRuntime(rootPath, runtime, version, co
 }
 
 func (s *RuntimeService) findSystemPHPBinary(version string) string {
-	version = strings.TrimSpace(version)
+	version = phpFPMRuntimeVersion(version)
 	if version == "" {
 		return ""
 	}
+	seen := map[string]struct{}{}
 	candidates := []string{
 		"php" + version,
 		"php" + strings.ReplaceAll(version, ".", ""),
+		filepath.Join("/usr/bin", "php"+version),
+		filepath.Join("/usr/local/bin", "php"+version),
+		filepath.Join("/bin", "php"+version),
+	}
+	candidates = append(candidates, s.phpPackageBinaryCandidates(version)...)
+	if php, err := exec.LookPath("php"); err == nil && php != "" && runtimeVersionMatches("php", version, detectRuntimeVersion("php", php)) {
+		candidates = append(candidates, php)
 	}
 	for _, name := range candidates {
-		if path, err := exec.LookPath(name); err == nil && path != "" {
-			return path
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
 		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		path := name
+		if !filepath.IsAbs(path) {
+			resolved, err := exec.LookPath(path)
+			if err != nil || resolved == "" {
+				continue
+			}
+			path = resolved
+		}
+		if st, err := os.Stat(path); err != nil || st.IsDir() || st.Mode()&0o111 == 0 {
+			continue
+		}
+		actual := detectRuntimeVersion("php", path)
+		if actual == "" || !runtimeVersionMatches("php", version, actual) {
+			continue
+		}
+		return path
 	}
 	return ""
+}
+
+func (s *RuntimeService) phpPackageBinaryCandidates(version string) []string {
+	if version == "" {
+		return nil
+	}
+	out, err := exec.Command("dpkg-query", "-L", "php"+version+"-cli").Output()
+	if err != nil {
+		return nil
+	}
+	candidates := make([]string, 0, 4)
+	for _, line := range strings.Split(string(out), "\n") {
+		path := strings.TrimSpace(line)
+		if path == "" {
+			continue
+		}
+		base := filepath.Base(path)
+		if base == "php"+version || base == "php"+strings.ReplaceAll(version, ".", "") {
+			candidates = append(candidates, path)
+		}
+	}
+	return candidates
 }
 
 func (s *RuntimeService) helperScriptPath() (string, error) {

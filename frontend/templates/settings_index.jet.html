@@ -1194,10 +1194,18 @@ $(function () {
         'Refreshing the installed runtime catalog...'
       ];
     }
+    if (runtime === 'php') {
+      return [
+        'Checking discovered PHP-FPM and PHP CLI packages...',
+        'Installing PHP ' + version + ' FPM and CLI packages on this host...',
+        'Starting and verifying the matching PHP-FPM service...',
+        'Registering the DeployCP PHP CLI wrapper without compiling PHP from source...'
+      ];
+    }
     return [
       'Loading the managed remote runtime catalog...',
       'Installing ' + runtime + ' ' + version + ' on this host...',
-      runtime === 'php' ? 'PHP may compile from source, so this can take several minutes on a fresh server.' : 'This can take a few minutes on a fresh Linux host.',
+      'This can take a few minutes on a fresh Linux host.',
       'Verifying the installed wrapper and refreshing the runtime catalog...'
     ];
   }
