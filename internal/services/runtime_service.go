@@ -70,6 +70,19 @@ func (s *RuntimeService) InstallVersion(ctx context.Context, runtime, version st
 		if err := s.ensurePHPRuntimePackages(ctx, version, actor, ip); err != nil {
 			return RuntimeActionResult{}, err
 		}
+		binary := s.findSystemPHPBinary(version)
+		if binary == "" {
+			return RuntimeActionResult{}, fmt.Errorf("PHP CLI %s was installed but no matching php%s binary was found", phpFPMRuntimeVersion(version), phpFPMRuntimeVersion(version))
+		}
+		actual := detectRuntimeVersion("php", binary)
+		if actual == "" || !runtimeVersionMatches("php", version, actual) {
+			return RuntimeActionResult{}, fmt.Errorf("PHP CLI binary %s resolves %s, expected %s", binary, actual, version)
+		}
+		if err := s.importPackageRuntimeBinary("php", version, binary); err != nil {
+			return RuntimeActionResult{}, err
+		}
+		s.audit.Record(actor, "runtime.install", "runtime_version", runtime+":"+version, ip, nil)
+		return RuntimeActionResult{Stdout: fmt.Sprintf("Installed PHP-FPM and registered PHP CLI wrapper for %s at %s", version, binary)}, nil
 	}
 	result, err := s.runRuntimeAction(ctx, "install", runtime, version, 15*time.Minute, "runtime.install", actor, ip)
 	if err != nil {
@@ -93,6 +106,11 @@ func (s *RuntimeService) RemoveVersion(ctx context.Context, runtime, version str
 		if err := s.removePHPRuntimePackages(ctx, version, actor, ip); err != nil {
 			return RuntimeActionResult{}, err
 		}
+		if err := os.RemoveAll(s.runtimeVersionDir(runtime, version)); err != nil {
+			return RuntimeActionResult{}, err
+		}
+		s.audit.Record(actor, "runtime.remove", "runtime_version", runtime+":"+version, ip, nil)
+		return RuntimeActionResult{Stdout: fmt.Sprintf("Removed PHP runtime wrapper and matching PHP-FPM packages for %s", version)}, nil
 	}
 	result, err := s.runRuntimeAction(ctx, "remove", runtime, version, 10*time.Minute, "runtime.remove", actor, ip)
 	if err != nil {
@@ -648,10 +666,22 @@ func (s *RuntimeService) runtimeManagedBinary(runtime, version string) string {
 	return ""
 }
 
+func (s *RuntimeService) importPackageRuntimeBinary(runtime, version, binary string) error {
+	return s.importRuntimeBinary(runtime, version, binary, "package")
+}
+
 func (s *RuntimeService) importHostRuntimeBinary(runtime, version, binary string) error {
+	return s.importRuntimeBinary(runtime, version, binary, "host-import")
+}
+
+func (s *RuntimeService) importRuntimeBinary(runtime, version, binary, mode string) error {
 	runtime = strings.ToLower(strings.TrimSpace(runtime))
 	version = strings.TrimSpace(version)
 	binary = strings.TrimSpace(binary)
+	mode = strings.TrimSpace(mode)
+	if mode == "" {
+		mode = "host-import"
+	}
 	command := defaultRuntimeCommand(runtime)
 	if runtime == "" || version == "" || binary == "" || command == "" {
 		return nil
@@ -694,7 +724,7 @@ func (s *RuntimeService) importHostRuntimeBinary(runtime, version, binary string
 		}
 	}
 	meta := strings.Join([]string{
-		"mode=host-import",
+		"mode=" + mode,
 		"binary=" + binary,
 		"runtime=" + runtime,
 		"version=" + version,
