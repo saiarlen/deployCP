@@ -99,6 +99,7 @@ ensure_logrotate() {
 ${CORE_DIR}/storage/logs/*.log
 ${CORE_DIR}/storage/logs/*/*.log
 ${DATA_DIR}/logs/*/*/*.log
+${DATA_DIR}/sites/*/logs/*.log
 {
     daily
     rotate 14

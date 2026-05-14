@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	goruntime "runtime"
 	"sort"
@@ -1591,7 +1592,18 @@ func (s *WebsiteService) ListLogFiles(id uint) ([]LogFileInfo, error) {
 	platformLogDir := filepath.Join(platformHome, "logs")
 	_ = os.MkdirAll(platformLogDir, 0o755)
 	seen := map[string]struct{}{}
-	files := make([]LogFileInfo, 0, 6)
+	files := make([]LogFileInfo, 0, 14)
+	addNamed := func(name string, logType string, path string) {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return
+		}
+		if _, ok := seen[name]; ok {
+			return
+		}
+		seen[name] = struct{}{}
+		files = append(files, LogFileInfo{Name: name, Type: logType, Path: path})
+	}
 	addFile := func(path string, logType string) {
 		path = strings.TrimSpace(path)
 		if path == "" {
@@ -1601,15 +1613,7 @@ func (s *WebsiteService) ListLogFiles(id uint) ([]LogFileInfo, error) {
 		if name == "." || name == "" {
 			return
 		}
-		if _, ok := seen[name]; ok {
-			return
-		}
-		seen[name] = struct{}{}
-		files = append(files, LogFileInfo{
-			Name: name,
-			Type: logType,
-			Path: path,
-		})
+		addNamed(name, logType, path)
 	}
 	addFile(site.AccessLogPath, "access")
 	addFile(site.ErrorLogPath, "error")
@@ -1628,8 +1632,32 @@ func (s *WebsiteService) ListLogFiles(id uint) ([]LogFileInfo, error) {
 			addFile(filepath.Join(platformLogDir, name), logType)
 		}
 	}
+	if app := s.logRuntimeApp(site); app != nil {
+		addNamed("runtime-stdout.log", "runtime", app.StdoutLogPath)
+		addNamed("runtime-stderr.log", "runtime", app.StderrLogPath)
+		if strings.TrimSpace(app.ServiceName) != "" {
+			addNamed("runtime-journal.log", "journal", app.ServiceName)
+			addNamed("runtime-service-status.txt", "status", app.ServiceName)
+			addNamed("runtime-systemd-unit.conf", "unit", app.ServiceName)
+			addNamed("deploycp-panel-filtered.log", "panel", app.ServiceName)
+		}
+		if strings.EqualFold(strings.TrimSpace(app.Runtime), "python") {
+			addNamed("python-venv-info.txt", "python", pythonRuntimeVenvPathForApp(app))
+		}
+	}
+	if s.nginxRepo != nil {
+		if nginxCfg, err := s.nginxRepo.FindByWebsite(site.ID); err == nil && nginxCfg != nil && strings.TrimSpace(nginxCfg.ConfigPath) != "" {
+			addNamed("nginx-vhost.conf", "config", nginxCfg.ConfigPath)
+		}
+	}
+	addNamed("platform-debug.txt", "debug", "")
 	sort.Slice(files, func(i, j int) bool {
-		return files[i].Name > files[j].Name
+		pi := logTypePriority(files[i].Type)
+		pj := logTypePriority(files[j].Type)
+		if pi != pj {
+			return pi < pj
+		}
+		return files[i].Name < files[j].Name
 	})
 	return files, nil
 }
@@ -1640,6 +1668,9 @@ func (s *WebsiteService) ReadLogFile(id uint, filename string, lines int) (strin
 		return "", err
 	}
 	safe := filepath.Base(filename)
+	if content, ok, err := s.readPlatformVirtualLog(site, safe, lines); ok || err != nil {
+		return content, err
+	}
 	var fp string
 	switch safe {
 	case filepath.Base(site.AccessLogPath):
@@ -1683,6 +1714,269 @@ func (s *WebsiteService) ReadLogFile(id uint, filename string, lines int) (strin
 		return "", err
 	}
 	return content, nil
+}
+
+func logTypePriority(logType string) int {
+	switch strings.ToLower(strings.TrimSpace(logType)) {
+	case "access":
+		return 10
+	case "error":
+		return 20
+	case "runtime":
+		return 30
+	case "journal", "status", "unit":
+		return 40
+	case "debug", "config":
+		return 50
+	case "python":
+		return 60
+	case "panel":
+		return 70
+	default:
+		return 90
+	}
+}
+
+func (s *WebsiteService) logRuntimeApp(site *models.Website) *models.GoApp {
+	if site == nil {
+		return nil
+	}
+	if s.appRepo != nil {
+		if app, err := s.appRepo.FindByWebsiteID(site.ID); err == nil && app != nil {
+			return app
+		}
+	}
+	return runtimeFromWebsite(site)
+}
+
+func (s *WebsiteService) readPlatformVirtualLog(site *models.Website, name string, lines int) (string, bool, error) {
+	app := s.logRuntimeApp(site)
+	switch name {
+	case "runtime-stdout.log":
+		if app == nil {
+			return "", true, fmt.Errorf("runtime is not configured")
+		}
+		content, err := tailOptionalLogFile(app.StdoutLogPath, normalizedLogLines(lines))
+		return content, true, err
+	case "runtime-stderr.log":
+		if app == nil {
+			return "", true, fmt.Errorf("runtime is not configured")
+		}
+		content, err := tailOptionalLogFile(app.StderrLogPath, normalizedLogLines(lines))
+		return content, true, err
+	case "runtime-journal.log":
+		if app == nil || strings.TrimSpace(app.ServiceName) == "" || s.adapter == nil {
+			return "", true, fmt.Errorf("runtime service is not configured")
+		}
+		content, err := s.adapter.Services().Logs(context.Background(), app.ServiceName, normalizedLogLines(lines))
+		return content, true, err
+	case "runtime-service-status.txt":
+		if app == nil || strings.TrimSpace(app.ServiceName) == "" || s.adapter == nil {
+			return "", true, fmt.Errorf("runtime service is not configured")
+		}
+		status, err := s.adapter.Services().Status(context.Background(), app.ServiceName)
+		if err != nil {
+			return "", true, err
+		}
+		return formatRuntimeServiceStatus(app, status), true, nil
+	case "runtime-systemd-unit.conf":
+		if app == nil || strings.TrimSpace(app.ServiceName) == "" {
+			return "", true, fmt.Errorf("runtime service is not configured")
+		}
+		content, err := s.readRuntimeUnitFile(app.ServiceName)
+		return content, true, err
+	case "deploycp-panel-filtered.log":
+		content, err := s.filteredPanelLogs(site, app, normalizedLogLines(lines))
+		return content, true, err
+	case "nginx-vhost.conf":
+		content, err := s.readWebsiteVhostConfig(site)
+		return content, true, err
+	case "platform-debug.txt":
+		return s.platformDebugSnapshot(site, app), true, nil
+	case "python-venv-info.txt":
+		if app == nil || !strings.EqualFold(strings.TrimSpace(app.Runtime), "python") {
+			return "", true, fmt.Errorf("python runtime is not configured")
+		}
+		return s.pythonVenvDebugInfo(app), true, nil
+	default:
+		return "", false, nil
+	}
+}
+
+func normalizedLogLines(lines int) int {
+	if lines <= 0 {
+		return 100
+	}
+	if lines > 5000 {
+		return 5000
+	}
+	return lines
+}
+
+func tailOptionalLogFile(path string, lines int) (string, error) {
+	content, err := tailFile(path, lines)
+	if err == nil {
+		return content, nil
+	}
+	if os.IsNotExist(err) {
+		return "Log file has not been created yet.\n", nil
+	}
+	return "", err
+}
+
+func formatRuntimeServiceStatus(app *models.GoApp, status platform.ServiceStatus) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "service=%s\n", strings.TrimSpace(app.ServiceName))
+	fmt.Fprintf(&b, "runtime=%s\n", strings.TrimSpace(app.Runtime))
+	fmt.Fprintf(&b, "process_manager=%s\n", normalizeProcessManager(app.ProcessManager))
+	fmt.Fprintf(&b, "active=%t\n", status.Active)
+	fmt.Fprintf(&b, "enabled=%t\n", status.Enabled)
+	fmt.Fprintf(&b, "sub_state=%s\n", strings.TrimSpace(status.SubState))
+	fmt.Fprintf(&b, "bind=%s:%d\n", strings.TrimSpace(app.Host), app.Port)
+	fmt.Fprintf(&b, "working_directory=%s\n", strings.TrimSpace(app.WorkingDirectory))
+	fmt.Fprintf(&b, "binary=%s\n", strings.TrimSpace(app.BinaryPath))
+	fmt.Fprintf(&b, "entry_point=%s\n", strings.TrimSpace(app.EntryPoint))
+	if raw := strings.TrimSpace(status.RawOutput); raw != "" {
+		fmt.Fprintf(&b, "\nraw_status=%s\n", raw)
+	}
+	return b.String()
+}
+
+func (s *WebsiteService) readRuntimeUnitFile(serviceName string) (string, error) {
+	serviceName = strings.TrimSpace(serviceName)
+	if serviceName == "" {
+		return "", fmt.Errorf("service name is required")
+	}
+	if s.services != nil {
+		if managed, err := s.services.FindByName(serviceName); err == nil && managed != nil && strings.TrimSpace(managed.UnitPath) != "" {
+			content, readErr := os.ReadFile(managed.UnitPath)
+			if readErr == nil {
+				return string(content), nil
+			}
+		}
+	}
+	unitPath := filepath.Join("/etc/systemd/system", serviceName+".service")
+	content, err := os.ReadFile(unitPath)
+	if err != nil {
+		return "", err
+	}
+	return string(content), nil
+}
+
+func (s *WebsiteService) readWebsiteVhostConfig(site *models.Website) (string, error) {
+	if site == nil || s.nginxRepo == nil {
+		return "", fmt.Errorf("nginx config is not available")
+	}
+	nginxCfg, err := s.nginxRepo.FindByWebsite(site.ID)
+	if err != nil {
+		return "", err
+	}
+	if nginxCfg == nil || strings.TrimSpace(nginxCfg.ConfigPath) == "" {
+		return "", fmt.Errorf("nginx config is not available")
+	}
+	content, err := os.ReadFile(nginxCfg.ConfigPath)
+	if err != nil {
+		return "", err
+	}
+	return string(content), nil
+}
+
+func (s *WebsiteService) filteredPanelLogs(site *models.Website, app *models.GoApp, lines int) (string, error) {
+	if s.adapter == nil {
+		return "", fmt.Errorf("platform adapter is not available")
+	}
+	content, err := s.adapter.Services().Logs(context.Background(), "deploycp", lines)
+	if err != nil {
+		return content, err
+	}
+	var tokens []string
+	if site != nil {
+		tokens = append(tokens, strings.TrimSpace(site.Name))
+		for _, domain := range domainsFromModel(site.Domains) {
+			tokens = append(tokens, strings.TrimSpace(domain))
+		}
+	}
+	if app != nil {
+		tokens = append(tokens, strings.TrimSpace(app.ServiceName), strings.TrimSpace(app.Name))
+	}
+	var out []string
+	for _, line := range strings.Split(content, "\n") {
+		for _, token := range tokens {
+			if token != "" && strings.Contains(line, token) {
+				out = append(out, line)
+				break
+			}
+		}
+	}
+	if len(out) == 0 {
+		return "No recent DeployCP panel log lines matched this platform.\n", nil
+	}
+	return strings.Join(out, "\n") + "\n", nil
+}
+
+func (s *WebsiteService) platformDebugSnapshot(site *models.Website, app *models.GoApp) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "platform_id=%d\n", site.ID)
+	fmt.Fprintf(&b, "name=%s\n", strings.TrimSpace(site.Name))
+	fmt.Fprintf(&b, "type=%s\n", strings.TrimSpace(site.Type))
+	fmt.Fprintf(&b, "enabled=%t\n", site.Enabled)
+	fmt.Fprintf(&b, "domains=%s\n", strings.Join(domainsFromModel(site.Domains), ", "))
+	fmt.Fprintf(&b, "platform_home=%s\n", platformHomeFromWebRoot(site.RootPath))
+	fmt.Fprintf(&b, "web_root=%s\n", strings.TrimSpace(site.RootPath))
+	fmt.Fprintf(&b, "access_log=%s\n", strings.TrimSpace(site.AccessLogPath))
+	fmt.Fprintf(&b, "error_log=%s\n", strings.TrimSpace(site.ErrorLogPath))
+	fmt.Fprintf(&b, "proxy_target=%s\n", strings.TrimSpace(site.ProxyTarget))
+	if app != nil {
+		fmt.Fprintf(&b, "\n[runtime]\n")
+		fmt.Fprintf(&b, "service=%s\n", strings.TrimSpace(app.ServiceName))
+		fmt.Fprintf(&b, "runtime=%s\n", strings.TrimSpace(app.Runtime))
+		fmt.Fprintf(&b, "process_manager=%s\n", normalizeProcessManager(app.ProcessManager))
+		fmt.Fprintf(&b, "binary=%s\n", strings.TrimSpace(app.BinaryPath))
+		fmt.Fprintf(&b, "entry_point=%s\n", strings.TrimSpace(app.EntryPoint))
+		fmt.Fprintf(&b, "working_directory=%s\n", strings.TrimSpace(app.WorkingDirectory))
+		fmt.Fprintf(&b, "bind=%s:%d\n", strings.TrimSpace(app.Host), app.Port)
+		fmt.Fprintf(&b, "stdout_log=%s\n", strings.TrimSpace(app.StdoutLogPath))
+		fmt.Fprintf(&b, "stderr_log=%s\n", strings.TrimSpace(app.StderrLogPath))
+		fmt.Fprintf(&b, "runtime_version=%s\n", appEnvValue(app.EnvVars, "RUNTIME_VERSION"))
+	}
+	return b.String()
+}
+
+func (s *WebsiteService) pythonVenvDebugInfo(app *models.GoApp) string {
+	venvPath := pythonRuntimeVenvPathForApp(app)
+	var b strings.Builder
+	fmt.Fprintf(&b, "venv=%s\n", venvPath)
+	fmt.Fprintf(&b, "runtime_version=%s\n", appEnvValue(app.EnvVars, "RUNTIME_VERSION"))
+	if marker, err := os.ReadFile(pythonVenvVersionMarkerPath(venvPath)); err == nil {
+		fmt.Fprintf(&b, "venv_marker=%s\n", strings.TrimSpace(string(marker)))
+	}
+	b.WriteString("\n[python]\n")
+	b.WriteString(runDebugCommand(filepath.Join(venvPath, "bin", "python"), "--version"))
+	b.WriteString("\n[pip freeze]\n")
+	b.WriteString(runDebugCommand(filepath.Join(venvPath, "bin", "pip"), "freeze"))
+	requirementsPath := filepath.Join(appServiceWorkingDir(app), "requirements.txt")
+	if content, err := os.ReadFile(requirementsPath); err == nil {
+		b.WriteString("\n[requirements.txt]\n")
+		b.Write(content)
+		if !strings.HasSuffix(string(content), "\n") {
+			b.WriteByte('\n')
+		}
+	}
+	return b.String()
+}
+
+func runDebugCommand(binary string, args ...string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, binary, args...)
+	out, err := cmd.CombinedOutput()
+	if ctx.Err() == context.DeadlineExceeded {
+		return fmt.Sprintf("%s timed out\n", strings.Join(append([]string{binary}, args...), " "))
+	}
+	if err != nil {
+		return fmt.Sprintf("%s failed: %v\n%s\n", strings.Join(append([]string{binary}, args...), " "), err, strings.TrimSpace(string(out)))
+	}
+	return string(out)
 }
 
 func firstWebsiteCert(site *models.Website, items []models.SSLCertificate) *models.SSLCertificate {
