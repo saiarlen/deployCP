@@ -1781,7 +1781,7 @@ func buildAppServiceDefinition(app *models.GoApp, env map[string]string) platfor
 		if app.Workers > 0 {
 			args = append(args, "-i", fmt.Sprintf("%d", app.Workers))
 		}
-		if app.ExecMode != "" {
+		if app.ExecMode != "" && !isPM2RuntimeBinary(app.BinaryPath) {
 			args = append(args, "--exec-mode", app.ExecMode)
 		}
 		if app.MaxMemory != "" {
@@ -1828,6 +1828,11 @@ func buildAppServiceDefinition(app *models.GoApp, env map[string]string) platfor
 		base.Args = serviceArgs(app)
 	}
 	return base
+}
+
+func isPM2RuntimeBinary(path string) bool {
+	base := strings.TrimSpace(filepath.Base(path))
+	return base == "pm2-runtime"
 }
 
 func serviceArgs(app *models.GoApp) []string {

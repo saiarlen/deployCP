@@ -128,6 +128,29 @@ func TestNodeInstallArgsUsesPackageLockWhenPresent(t *testing.T) {
 	}
 }
 
+func TestPM2RuntimeServiceDefinitionOmitsUnsupportedExecModeFlag(t *testing.T) {
+	app := &models.GoApp{
+		Name:             "example.com",
+		ServiceName:      "deploycp-app-example-com",
+		Runtime:          "node",
+		ProcessManager:   "pm2",
+		BinaryPath:       "/srv/example/.deploycp/node-tools/node_modules/.bin/pm2-runtime",
+		EntryPoint:       "index.js",
+		WorkingDirectory: "/srv/example/htdocs",
+		Workers:          2,
+		ExecMode:         "cluster",
+	}
+
+	def := buildAppServiceDefinition(app, nil)
+	got := strings.Join(def.Args, " ")
+	if strings.Contains(got, "--exec-mode") {
+		t.Fatalf("pm2-runtime args contain unsupported --exec-mode flag: %q", got)
+	}
+	if !strings.Contains(got, "-i 2") {
+		t.Fatalf("pm2-runtime args should keep worker count: %q", got)
+	}
+}
+
 func TestCleanupDanglingNginxEnabledConfigs(t *testing.T) {
 	enabledDir := t.TempDir()
 	availableDir := t.TempDir()
