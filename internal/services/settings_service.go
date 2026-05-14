@@ -415,6 +415,10 @@ func (s *SettingsService) runtimeWrapperExists(runtime, version string) bool {
 	return err == nil && !st.IsDir()
 }
 
+func (s *SettingsService) VerifyInstalledRuntimeVersion(runtime, version string) bool {
+	return s.verifyInstalledRuntimeVersion(runtime, version)
+}
+
 func (s *SettingsService) runtimeVersionMetaPath(runtime, version string) string {
 	return filepath.Join(s.cfg.Paths.RuntimeRoot, strings.ToLower(strings.TrimSpace(runtime)), strings.TrimSpace(version), ".deploycp-origin")
 }
@@ -497,7 +501,7 @@ func (s *SettingsService) RemoveRuntimeVersion(runtime, version string, actor *u
 	if v == "" {
 		return fmt.Errorf("version is required")
 	}
-	if s.ProtectedRuntimeVersion(runtime, v) {
+	if s.ProtectedRuntimeVersion(runtime, v) && s.VerifyInstalledRuntimeVersion(runtime, v) {
 		return fmt.Errorf("%s is a protected host-imported runtime and cannot be removed", v)
 	}
 	versions := s.RuntimeVersions(runtime)

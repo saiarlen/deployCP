@@ -67,7 +67,11 @@ func (s *RuntimeService) InstallVersion(ctx context.Context, runtime, version st
 		return RuntimeActionResult{}, s.ensureRuntimeBinDir(runtime, version)
 	}
 	if runtime == "php" {
+		previousDefault := s.currentPHPDefault()
 		if err := s.ensurePHPRuntimePackages(ctx, version, actor, ip); err != nil {
+			return RuntimeActionResult{}, err
+		}
+		if err := s.restorePHPDefault(ctx, previousDefault, actor, ip); err != nil {
 			return RuntimeActionResult{}, err
 		}
 		binary := s.findSystemPHPBinary(version)
@@ -187,6 +191,56 @@ func (s *RuntimeService) removePHPRuntimePackages(ctx context.Context, version s
 		return err
 	}
 	return packages.RemovePHPCLIInstalled(ctx, serviceVersion, actor, ip)
+}
+
+type phpDefaultSnapshot struct {
+	Binary   string
+	Resolved string
+	Version  string
+}
+
+func (s *RuntimeService) currentPHPDefault() phpDefaultSnapshot {
+	binary, err := exec.LookPath("php")
+	if err != nil || strings.TrimSpace(binary) == "" {
+		return phpDefaultSnapshot{}
+	}
+	resolved := binary
+	if target, err := filepath.EvalSymlinks(binary); err == nil && strings.TrimSpace(target) != "" {
+		resolved = target
+	}
+	return phpDefaultSnapshot{
+		Binary:   binary,
+		Resolved: resolved,
+		Version:  detectRuntimeVersion("php", binary),
+	}
+}
+
+func (s *RuntimeService) restorePHPDefault(ctx context.Context, previous phpDefaultSnapshot, actor *uint, ip string) error {
+	if strings.TrimSpace(previous.Version) == "" || strings.TrimSpace(previous.Resolved) == "" {
+		return nil
+	}
+	current := s.currentPHPDefault()
+	if runtimeVersionMatches("php", previous.Version, current.Version) {
+		return nil
+	}
+	if st, err := os.Stat(previous.Resolved); err != nil || st.IsDir() {
+		return fmt.Errorf("PHP install changed the system default to %s and previous default %s is no longer available", current.Version, previous.Resolved)
+	}
+	if _, err := s.runner.Run(ctx, system.CommandRequest{
+		Binary:      "update-alternatives",
+		Args:        []string{"--set", "php", previous.Resolved},
+		Timeout:     30 * time.Second,
+		AuditAction: "runtime.php.default.restore",
+		ActorUserID: actor,
+		IP:          ip,
+	}); err != nil {
+		return fmt.Errorf("PHP install changed the system default to %s and DeployCP could not restore %s: %w", current.Version, previous.Version, err)
+	}
+	restored := s.currentPHPDefault()
+	if !runtimeVersionMatches("php", previous.Version, restored.Version) {
+		return fmt.Errorf("PHP install changed the system default to %s and restore still resolves %s instead of %s", current.Version, restored.Version, previous.Version)
+	}
+	return nil
 }
 
 func (s *RuntimeService) RefreshPHPPackageRepository(ctx context.Context, actor *uint, ip string) (RuntimeActionResult, error) {

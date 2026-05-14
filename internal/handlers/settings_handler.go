@@ -246,6 +246,9 @@ func (h *SettingsHandler) Index(c *fiber.Ctx) error {
 	}
 	if h.runtimeService != nil {
 		for _, runtime := range []string{"go", "node", "python", "php"} {
+			if runtime == "php" && len(h.service.RuntimeVersionStates("php")) > 0 {
+				continue
+			}
 			if _, err := h.runtimeService.ImportSystemDefaultRuntime(runtime); err == nil {
 				_ = h.service.SyncInstalledRuntimeCatalogs()
 			}
@@ -571,11 +574,11 @@ func (h *SettingsHandler) RuntimeVersionAdd(c *fiber.Ctx) error {
 func (h *SettingsHandler) RuntimeVersionRemove(c *fiber.Ctx) error {
 	runtime := strings.ToLower(strings.TrimSpace(c.Params("runtime")))
 	version := strings.TrimSpace(c.FormValue("version"))
-	if h.service.ProtectedRuntimeVersion(runtime, version) {
-		return h.runtimeActionError(c, fmt.Errorf("%s is a protected host-imported runtime and cannot be removed", version), services.RuntimeActionResult{})
-	}
 	if current := h.runtimeDefaultStatus(runtime); strings.TrimSpace(current.Version) == version {
 		return h.runtimeActionError(c, fmt.Errorf("cannot remove %s while it is the current system default for %s", version, runtime), services.RuntimeActionResult{})
+	}
+	if h.service.ProtectedRuntimeVersion(runtime, version) && h.service.VerifyInstalledRuntimeVersion(runtime, version) {
+		return h.runtimeActionError(c, fmt.Errorf("%s is a protected host-imported runtime and cannot be removed", version), services.RuntimeActionResult{})
 	}
 	usageCount, usageNames, usageErr := h.runtimeVersionUsage(runtime, version)
 	if usageErr != nil {
