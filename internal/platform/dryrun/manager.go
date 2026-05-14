@@ -53,8 +53,8 @@ func (m *serviceManager) ensureStore() {
 func (m *serviceManager) Install(_ context.Context, def platform.ServiceDefinition) (string, error) {
 	m.ensureStore()
 	unitPath := filepath.Join(m.cfg.Paths.StorageRoot, "generated", def.Name+".service")
-	content := fmt.Sprintf("# [dryrun] simulated unit for %s\nExecStart=%s %s\nWorkingDirectory=%s\n",
-		def.Name, def.ExecPath, strings.Join(def.Args, " "), def.WorkingDir)
+	content := fmt.Sprintf("# [dryrun] simulated unit for %s\nUser=%s\nExecStart=%s %s\nWorkingDirectory=%s\n",
+		def.Name, def.User, def.ExecPath, strings.Join(def.Args, " "), def.WorkingDir)
 	if err := os.MkdirAll(filepath.Dir(unitPath), 0o755); err != nil {
 		return "", err
 	}
