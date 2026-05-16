@@ -52,6 +52,7 @@ type Application struct {
 	ReconcileService *services.ReconcileService
 	HostLifecycle    *services.HostLifecycleService
 	UpdateService    *services.UpdateService
+	PlatformOps      *services.PlatformOpsService
 
 	AuthHandler      *handlers.AuthHandler
 	DashboardHandler *handlers.DashboardHandler
@@ -149,6 +150,7 @@ func Build() (*Application, error) {
 	preflightService := services.NewPreflightService(cfg, repos, platformAdapter)
 	reconcileService := services.NewReconcileService(repos, websiteService, appService, firewallService, cronService, ftpService, varnishService, databaseService)
 	hostLifecycleService := services.NewHostLifecycleService(cfg, repos, platformAdapter, websiteService, appService, siteUserService, databaseService, firewallService, ftpService, sslService)
+	platformOpsService := services.NewPlatformOpsService(cfg, repos, platformAdapter, websiteService, appService, auditService)
 
 	engine := views.NewEngine(cfg)
 
@@ -304,10 +306,11 @@ func Build() (*Application, error) {
 		ReconcileService: reconcileService,
 		HostLifecycle:    hostLifecycleService,
 		UpdateService:    updateService,
+		PlatformOps:      platformOpsService,
 		AuthHandler:      handlers.NewAuthHandler(cfg, sessionManager, authService, settingsService),
 		DashboardHandler: handlers.NewDashboardHandler(cfg, sessionManager, dashboardService),
-		WebsiteHandler:   handlers.NewWebsiteHandler(cfg, sessionManager, websiteService, repos.SiteUsers, siteUserService, databaseService, sslService, repos.Databases, repos.SSL, settingsService, repos.NginxSites, repos.CronJobs, repos.Varnish, repos.IPBlocks, repos.BotBlocks, repos.BasicAuths, repos.CloudflareConfigs, repos.FTPUsers, appService, cronService, ftpService, varnishService, platformAdapter),
-		AppHandler:       handlers.NewAppHandler(cfg, sessionManager, appService, websiteService, settingsService, siteUserService, repos.SiteUsers, databaseService, sslService, repos.Databases, repos.FTPUsers, ftpService),
+		WebsiteHandler:   handlers.NewWebsiteHandler(cfg, sessionManager, websiteService, repos.SiteUsers, siteUserService, databaseService, sslService, repos.Databases, repos.SSL, settingsService, repos.NginxSites, repos.CronJobs, repos.Varnish, repos.IPBlocks, repos.BotBlocks, repos.BasicAuths, repos.CloudflareConfigs, repos.FTPUsers, appService, cronService, ftpService, varnishService, platformAdapter, platformOpsService),
+		AppHandler:       handlers.NewAppHandler(cfg, sessionManager, appService, websiteService, settingsService, siteUserService, repos.SiteUsers, databaseService, sslService, repos.Databases, repos.FTPUsers, ftpService, platformOpsService),
 		ServiceHandler:   handlers.NewServiceHandler(cfg, sessionManager, serviceService),
 		SettingsHandler:  handlers.NewSettingsHandler(cfg, sessionManager, settingsService, serviceService, panelUserService, repos.Audit, repos.Firewalls, repos.UserPlatformAccess, websiteService, appService, auditService, firewallService, runtimeService, ftpService, updateService),
 		UpdateHandler:    handlers.NewUpdateHandler(cfg, sessionManager, updateService),
@@ -426,6 +429,13 @@ func (a *Application) registerRoutes() {
 	secured.Post("/websites/:id/manage/delete-app", a.WebsiteHandler.ManageDeleteLinkedApp)
 	secured.Get("/websites/:id/manage/log-files", a.WebsiteHandler.LogFiles)
 	secured.Get("/websites/:id/manage/log-content", a.WebsiteHandler.LogContent)
+	secured.Post("/platforms/:ref/manage/ops/health", a.WebsiteHandler.ManageOpsHealth)
+	secured.Post("/platforms/:ref/manage/ops/deploy-config", adminOnly, a.WebsiteHandler.ManageOpsSaveDeployConfig)
+	secured.Post("/platforms/:ref/manage/ops/deploy", adminOnly, a.WebsiteHandler.ManageOpsDeploy)
+	secured.Post("/platforms/:ref/manage/ops/runtime-restart", adminOnly, a.WebsiteHandler.ManageOpsRuntimeRestart)
+	secured.Post("/platforms/:ref/manage/ops/backup", adminOnly, a.WebsiteHandler.ManageOpsBackup)
+	secured.Post("/platforms/:ref/manage/ops/restore", adminOnly, a.WebsiteHandler.ManageOpsRestore)
+	secured.Post("/platforms/:ref/manage/ops/repair", adminOnly, a.WebsiteHandler.ManageOpsRepair)
 
 	// elFinder File Manager connector
 	secured.Get("/websites/:id/elfinder", a.ElfinderHandler.Connector)

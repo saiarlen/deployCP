@@ -45,6 +45,7 @@ type WebsiteHandler struct {
 	ftpService      *services.FTPService
 	varnishService  *services.VarnishService
 	platform        platform.Adapter
+	ops             *services.PlatformOpsService
 }
 
 type websiteFormInput struct {
@@ -77,6 +78,7 @@ func NewWebsiteHandler(
 	ftpService *services.FTPService,
 	varnishService *services.VarnishService,
 	platformAdapter platform.Adapter,
+	ops *services.PlatformOpsService,
 ) *WebsiteHandler {
 	return &WebsiteHandler{
 		base:            &BaseHandler{Config: cfg, Sessions: sessions},
@@ -101,6 +103,7 @@ func NewWebsiteHandler(
 		ftpService:      ftpService,
 		varnishService:  varnishService,
 		platform:        platformAdapter,
+		ops:             ops,
 	}
 }
 
@@ -222,6 +225,10 @@ func (h *WebsiteHandler) ShowByID(c *fiber.Ctx, id uint) error {
 	scopedSSL := websiteSSLItems(item, sslItems)
 	serverAddress := displayServerAddress(h.base.Config, c.Hostname())
 	runtimeSetupRuntime := lockedWebsiteRuntime(item)
+	opsView := services.PlatformOpsView{}
+	if h.ops != nil {
+		opsView = h.ops.View(c.Context(), id)
+	}
 
 	return h.base.Render(c, "platforms_show", fiber.Map{
 		"Title":                item.Name,
@@ -263,6 +270,9 @@ func (h *WebsiteHandler) ShowByID(c *fiber.Ctx, id uint) error {
 		"RuntimeSetupRuntime":  runtimeSetupRuntime,
 		"RuntimeSetupLabel":    runtimeDisplayLabel(runtimeSetupRuntime),
 		"RuntimeSetupLocked":   runtimeSetupRuntime != "",
+		"Ops":                  opsView,
+		"OpsActionBase":        platformURL("website", id) + "/manage/ops",
+		"IsAdmin":              authUserRole(c) == "admin",
 	})
 }
 
@@ -320,6 +330,136 @@ func (h *WebsiteHandler) Toggle(c *fiber.Ctx) error {
 		h.base.Sessions.SetFlash(c, "Maintenance mode enabled")
 	}
 	return c.Redirect(platformURL("website", id))
+}
+
+func (h *WebsiteHandler) ManageOpsHealth(c *fiber.Ctx) error {
+	kind, id, err := h.platformKindIDFromRef(c)
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	if h.ops == nil {
+		return c.Status(500).SendString("platform operations unavailable")
+	}
+	check, err := h.ops.CheckHealth(c.Context(), id, currentUserID(c), c.IP())
+	if err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+	} else {
+		h.base.Sessions.SetFlash(c, "Health check completed: "+check.Status)
+	}
+	return c.Redirect(platformURLWithTab(kind, id, "operations"))
+}
+
+func (h *WebsiteHandler) ManageOpsSaveDeployConfig(c *fiber.Ctx) error {
+	kind, id, err := h.platformKindIDFromRef(c)
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	in := services.PlatformDeployInput{
+		RepoURL:            strings.TrimSpace(c.FormValue("repo_url")),
+		Branch:             strings.TrimSpace(c.FormValue("branch")),
+		WorkDir:            strings.TrimSpace(c.FormValue("work_dir")),
+		DeployCommand:      c.FormValue("deploy_command"),
+		DeployKeyPrivate:   c.FormValue("deploy_key_private"),
+		RestartAfterDeploy: boolFromForm(c, "restart_after_deploy"),
+	}
+	if err := h.ops.SaveDeployConfig(c.Context(), id, in, currentUserID(c), c.IP()); err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+	} else {
+		h.base.Sessions.SetFlash(c, "Deploy configuration saved")
+	}
+	return c.Redirect(platformURLWithTab(kind, id, "operations"))
+}
+
+func (h *WebsiteHandler) ManageOpsDeploy(c *fiber.Ctx) error {
+	kind, id, err := h.platformKindIDFromRef(c)
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	result, err := h.ops.Deploy(c.Context(), id, strings.TrimSpace(c.FormValue("branch")), currentUserID(c), c.IP())
+	if err != nil {
+		h.base.Sessions.SetFlash(c, "Deploy failed: "+err.Error())
+	} else {
+		h.base.Sessions.SetFlash(c, "Deploy completed: "+result.Status)
+	}
+	return c.Redirect(platformURLWithTab(kind, id, "operations"))
+}
+
+func (h *WebsiteHandler) ManageOpsRuntimeRestart(c *fiber.Ctx) error {
+	kind, id, err := h.platformKindIDFromRef(c)
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	if err := h.ops.RestartRuntime(c.Context(), id, currentUserID(c), c.IP()); err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+	} else {
+		h.base.Sessions.SetFlash(c, "Runtime restarted")
+	}
+	return c.Redirect(platformURLWithTab(kind, id, "operations"))
+}
+
+func (h *WebsiteHandler) ManageOpsBackup(c *fiber.Ctx) error {
+	kind, id, err := h.platformKindIDFromRef(c)
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	backup, err := h.ops.CreateBackup(c.Context(), id, "manual", currentUserID(c), c.IP())
+	if err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+	} else {
+		h.base.Sessions.SetFlash(c, fmt.Sprintf("Backup completed: %s", filepath.Base(backup.FilePath)))
+	}
+	return c.Redirect(platformURLWithTab(kind, id, "operations"))
+}
+
+func (h *WebsiteHandler) ManageOpsRestore(c *fiber.Ctx) error {
+	kind, id, err := h.platformKindIDFromRef(c)
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	backupID, err := repositories.ParseID(c.FormValue("backup_id"))
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	if err := h.ops.RestoreBackup(c.Context(), id, backupID, currentUserID(c), c.IP()); err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+	} else {
+		h.base.Sessions.SetFlash(c, "Backup restored and platform repaired")
+	}
+	return c.Redirect(platformURLWithTab(kind, id, "operations"))
+}
+
+func (h *WebsiteHandler) ManageOpsRepair(c *fiber.Ctx) error {
+	kind, id, err := h.platformKindIDFromRef(c)
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	if err := h.ops.RepairPlatform(c.Context(), id, currentUserID(c), c.IP()); err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+	} else {
+		h.base.Sessions.SetFlash(c, "Platform repair completed")
+	}
+	return c.Redirect(platformURLWithTab(kind, id, "operations"))
+}
+
+func (h *WebsiteHandler) platformIDFromRef(c *fiber.Ctx) (uint, error) {
+	_, id, err := h.platformKindIDFromRef(c)
+	return id, err
+}
+
+func (h *WebsiteHandler) platformKindIDFromRef(c *fiber.Ctx) (string, uint, error) {
+	ref := strings.TrimSpace(c.Params("ref"))
+	if ref != "" {
+		kind, id, err := utils.DecodePlatformRef(ref)
+		if err == nil && id > 0 {
+			return kind, id, nil
+		}
+		if n, err := strconv.ParseUint(ref, 10, 64); err == nil && n > 0 {
+			return "website", uint(n), nil
+		}
+		return "", 0, fmt.Errorf("invalid platform reference")
+	}
+	id, err := repositories.ParseID(c.Params("id"))
+	return "website", id, err
 }
 
 func (h *WebsiteHandler) ManageCreateDatabase(c *fiber.Ctx) error {

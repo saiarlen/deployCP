@@ -66,6 +66,7 @@ After install, open `http://your-server-ip:2024` to create your admin account an
 | **Redis** | Dedicated managed instances with per-platform config |
 | **Varnish** | Per-site VCL fragments, aggregate include, validate, reload |
 | **Logs** | Real filesystem log paths surfaced in the panel |
+| **Operations** | Per-platform health history, Git deploy hooks, deploy keys, backups/restores, alert events, and repair |
 | **Host Hardening** | Automatic firewall bootstrap, fail2ban, logrotate, backup cron, SSH-safe install flow |
 
 Runtime behavior on live Linux:
@@ -97,6 +98,11 @@ Runtime behavior on live Linux:
 - removing a managed PHP version purges the matching safe versioned FPM/CLI package and clears stale systemd unit state; shared generic packages such as `php-fpm` are skipped
 - if a PHP website shell still falls back to a managed PHP CLI version, DeployCP blocks removing that managed version
 - direct `systemd` runtime platforms are verified more strictly than `pm2`, `gunicorn`, and `uwsgi`, which remain best-effort verified from live process inspection
+- GitHub Actions and SSH deploy flows can call `deploycp deploy` or `deploycp runtime restart` on the target host instead of calling `systemctl` directly
+- per-platform Operations stores health history, backup records, deploy configuration, and alert events in SQLite
+- per-platform deploy keys are written under `<platform-home>/.deploycp/deploy/`, stored encrypted in panel metadata, and used through `GIT_SSH_COMMAND` during Git deploy
+- per-platform backup archives are stored under DeployCP's backup root, include platform files plus attached MariaDB/Postgres and Redis data dumps, and restore uses path traversal and symlink escape checks before writing files
+- admin-only repair regenerates nginx config, runtime service state, scoped sudoers, shell runtime files, and filesystem permissions from saved metadata
 
 Python runtime setup:
 
@@ -125,17 +131,23 @@ Production-oriented safeguards include:
 - per-platform Linux users with restricted shells and scoped SSH access
 - per-platform runtime environment files under `.deploycp/runtime.env`
 - systemd-managed application services with bounded start/stop/restart controls
+- runtime restart and deploy hooks exposed through `deploycp runtime restart` and `deploycp deploy`, so automation does not need raw `systemctl`
+- one-click install/update writes a managed `/usr/local/bin/deploycp` wrapper that loads `/home/deploycp/core/.env` and runs the release binary
 - nginx config generation with validation before reload
 - stale same-domain nginx config cleanup before writing a current vhost
 - a managed nginx catch-all that rejects unknown/deleted domains instead of serving the host default page
 - domain ownership checks before platform/domain creation
 - CSRF protection, authenticated panel routes, session handling, and login rate limiting
 - host hardening scripts for firewall, fail2ban, logrotate, and backups
+- admin-only per-platform repair, backup/restore, deploy config, deploy execution, and runtime restart actions
+- per-platform alert records for service down, SSL expiry/expiration, and high disk usage, with optional JSON webhook delivery
 
 Security notes:
 
 - DeployCP performs privileged host operations and should be installed only on servers you control.
 - Use strong admin credentials and keep the panel behind trusted network access when possible.
+- Treat private deploy keys as production secrets. Rotate them from the Operations tab when repository access changes.
+- `ALERT_WEBHOOK_URL`, when configured, receives alert JSON for new alert events; secure that endpoint the same way you secure other operational webhooks.
 - Public multi-tenant hosting with untrusted users should be treated as higher risk until the deployment has been independently audited.
 - Review any manually edited nginx, sudoers, runtime, or service files before assuming managed cleanup can repair them automatically.
 
@@ -201,7 +213,7 @@ Tested on Ubuntu, Debian, Rocky Linux, AlmaLinux, CentOS Stream, Fedora, openSUS
 └── platforms/
     ├── sites/                    # managed platform root directories
     ├── logs/                     # platform access/error logs
-    ├── backups/
+    ├── backups/                  # DeployCP host and per-platform backup archives
     └── tmp/
 ```
 
@@ -210,6 +222,7 @@ Per-site layout:
 ```text
 /home/deploycp/platforms/sites/<domain>/
 ├── .deploycp/                    # runtime env, app venvs, DeployCP-managed metadata
+│   └── deploy/                    # optional per-platform Git deploy key
 ├── htdocs/                       # nginx web root
 └── logs/                         # per-site access/error logs
 ```
@@ -231,6 +244,16 @@ Runtime-backed platform workflow:
 4. DeployCP writes the nginx proxy vhost and creates a named systemd service such as `deploycp-app-example-com.service`.
 5. The service runs as the platform's primary site user when available.
 6. Site users with SSH access can use scoped sudo for `start`, `stop`, `restart`, `status`, and `is-active` on that one service only.
+
+Operations workflow:
+
+1. Open a platform's Operations tab.
+2. Run a health check to record service, HTTP, SSL, and disk status.
+3. Configure Git deploy with repository URL, branch, optional private deploy key, work directory, and optional deploy command.
+4. Trigger deploy from the panel, or from GitHub Actions using `deploycp deploy --platform <id-or-domain>`.
+5. Restart the runtime from the panel, or from automation using `deploycp runtime restart --platform <id-or-domain>`.
+6. Create and restore per-platform backups from the Operations tab. Each archive contains platform files plus MariaDB/Postgres and Redis dumps for connections attached to that platform. Restores create a pre-restore backup first, restore files/data, then run platform repair.
+7. Use admin-only Repair Platform when nginx, service units, sudoers, runtime env, or permissions drift from saved metadata.
 
 For Python Flask/uWSGI, a minimal `htdocs` layout is:
 
@@ -290,6 +313,7 @@ HTTP Request
 | `internal/platform/dryrun/manager.go` | Dry-run adapter for local development |
 | `internal/system/command_runner.go` | Safe command execution abstraction |
 | `internal/system/nginx/generator.go` | Nginx config generation |
+| `internal/services/platform_ops_service.go` | Per-platform health, deploy, backup/restore, alerts, repair |
 | `internal/services/` | All business logic and provisioning |
 | `frontend/templates/` | Jet HTML templates |
 
@@ -312,7 +336,23 @@ deploycp verify-host
 
 # Remove all managed resources (platforms, users, services, firewall rules)
 deploycp teardown-managed
+
+# Restart one platform runtime without raw systemctl
+deploycp runtime restart --platform example.com
+
+# Pull configured Git repo, run optional deploy command, and restart runtime
+deploycp deploy --platform example.com
+
+# Override branch for one deploy
+deploycp deploy --platform example.com --branch main
+
+# Run and persist a per-platform health check
+deploycp health-check --platform example.com
 ```
+
+For CI/CD on the target host, `--platform` can be omitted when the working directory is inside a managed platform root, or supplied through `DEPLOYCP_PLATFORM`. `DEPLOYCP_BRANCH` can supply a branch override for `deploycp deploy`.
+
+The Linux installer creates `/usr/local/bin/deploycp` as a managed wrapper around `/home/deploycp/core/bin/deploycp`, so GitHub Actions can run the short command while still loading the production `.env`.
 
 ## Verification and Recovery
 
@@ -328,6 +368,15 @@ sudo /home/deploycp/core/bin/deploycp verify-host
 
 # Re-sync all managed state
 sudo /home/deploycp/core/bin/deploycp reconcile-managed
+
+# Restart a specific platform runtime without direct systemctl
+sudo /home/deploycp/core/bin/deploycp runtime restart --platform example.com
+
+# Run the configured Git deploy for a platform
+sudo /home/deploycp/core/bin/deploycp deploy --platform example.com
+
+# Record a platform health check and update alert state
+sudo /home/deploycp/core/bin/deploycp health-check --platform example.com
 
 # Re-apply host hardening on an existing server
 sudo /home/deploycp/core/scripts/linux/harden-host.sh
@@ -374,7 +423,8 @@ Current limitation:
 2. `deploycp verify-host` — identify missing binaries, dirs, or config
 3. Fix any reported issues (install missing packages, set env values)
 4. `deploycp reconcile-managed` — re-sync managed resources
-5. Test the affected platform workflow
+5. `deploycp health-check --platform <domain-or-id>` — record platform health and alert state
+6. Test the affected platform workflow
 
 Use `bootstrap-host` and `reconcile-managed` manually only when:
 
@@ -409,6 +459,24 @@ Manual backup:
 ```bash
 sudo /home/deploycp/core/scripts/linux/backup.sh
 ```
+
+Per-platform backups are separate from the host-level cron backup but use the same DeployCP backup root (`BACKUP_TARGET_DIR`). They are created from the platform Operations tab, tracked in SQLite, and stored under `/home/deploycp/platforms/backups/<platform>/`.
+
+Per-platform backup scope:
+
+- included: platform home files, `htdocs`, logs under the platform home, `.deploycp` runtime metadata, attached MariaDB/Postgres database dumps, and attached Redis DB dumps
+- excluded: per-platform Git private deploy key files, panel SQLite metadata, host packages, nginx global files, systemd global state, and any external database/Redis not registered against that platform in DeployCP
+- restore: creates a pre-restore backup first, validates archive paths/symlinks, restores files, restores attached database dumps, flushes and rebuilds attached Redis DBs from the archived dump, removes temporary backup metadata, then runs Repair Platform
+
+The host-level backup script is what captures DeployCP's own SQLite metadata and global host state. Use it when you need disaster recovery for the panel itself; use per-platform backups when you need to roll one app/platform back.
+
+Optional alert webhook:
+
+```env
+ALERT_WEBHOOK_URL=https://alerts.example.com/deploycp
+```
+
+DeployCP sends JSON only when a new alert opens. Existing alert records remain visible in the platform Operations tab even without a webhook.
 
 ## Platform Update Rules
 

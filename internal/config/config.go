@@ -53,6 +53,7 @@ type PathsConfig struct {
 	LogRoot             string
 	RuntimeRoot         string
 	HTPasswdRoot        string
+	BackupRoot          string
 	CronDir             string
 	NginxBinary         string
 	NginxConfigDir      string
@@ -72,6 +73,7 @@ type PathsConfig struct {
 type IntegrationConfig struct {
 	AdminerURL          string
 	RedisInfoTimeoutSec int
+	AlertWebhookURL     string
 }
 
 type FeatureConfig struct {
@@ -134,6 +136,7 @@ func Load() (*Config, error) {
 		Integrations: IntegrationConfig{
 			AdminerURL:          getEnv("ADMINER_URL", "http://127.0.0.1:8081"),
 			RedisInfoTimeoutSec: getEnvInt("REDIS_INFO_TIMEOUT_SEC", 3),
+			AlertWebhookURL:     getEnv("ALERT_WEBHOOK_URL", ""),
 		},
 		Features: FeatureConfig{
 			EnableServiceManage: getEnvBool("FEATURE_SERVICE_MANAGE", true),
@@ -170,6 +173,7 @@ func Load() (*Config, error) {
 	cfg.Paths.LogRoot = getEnv("LOG_ROOT", cfg.Paths.LogRoot)
 	cfg.Paths.RuntimeRoot = getEnv("RUNTIME_ROOT", cfg.Paths.RuntimeRoot)
 	cfg.Paths.HTPasswdRoot = getEnv("HTPASSWD_ROOT", cfg.Paths.HTPasswdRoot)
+	cfg.Paths.BackupRoot = getEnv("BACKUP_TARGET_DIR", defaultBackupRoot(cfg.Paths.DefaultSiteRoot, cfg.Paths.StorageRoot))
 	cfg.Paths.CronDir = getEnv("CRON_DIR", cfg.Paths.CronDir)
 	cfg.Paths.NginxBinary = getEnv("NGINX_BINARY", cfg.Paths.NginxBinary)
 	cfg.Paths.NginxConfigDir = getEnv("NGINX_CONFIG_DIR", cfg.Paths.NginxConfigDir)
@@ -243,6 +247,7 @@ func (c *Config) applyDryrunPaths() {
 	c.Paths.CronDir = filepath.Join(root, "dryrun", "cron.d")
 	c.Paths.RuntimeRoot = filepath.Join(root, "dryrun", "runtimes")
 	c.Paths.HTPasswdRoot = filepath.Join(root, "dryrun", "htpasswd")
+	c.Paths.BackupRoot = filepath.Join(root, "dryrun", "backups")
 	c.Paths.CertbotBinary = "/bin/echo"
 	c.Paths.RunuserBinary = "/bin/echo"
 	c.Paths.UFWBinary = "/bin/echo"
@@ -297,6 +302,7 @@ func (c *Config) prepareDirectories() error {
 		c.Paths.LogRoot,
 		c.Paths.RuntimeRoot,
 		c.Paths.HTPasswdRoot,
+		c.Paths.BackupRoot,
 		filepath.Join(c.Paths.StorageRoot, "generated"),
 		filepath.Join(c.Paths.StorageRoot, "ssl"),
 	}
@@ -354,6 +360,7 @@ func defaultPaths() PathsConfig {
 			LogRoot:             "./storage/logs",
 			RuntimeRoot:         "./storage/runtimes",
 			HTPasswdRoot:        "./storage/generated/htpasswd",
+			BackupRoot:          "./storage/backups",
 			CronDir:             "/etc/cron.d",
 			NginxBinary:         "/opt/homebrew/bin/nginx",
 			NginxConfigDir:      "/opt/homebrew/etc/nginx",
@@ -377,6 +384,7 @@ func defaultPaths() PathsConfig {
 		LogRoot:             "./storage/logs",
 		RuntimeRoot:         "./storage/runtimes",
 		HTPasswdRoot:        "./storage/generated/htpasswd",
+		BackupRoot:          "/home/deploycp/platforms/backups",
 		CronDir:             "/etc/cron.d",
 		NginxBinary:         "/usr/sbin/nginx",
 		NginxConfigDir:      "/etc/nginx",
@@ -392,6 +400,21 @@ func defaultPaths() PathsConfig {
 		FirewallCMDBinary:   "/usr/bin/firewall-cmd",
 		IPTablesBinary:      "/usr/sbin/iptables",
 	}
+}
+
+func defaultBackupRoot(defaultSiteRoot, storageRoot string) string {
+	defaultSiteRoot = filepath.Clean(strings.TrimSpace(defaultSiteRoot))
+	if defaultSiteRoot != "" && defaultSiteRoot != "." {
+		parent := filepath.Dir(defaultSiteRoot)
+		if parent != "." && parent != string(filepath.Separator) {
+			return filepath.Join(parent, "backups")
+		}
+	}
+	storageRoot = strings.TrimSpace(storageRoot)
+	if storageRoot == "" {
+		storageRoot = "./storage"
+	}
+	return filepath.Join(storageRoot, "backups")
 }
 
 func getEnv(key, fallback string) string {

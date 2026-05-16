@@ -4519,6 +4519,65 @@ body.light-theme .pw-runtime-head h4 {
 .pw-submit-btn {
   font-weight: 600;
 }
+.platform-wizard.is-submitting {
+  pointer-events: none;
+}
+.platform-wizard.is-submitting .pw-section,
+.platform-wizard.is-submitting .pw-stage {
+  opacity: 0.68;
+}
+.pw-create-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 240;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-5);
+  background: rgba(8, 12, 20, 0.58);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.pw-create-loader[aria-hidden="false"] {
+  display: flex;
+}
+.pw-create-loader-card {
+  width: min(92vw, 420px);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: center;
+  padding: var(--space-5);
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-lg);
+}
+.pw-create-spinner {
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 999px;
+  border: 3px solid var(--primary-soft);
+  border-top-color: var(--primary);
+  display: inline-block;
+  animation: app-update-spin 0.75s linear infinite;
+}
+.pw-create-spinner-inline {
+  width: 1rem;
+  height: 1rem;
+  border-width: 2px;
+}
+.pw-create-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.pw-create-message {
+  margin-top: 4px;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: var(--text-sec);
+}
 
 /* Manage layout helpers */
 .manage-overview {

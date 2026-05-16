@@ -29,6 +29,7 @@ type AppHandler struct {
 	databases       *repositories.DatabaseConnectionRepository
 	ftpUsers        *repositories.FTPUserRepository
 	ftpService      *services.FTPService
+	ops             *services.PlatformOpsService
 }
 
 func NewAppHandler(
@@ -44,6 +45,7 @@ func NewAppHandler(
 	databases *repositories.DatabaseConnectionRepository,
 	ftpUsers *repositories.FTPUserRepository,
 	ftpService *services.FTPService,
+	ops *services.PlatformOpsService,
 ) *AppHandler {
 	return &AppHandler{
 		base:            &BaseHandler{Config: cfg, Sessions: sessions},
@@ -57,6 +59,7 @@ func NewAppHandler(
 		databases:       databases,
 		ftpUsers:        ftpUsers,
 		ftpService:      ftpService,
+		ops:             ops,
 	}
 }
 
@@ -373,6 +376,10 @@ func (h *AppHandler) ShowByID(c *fiber.Ctx, id uint) error {
 		defaultHomeDir = platformHomeFromRoot(status.App.WorkingDirectory)
 	}
 	serverAddress := displayServerAddress(h.base.Config, c.Hostname())
+	opsView := services.PlatformOpsView{}
+	if h.ops != nil {
+		opsView = h.ops.View(c.Context(), id)
+	}
 
 	return h.base.Render(c, "platforms_show", fiber.Map{
 		"Title":            status.App.Name,
@@ -398,6 +405,9 @@ func (h *AppHandler) ShowByID(c *fiber.Ctx, id uint) error {
 		"PrimarySSHUserID": primarySSHUserID,
 		"FTPUsers":         ftpUsers,
 		"DefaultHomeDir":   defaultHomeDir,
+		"Ops":              opsView,
+		"OpsActionBase":    platformURL("app", id) + "/manage/ops",
+		"IsAdmin":          authUserRole(c) == "admin",
 	})
 }
 

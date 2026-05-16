@@ -85,6 +85,27 @@ stage_release_binary() {
   return 1
 }
 
+ensure_cli_wrapper() {
+  local wrapper="/usr/local/bin/${BIN_NAME}"
+  local target="${CORE_DIR}/bin/${BIN_NAME}"
+  if [[ ! -x "$target" ]]; then
+    return 0
+  fi
+  if [[ -e "$wrapper" ]] && ! grep -Fq "Managed by DeployCP CLI wrapper" "$wrapper" 2>/dev/null; then
+    if [[ "$(readlink "$wrapper" 2>/dev/null || true)" != "$target" ]]; then
+      echo "Skipping ${wrapper}; an unmanaged command already exists there" >&2
+      return 0
+    fi
+  fi
+  cat >"$wrapper" <<EOF
+#!/usr/bin/env bash
+# Managed by DeployCP CLI wrapper. Do not edit.
+export DEPLOYCP_ENV_FILE="${CORE_DIR}/.env"
+exec "${target}" "\$@"
+EOF
+  chmod 0755 "$wrapper"
+}
+
 stage_release_assets() {
   local candidate=""
 
@@ -296,6 +317,29 @@ install_db_ui_helper_packages() {
     *)
       install_first_available_package "$manager" php-cli php8-cli php php8
       install_optional_packages "$manager" php-mysql php-pgsql php-sqlite3
+      ;;
+  esac
+}
+
+install_backup_tool_packages() {
+  local manager="$1"
+  case "$manager" in
+    apt)
+      install_first_available_package "$manager" mariadb-client default-mysql-client mysql-client
+      install_first_available_package "$manager" postgresql-client
+      ;;
+    dnf|yum)
+      install_first_available_package "$manager" mariadb postgresql
+      ;;
+    zypper)
+      install_first_available_package "$manager" mariadb-client mariadb
+      install_first_available_package "$manager" postgresql
+      ;;
+    pacman)
+      install_optional_packages "$manager" mariadb postgresql
+      ;;
+    *)
+      install_optional_packages "$manager" mariadb-client default-mysql-client mysql-client postgresql-client mariadb postgresql
       ;;
   esac
 }
@@ -797,6 +841,7 @@ EOF
 pkg_manager="$(detect_pkg_manager)"
 install_packages "$pkg_manager"
 install_db_ui_helper_packages "$pkg_manager"
+install_backup_tool_packages "$pkg_manager"
 configure_platform_defaults
 initialize_databases
 
@@ -817,6 +862,7 @@ chmod 755 "$APP_HOME" "$DATA_DIR" "${DATA_DIR}/sites" "${DATA_DIR}/logs" "${DATA
 ensure_nginx_integration
 ensure_varnish_integration
 stage_release_binary || true
+ensure_cli_wrapper
 stage_release_assets
 ensure_bundled_adminer
 reset_adminer_helper
@@ -868,6 +914,7 @@ POSTGRES_ADMIN_HOST=127.0.0.1
 POSTGRES_ADMIN_PORT=5432
 POSTGRES_ADMIN_DB=postgres
 ADMINER_URL=http://127.0.0.1:8081
+ALERT_WEBHOOK_URL=
 FTP_NOLOGIN_SHELL=/usr/sbin/nologin
 PROFTPD_CONF_DIR=${PROFTPD_CONF_DIR}
 PROFTPD_SERVICE_NAME=${PROFTPD_SERVICE_NAME}

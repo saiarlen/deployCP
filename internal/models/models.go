@@ -246,6 +246,64 @@ type NginxSiteConfig struct {
 	UpdatedAt       time.Time
 }
 
+type PlatformHealthCheck struct {
+	ID             uint      `gorm:"primaryKey"`
+	WebsiteID      uint      `gorm:"index;not null"`
+	Status         string    `gorm:"size:24;index;not null"`
+	ServiceStatus  string    `gorm:"size:24;index"`
+	HTTPStatusCode int       `gorm:"index"`
+	SSLStatus      string    `gorm:"size:24;index"`
+	DiskUsedPct    float64   `gorm:"not null;default:0"`
+	Message        string    `gorm:"type:text"`
+	CheckedAt      time.Time `gorm:"index;not null"`
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
+type PlatformBackup struct {
+	ID          uint       `gorm:"primaryKey"`
+	WebsiteID   uint       `gorm:"index;not null"`
+	FilePath    string     `gorm:"size:255;not null"`
+	SizeBytes   int64      `gorm:"not null;default:0"`
+	Status      string     `gorm:"size:24;index;not null;default:completed"`
+	Kind        string     `gorm:"size:32;index;not null;default:manual"`
+	Message     string     `gorm:"type:text"`
+	CompletedAt *time.Time `gorm:"index"`
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+type PlatformDeployConfig struct {
+	ID                  uint       `gorm:"primaryKey"`
+	WebsiteID           uint       `gorm:"uniqueIndex;not null"`
+	RepoURL             string     `gorm:"size:500"`
+	Branch              string     `gorm:"size:120;not null;default:main"`
+	WorkDir             string     `gorm:"size:255"`
+	DeployCommand       string     `gorm:"type:text"`
+	DeployKeyPrivateEnc string     `gorm:"type:text"`
+	DeployKeyPublic     string     `gorm:"type:text"`
+	DeployKeyPath       string     `gorm:"size:255"`
+	RestartAfterDeploy  bool       `gorm:"not null;default:true"`
+	LastDeployStatus    string     `gorm:"size:24;index"`
+	LastDeployMessage   string     `gorm:"type:text"`
+	LastDeployAt        *time.Time `gorm:"index"`
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+}
+
+type AlertEvent struct {
+	ID        uint       `gorm:"primaryKey"`
+	WebsiteID uint       `gorm:"index;not null"`
+	Type      string     `gorm:"size:64;index;not null"`
+	Severity  string     `gorm:"size:24;index;not null"`
+	Status    string     `gorm:"size:24;index;not null;default:open"`
+	Message   string     `gorm:"type:text"`
+	OpenedAt  time.Time  `gorm:"index;not null"`
+	ClosedAt  *time.Time `gorm:"index"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
 type Setting struct {
 	ID        uint   `gorm:"primaryKey"`
 	Key       string `gorm:"size:120;uniqueIndex;not null"`

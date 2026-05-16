@@ -24,6 +24,11 @@ systemctl disable "${SERVICE_NAME}" || true
 rm -f "/etc/systemd/system/${SERVICE_NAME}.service"
 systemctl daemon-reload
 
+CLI_WRAPPER="/usr/local/bin/${BIN_NAME}"
+if [[ -f "$CLI_WRAPPER" ]] && grep -Fq "Managed by DeployCP CLI wrapper" "$CLI_WRAPPER" 2>/dev/null; then
+  rm -f "$CLI_WRAPPER"
+fi
+
 if [[ -f "${VARNISH_MAIN_VCL}.deploycp.bak" ]]; then
   cp "${VARNISH_MAIN_VCL}.deploycp.bak" "${VARNISH_MAIN_VCL}"
   rm -f "${VARNISH_MAIN_VCL}.deploycp.bak"

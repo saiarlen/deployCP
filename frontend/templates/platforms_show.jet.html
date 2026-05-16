@@ -54,6 +54,7 @@
   <button class="manage-tab" data-tab="databases"><i data-lucide="database"></i><span>Databases</span></button>
   <button class="manage-tab" data-tab="ssl"><i data-lucide="shield-check"></i><span>SSL/TLS</span></button>
   <button class="manage-tab" data-tab="ssh"><i data-lucide="key"></i><span>SSH/FTP</span></button>
+  <button class="manage-tab" data-tab="operations"><i data-lucide="wrench"></i><span>Operations</span></button>
   <button class="manage-tab" data-tab="logs"><i data-lucide="file-text"></i><span>Logs</span></button>
 </div>
 
@@ -168,8 +169,8 @@
           <button type="button" class="platform-copy-action" data-copy-value="{{ Status.App.ServiceName }}" data-copy-success="Service name copied">Copy</button>
         </div>
         <div class="mt-2 flex items-center gap-2 min-w-0">
-          <span class="font-mono text-xs truncate">sudo systemctl restart {{ Status.App.ServiceName }}</span>
-          <button type="button" class="platform-copy-action" data-copy-value="sudo systemctl restart {{ Status.App.ServiceName }}" data-copy-success="Restart command copied">Copy</button>
+          <span class="font-mono text-xs truncate">{{ Ops.RuntimeCommand }}</span>
+          <button type="button" class="platform-copy-action" data-copy-value="{{ Ops.RuntimeCommand }}" data-copy-success="Restart command copied">Copy</button>
         </div>
       </div>
       <div class="rounded-md border border-[var(--border)] p-3">
@@ -790,6 +791,139 @@
   </div>
 </div>
 
+<!-- ═══════════ Operations ═══════════ -->
+<div class="manage-panel" data-panel="operations">
+  <div class="surface p-5 mb-5">
+    <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
+      <div>
+        <h3 class="text-sm font-semibold">Health Checks</h3>
+        <p class="text-sm opacity-70">Last platform status, service state, HTTP probe, SSL expiry state, and disk usage.</p>
+      </div>
+      <form action="{{ OpsActionBase }}/health" method="post" data-runtime-loading>
+        <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+        <button class="btn btn-primary" type="submit" data-loading-label="Checking..."><i data-lucide="activity"></i> Run Check</button>
+      </form>
+    </div>
+    {{ if Ops.HealthLatest }}
+    <div class="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-5 mb-4">
+      <div class="rounded-md border border-[var(--border)] p-3"><p class="text-xs uppercase opacity-60">Status</p><p class="mt-1"><span class="badge {{ if Ops.HealthLatest.Status == "ok" }}badge-ok{{ else if Ops.HealthLatest.Status == "critical" }}badge-danger{{ else }}badge-warn{{ end }}">{{ Ops.HealthLatest.Status }}</span></p></div>
+      <div class="rounded-md border border-[var(--border)] p-3"><p class="text-xs uppercase opacity-60">Service</p><p class="mt-1">{{ Ops.HealthLatest.ServiceStatus }}</p></div>
+      <div class="rounded-md border border-[var(--border)] p-3"><p class="text-xs uppercase opacity-60">HTTP</p><p class="mt-1">{{ Ops.HealthLatest.HTTPStatusCode }}</p></div>
+      <div class="rounded-md border border-[var(--border)] p-3"><p class="text-xs uppercase opacity-60">SSL</p><p class="mt-1">{{ Ops.HealthLatest.SSLStatus }}</p></div>
+      <div class="rounded-md border border-[var(--border)] p-3"><p class="text-xs uppercase opacity-60">Disk</p><p class="mt-1">{{ formatPct(Ops.HealthLatest.DiskUsedPct) }}</p></div>
+    </div>
+    <div class="rounded-md border border-[var(--border)] p-3 text-sm">{{ Ops.HealthLatest.Message }}<div class="mt-1 text-xs opacity-60">{{ formatTime(Ops.HealthLatest.CheckedAt) }}</div></div>
+    {{ else }}
+    <p class="text-sm opacity-70">No health checks have been recorded yet.</p>
+    {{ end }}
+    {{ if Ops.HealthHistory }}
+    <div class="mt-4 table-shell">
+      <table>
+        <thead><tr><th>Checked</th><th>Status</th><th>Service</th><th>HTTP</th><th>SSL</th><th>Disk</th></tr></thead>
+        <tbody>
+        {{ range _, check := Ops.HealthHistory }}
+          <tr>
+            <td>{{ formatTime(check.CheckedAt) }}</td>
+            <td><span class="badge {{ if check.Status == "ok" }}badge-ok{{ else if check.Status == "critical" }}badge-danger{{ else }}badge-warn{{ end }}">{{ check.Status }}</span></td>
+            <td>{{ check.ServiceStatus }}</td>
+            <td>{{ check.HTTPStatusCode }}</td>
+            <td>{{ check.SSLStatus }}</td>
+            <td>{{ formatPct(check.DiskUsedPct) }}</td>
+          </tr>
+        {{ end }}
+        </tbody>
+      </table>
+    </div>
+    {{ end }}
+    {{ if Ops.OpenAlerts }}
+    <div class="mt-4 space-y-2">
+      {{ range _, alert := Ops.OpenAlerts }}
+      <div class="rounded-md border border-[var(--border)] p-3 text-sm"><span class="badge {{ if alert.Severity == "critical" }}badge-danger{{ else }}badge-warn{{ end }}">{{ alert.Type }}</span> {{ alert.Message }}</div>
+      {{ end }}
+    </div>
+    {{ end }}
+  </div>
+
+  {{ if IsAdmin }}
+  <div class="surface p-5 mb-5">
+    <h3 class="text-sm font-semibold mb-4">Git Deploy</h3>
+    <form action="{{ OpsActionBase }}/deploy-config" method="post" class="space-y-4">
+      <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+      <div class="grid gap-4 md:grid-cols-2">
+        <label class="block text-sm font-medium">Repository URL
+          <input class="field mt-2" name="repo_url" value="{{ if Ops.DeployConfig }}{{ Ops.DeployConfig.RepoURL }}{{ end }}" placeholder="git@github.com:org/repo.git">
+        </label>
+        <label class="block text-sm font-medium">Branch
+          <input class="field mt-2" name="branch" value="{{ if Ops.DeployConfig }}{{ Ops.DeployConfig.Branch }}{{ else }}main{{ end }}">
+        </label>
+        <label class="block text-sm font-medium md:col-span-2">Work Directory
+          <input class="field mt-2 font-mono text-xs" name="work_dir" value="{{ if Ops.DeployConfig }}{{ Ops.DeployConfig.WorkDir }}{{ else }}{{ AppWorkingDir }}{{ end }}">
+        </label>
+      </div>
+      <label class="block text-sm font-medium">Deploy Command
+        <textarea class="field mt-2 font-mono text-xs" name="deploy_command" rows="3" placeholder="npm ci && npm run build">{{ if Ops.DeployConfig }}{{ Ops.DeployConfig.DeployCommand }}{{ end }}</textarea>
+      </label>
+      <label class="block text-sm font-medium">Private Deploy Key
+        <textarea class="field mt-2 font-mono text-xs" name="deploy_key_private" rows="4" placeholder="Paste a replacement private key only when rotating it"></textarea>
+        {{ if Ops.DeployConfig }}{{ if Ops.DeployConfig.DeployKeyPublic }}<span class="text-xs opacity-60 mt-1 block">Stored key: {{ Ops.DeployConfig.DeployKeyPublic }}</span>{{ end }}{{ end }}
+      </label>
+      <label class="inline-flex items-center gap-2 text-sm"><input type="checkbox" name="restart_after_deploy" {{ if !Ops.DeployConfig || Ops.DeployConfig.RestartAfterDeploy }}checked{{ end }}> Restart runtime after deploy</label>
+      <div class="flex flex-wrap justify-between gap-2">
+        <button class="btn btn-primary" type="submit">Save Deploy Config</button>
+        <button class="btn platform-copy-action" type="button" data-copy-value="{{ Ops.DeployCommand }}" data-copy-success="Deploy command copied">Copy Hook Command</button>
+      </div>
+    </form>
+    <form action="{{ OpsActionBase }}/deploy" method="post" class="mt-4 flex flex-wrap items-end gap-2" data-runtime-loading>
+      <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+      <label class="block text-sm font-medium">Branch Override
+        <input class="field mt-2" name="branch" placeholder="{{ if Ops.DeployConfig }}{{ Ops.DeployConfig.Branch }}{{ else }}main{{ end }}">
+      </label>
+      <button class="btn btn-primary" type="submit" data-loading-label="Deploying..."><i data-lucide="git-pull-request-arrow"></i> Deploy Now</button>
+      <button class="btn" formaction="{{ OpsActionBase }}/runtime-restart" type="submit" data-loading-label="Restarting..."><i data-lucide="refresh-cw"></i> Restart Runtime</button>
+    </form>
+    {{ if Ops.DeployConfig }}{{ if Ops.DeployConfig.LastDeployAt }}
+    <div class="mt-4 rounded-md border border-[var(--border)] p-3 text-sm">Last deploy: <span class="badge {{ if Ops.DeployConfig.LastDeployStatus == "success" }}badge-ok{{ else }}badge-danger{{ end }}">{{ Ops.DeployConfig.LastDeployStatus }}</span> {{ formatTimePtr(Ops.DeployConfig.LastDeployAt) }}</div>
+    {{ end }}{{ end }}
+  </div>
+
+  <div class="surface p-5 mb-5">
+    <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
+      <div><h3 class="text-sm font-semibold">Backup / Restore</h3><p class="text-sm opacity-70">Backups are per-platform tar.gz archives with safe restore validation.</p></div>
+      <form action="{{ OpsActionBase }}/backup" method="post" data-runtime-loading><input type="hidden" name="_csrf" value="{{ CSRFToken }}"><button class="btn btn-primary" type="submit" data-loading-label="Backing up..."><i data-lucide="archive"></i> Create Backup</button></form>
+    </div>
+    {{ if Ops.Backups }}
+    <div class="table-shell">
+      <table>
+        <thead><tr><th>Created</th><th>Status</th><th>Size</th><th>File</th><th></th></tr></thead>
+        <tbody>
+        {{ range _, backup := Ops.Backups }}
+          <tr>
+            <td>{{ formatTime(backup.CreatedAt) }}</td>
+            <td><span class="badge {{ if backup.Status == "completed" }}badge-ok{{ else if backup.Status == "failed" }}badge-danger{{ else }}badge-neutral{{ end }}">{{ backup.Status }}</span></td>
+            <td>{{ backup.SizeBytes }}</td>
+            <td class="font-mono text-xs">{{ backup.FilePath }}</td>
+            <td>{{ if backup.Status == "completed" }}<form action="{{ OpsActionBase }}/restore" method="post" data-confirm-message="Restore this backup? A pre-restore backup will be created first."><input type="hidden" name="_csrf" value="{{ CSRFToken }}"><input type="hidden" name="backup_id" value="{{ backup.ID }}"><button class="btn btn-sm" type="submit">Restore</button></form>{{ end }}</td>
+          </tr>
+        {{ end }}
+        </tbody>
+      </table>
+    </div>
+    {{ else }}
+    <p class="text-sm opacity-70">No backups yet.</p>
+    {{ end }}
+  </div>
+
+  <div class="surface p-5 border border-[var(--border)]">
+    <h3 class="text-sm font-semibold mb-2">Repair Platform</h3>
+    <p class="text-sm opacity-70 mb-4">Regenerates nginx config, runtime service, scoped sudoers, shell runtime, and platform permissions from saved metadata.</p>
+    <form action="{{ OpsActionBase }}/repair" method="post" data-confirm-message="Repair this platform from saved metadata now?" data-runtime-loading>
+      <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+      <button class="btn btn-warning" type="submit" data-loading-label="Repairing..."><i data-lucide="wrench"></i> Repair Platform</button>
+    </form>
+  </div>
+  {{ end }}
+</div>
+
 <!-- ═══════════ Logs ═══════════ -->
 <div class="manage-panel" data-panel="logs">
   <div class="log-panel" id="app-log-controls" data-app-id="{{ Status.App.ID }}">
@@ -1043,6 +1177,7 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
   <button class="manage-tab" data-tab="ssh"><i data-lucide="key"></i><span>SSH/FTP</span></button>
   <button class="manage-tab" data-tab="file-manager"><i data-lucide="folder-open"></i><span>File Manager</span></button>
   <button class="manage-tab" data-tab="cron-jobs"><i data-lucide="clock"></i><span>Cron Jobs</span></button>
+  <button class="manage-tab" data-tab="operations"><i data-lucide="wrench"></i><span>Operations</span></button>
   <button class="manage-tab" data-tab="logs"><i data-lucide="file-text"></i><span>Logs</span></button>
 </div>
 
@@ -1368,8 +1503,8 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
         </div>
         <div class="runtime-copy-row">
           <span class="runtime-copy-label">SSH command</span>
-          <code>sudo systemctl restart {{ LinkedApp.ServiceName }}</code>
-          <button type="button" class="platform-copy-action" data-copy-value="sudo systemctl restart {{ LinkedApp.ServiceName }}" data-copy-success="Restart command copied">Copy</button>
+          <code>{{ Ops.RuntimeCommand }}</code>
+          <button type="button" class="platform-copy-action" data-copy-value="{{ Ops.RuntimeCommand }}" data-copy-success="Restart command copied">Copy</button>
         </div>
       </div>
     </div>
@@ -1678,6 +1813,139 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
     </form>
   </div>
   </div>
+</div>
+
+<!-- ═══════════ Operations ═══════════ -->
+<div class="manage-panel" data-panel="operations">
+  <div class="surface p-5 mb-5">
+    <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
+      <div>
+        <h3 class="text-sm font-semibold">Health Checks</h3>
+        <p class="text-sm opacity-70">Last platform status, service state, HTTP probe, SSL expiry state, and disk usage.</p>
+      </div>
+      <form action="{{ OpsActionBase }}/health" method="post" data-runtime-loading>
+        <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+        <button class="btn btn-primary" type="submit" data-loading-label="Checking..."><i data-lucide="activity"></i> Run Check</button>
+      </form>
+    </div>
+    {{ if Ops.HealthLatest }}
+    <div class="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-5 mb-4">
+      <div class="rounded-md border border-[var(--border)] p-3"><p class="text-xs uppercase opacity-60">Status</p><p class="mt-1"><span class="badge {{ if Ops.HealthLatest.Status == "ok" }}badge-ok{{ else if Ops.HealthLatest.Status == "critical" }}badge-danger{{ else }}badge-warn{{ end }}">{{ Ops.HealthLatest.Status }}</span></p></div>
+      <div class="rounded-md border border-[var(--border)] p-3"><p class="text-xs uppercase opacity-60">Service</p><p class="mt-1">{{ Ops.HealthLatest.ServiceStatus }}</p></div>
+      <div class="rounded-md border border-[var(--border)] p-3"><p class="text-xs uppercase opacity-60">HTTP</p><p class="mt-1">{{ Ops.HealthLatest.HTTPStatusCode }}</p></div>
+      <div class="rounded-md border border-[var(--border)] p-3"><p class="text-xs uppercase opacity-60">SSL</p><p class="mt-1">{{ Ops.HealthLatest.SSLStatus }}</p></div>
+      <div class="rounded-md border border-[var(--border)] p-3"><p class="text-xs uppercase opacity-60">Disk</p><p class="mt-1">{{ formatPct(Ops.HealthLatest.DiskUsedPct) }}</p></div>
+    </div>
+    <div class="rounded-md border border-[var(--border)] p-3 text-sm">{{ Ops.HealthLatest.Message }}<div class="mt-1 text-xs opacity-60">{{ formatTime(Ops.HealthLatest.CheckedAt) }}</div></div>
+    {{ else }}
+    <p class="text-sm opacity-70">No health checks have been recorded yet.</p>
+    {{ end }}
+    {{ if Ops.HealthHistory }}
+    <div class="mt-4 table-shell">
+      <table>
+        <thead><tr><th>Checked</th><th>Status</th><th>Service</th><th>HTTP</th><th>SSL</th><th>Disk</th></tr></thead>
+        <tbody>
+        {{ range _, check := Ops.HealthHistory }}
+          <tr>
+            <td>{{ formatTime(check.CheckedAt) }}</td>
+            <td><span class="badge {{ if check.Status == "ok" }}badge-ok{{ else if check.Status == "critical" }}badge-danger{{ else }}badge-warn{{ end }}">{{ check.Status }}</span></td>
+            <td>{{ check.ServiceStatus }}</td>
+            <td>{{ check.HTTPStatusCode }}</td>
+            <td>{{ check.SSLStatus }}</td>
+            <td>{{ formatPct(check.DiskUsedPct) }}</td>
+          </tr>
+        {{ end }}
+        </tbody>
+      </table>
+    </div>
+    {{ end }}
+    {{ if Ops.OpenAlerts }}
+    <div class="mt-4 space-y-2">
+      {{ range _, alert := Ops.OpenAlerts }}
+      <div class="rounded-md border border-[var(--border)] p-3 text-sm"><span class="badge {{ if alert.Severity == "critical" }}badge-danger{{ else }}badge-warn{{ end }}">{{ alert.Type }}</span> {{ alert.Message }}</div>
+      {{ end }}
+    </div>
+    {{ end }}
+  </div>
+
+  {{ if IsAdmin }}
+  <div class="surface p-5 mb-5">
+    <h3 class="text-sm font-semibold mb-4">Git Deploy</h3>
+    <form action="{{ OpsActionBase }}/deploy-config" method="post" class="space-y-4">
+      <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+      <div class="grid gap-4 md:grid-cols-2">
+        <label class="block text-sm font-medium">Repository URL
+          <input class="field mt-2" name="repo_url" value="{{ if Ops.DeployConfig }}{{ Ops.DeployConfig.RepoURL }}{{ end }}" placeholder="git@github.com:org/repo.git">
+        </label>
+        <label class="block text-sm font-medium">Branch
+          <input class="field mt-2" name="branch" value="{{ if Ops.DeployConfig }}{{ Ops.DeployConfig.Branch }}{{ else }}main{{ end }}">
+        </label>
+        <label class="block text-sm font-medium md:col-span-2">Work Directory
+          <input class="field mt-2 font-mono text-xs" name="work_dir" value="{{ if Ops.DeployConfig }}{{ Ops.DeployConfig.WorkDir }}{{ else }}{{ DefaultHomeDir }}/htdocs{{ end }}">
+        </label>
+      </div>
+      <label class="block text-sm font-medium">Deploy Command
+        <textarea class="field mt-2 font-mono text-xs" name="deploy_command" rows="3" placeholder="npm ci && npm run build">{{ if Ops.DeployConfig }}{{ Ops.DeployConfig.DeployCommand }}{{ end }}</textarea>
+      </label>
+      <label class="block text-sm font-medium">Private Deploy Key
+        <textarea class="field mt-2 font-mono text-xs" name="deploy_key_private" rows="4" placeholder="Paste a replacement private key only when rotating it"></textarea>
+        {{ if Ops.DeployConfig }}{{ if Ops.DeployConfig.DeployKeyPublic }}<span class="text-xs opacity-60 mt-1 block">Stored key: {{ Ops.DeployConfig.DeployKeyPublic }}</span>{{ end }}{{ end }}
+      </label>
+      <label class="inline-flex items-center gap-2 text-sm"><input type="checkbox" name="restart_after_deploy" {{ if !Ops.DeployConfig || Ops.DeployConfig.RestartAfterDeploy }}checked{{ end }}> Restart runtime after deploy</label>
+      <div class="flex flex-wrap justify-between gap-2">
+        <button class="btn btn-primary" type="submit">Save Deploy Config</button>
+        <button class="btn platform-copy-action" type="button" data-copy-value="{{ Ops.DeployCommand }}" data-copy-success="Deploy command copied">Copy Hook Command</button>
+      </div>
+    </form>
+    <form action="{{ OpsActionBase }}/deploy" method="post" class="mt-4 flex flex-wrap items-end gap-2" data-runtime-loading>
+      <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+      <label class="block text-sm font-medium">Branch Override
+        <input class="field mt-2" name="branch" placeholder="{{ if Ops.DeployConfig }}{{ Ops.DeployConfig.Branch }}{{ else }}main{{ end }}">
+      </label>
+      <button class="btn btn-primary" type="submit" data-loading-label="Deploying..."><i data-lucide="git-pull-request-arrow"></i> Deploy Now</button>
+      <button class="btn" formaction="{{ OpsActionBase }}/runtime-restart" type="submit" data-loading-label="Restarting..."><i data-lucide="refresh-cw"></i> Restart Runtime</button>
+    </form>
+    {{ if Ops.DeployConfig }}{{ if Ops.DeployConfig.LastDeployAt }}
+    <div class="mt-4 rounded-md border border-[var(--border)] p-3 text-sm">Last deploy: <span class="badge {{ if Ops.DeployConfig.LastDeployStatus == "success" }}badge-ok{{ else }}badge-danger{{ end }}">{{ Ops.DeployConfig.LastDeployStatus }}</span> {{ formatTimePtr(Ops.DeployConfig.LastDeployAt) }}</div>
+    {{ end }}{{ end }}
+  </div>
+
+  <div class="surface p-5 mb-5">
+    <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
+      <div><h3 class="text-sm font-semibold">Backup / Restore</h3><p class="text-sm opacity-70">Backups are per-platform tar.gz archives with safe restore validation.</p></div>
+      <form action="{{ OpsActionBase }}/backup" method="post" data-runtime-loading><input type="hidden" name="_csrf" value="{{ CSRFToken }}"><button class="btn btn-primary" type="submit" data-loading-label="Backing up..."><i data-lucide="archive"></i> Create Backup</button></form>
+    </div>
+    {{ if Ops.Backups }}
+    <div class="table-shell">
+      <table>
+        <thead><tr><th>Created</th><th>Status</th><th>Size</th><th>File</th><th></th></tr></thead>
+        <tbody>
+        {{ range _, backup := Ops.Backups }}
+          <tr>
+            <td>{{ formatTime(backup.CreatedAt) }}</td>
+            <td><span class="badge {{ if backup.Status == "completed" }}badge-ok{{ else if backup.Status == "failed" }}badge-danger{{ else }}badge-neutral{{ end }}">{{ backup.Status }}</span></td>
+            <td>{{ backup.SizeBytes }}</td>
+            <td class="font-mono text-xs">{{ backup.FilePath }}</td>
+            <td>{{ if backup.Status == "completed" }}<form action="{{ OpsActionBase }}/restore" method="post" data-confirm-message="Restore this backup? A pre-restore backup will be created first."><input type="hidden" name="_csrf" value="{{ CSRFToken }}"><input type="hidden" name="backup_id" value="{{ backup.ID }}"><button class="btn btn-sm" type="submit">Restore</button></form>{{ end }}</td>
+          </tr>
+        {{ end }}
+        </tbody>
+      </table>
+    </div>
+    {{ else }}
+    <p class="text-sm opacity-70">No backups yet.</p>
+    {{ end }}
+  </div>
+
+  <div class="surface p-5 border border-[var(--border)]">
+    <h3 class="text-sm font-semibold mb-2">Repair Platform</h3>
+    <p class="text-sm opacity-70 mb-4">Regenerates nginx config, runtime service, scoped sudoers, shell runtime, and platform permissions from saved metadata.</p>
+    <form action="{{ OpsActionBase }}/repair" method="post" data-confirm-message="Repair this platform from saved metadata now?" data-runtime-loading>
+      <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+      <button class="btn btn-warning" type="submit" data-loading-label="Repairing..."><i data-lucide="wrench"></i> Repair Platform</button>
+    </form>
+  </div>
+  {{ end }}
 </div>
 
 <!-- ═══════════ Vhost ═══════════ -->

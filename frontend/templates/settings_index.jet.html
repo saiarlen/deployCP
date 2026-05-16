@@ -1113,6 +1113,7 @@ $(function () {
     }
     if (!valid) {
       e.preventDefault();
+      e.stopImmediatePropagation();
       if (firstInvalid && firstInvalid.length) {
         firstInvalid.trigger('focus');
         if (firstInvalid.get(0) && firstInvalid.get(0).scrollIntoView) {
@@ -1140,6 +1141,10 @@ $(function () {
 
   function runtimeCloseReady() {
     if (!runtimeTerminalClose) return;
+    if (runtimeTerminalTimer) {
+      window.clearInterval(runtimeTerminalTimer);
+      runtimeTerminalTimer = null;
+    }
     runtimeTerminalClose.disabled = false;
     if (runtimeTerminalProgressText) runtimeTerminalProgressText.textContent = 'Operation finished. Review the output below.';
     if (runtimeTerminalSpinner) runtimeTerminalSpinner.classList.add('hidden');
@@ -1235,6 +1240,7 @@ $(function () {
   });
 
   $(document).on('submit', '.runtime-version-action-form', function (e) {
+    if (e.isDefaultPrevented && e.isDefaultPrevented()) return;
     var $form = $(this);
     if ($form.is('[data-confirm],[data-confirm-message]') && $form.data('confirmBypassed') !== 'true') return;
     e.preventDefault();
@@ -1243,6 +1249,13 @@ $(function () {
     var runtime = String(form.getAttribute('data-runtime-kind') || '').toLowerCase();
     var versionInput = form.querySelector('[name="version"]');
     var version = versionInput ? String(versionInput.value || '').trim() : String(form.getAttribute('data-runtime-version') || '').trim();
+    if (action !== 'refresh-repo' && !version) {
+      if (versionInput) {
+        $(versionInput).trigger('focus');
+        settingsSetError($(versionInput), 'Version is required.');
+      }
+      return;
+    }
     var title = action === 'refresh-repo' ? 'Refresh ' + runtime.toUpperCase() + ' Repository' : (action === 'remove' ? 'Remove ' : action === 'set-default' ? 'Set Default ' : 'Install ') + runtime.toUpperCase() + ' ' + version;
     runtimeOpenModal(title);
     var lines = runtimeProgressScript(action, runtime, version);

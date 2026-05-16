@@ -105,6 +105,29 @@ install_db_ui_helper_packages() {
   esac
 }
 
+install_backup_tool_packages() {
+  local manager="$1"
+  case "$manager" in
+    apt)
+      install_first_available_package "$manager" mariadb-client default-mysql-client mysql-client
+      install_first_available_package "$manager" postgresql-client
+      ;;
+    dnf|yum)
+      install_first_available_package "$manager" mariadb postgresql
+      ;;
+    zypper)
+      install_first_available_package "$manager" mariadb-client mariadb
+      install_first_available_package "$manager" postgresql
+      ;;
+    pacman)
+      install_optional_packages "$manager" mariadb postgresql
+      ;;
+    *)
+      install_optional_packages "$manager" mariadb-client default-mysql-client mysql-client postgresql-client mariadb postgresql
+      ;;
+  esac
+}
+
 resolved_release_version() {
   local candidate="${DEPLOYCP_VERSION:-}"
   if [[ -n "$candidate" ]]; then
@@ -149,6 +172,27 @@ stage_release_binary() {
     fi
   done
   return 1
+}
+
+ensure_cli_wrapper() {
+  local wrapper="/usr/local/bin/${BIN_NAME}"
+  local target="${CORE_DIR}/bin/${BIN_NAME}"
+  if [[ ! -x "$target" ]]; then
+    return 0
+  fi
+  if [[ -e "$wrapper" ]] && ! grep -Fq "Managed by DeployCP CLI wrapper" "$wrapper" 2>/dev/null; then
+    if [[ "$(readlink "$wrapper" 2>/dev/null || true)" != "$target" ]]; then
+      echo "Skipping ${wrapper}; an unmanaged command already exists there" >&2
+      return 0
+    fi
+  fi
+  cat >"$wrapper" <<EOF
+#!/usr/bin/env bash
+# Managed by DeployCP CLI wrapper. Do not edit.
+export DEPLOYCP_ENV_FILE="${CORE_DIR}/.env"
+exec "${target}" "\$@"
+EOF
+  chmod 0755 "$wrapper"
 }
 
 stage_release_assets() {
@@ -243,13 +287,18 @@ if [[ ! -x "${CORE_DIR}/bin/${BIN_NAME}" ]]; then
   echo "binary not found at ${CORE_DIR}/bin/${BIN_NAME}" >&2
   exit 1
 fi
+ensure_cli_wrapper
 
 pkg_manager="$(detect_pkg_manager)"
 install_db_ui_helper_packages "$pkg_manager"
+install_backup_tool_packages "$pkg_manager"
 chown -R "${APP_USER}:${APP_USER}" "${CORE_DIR}"
 set_env_value "${CORE_DIR}/.env" "APP_VERSION" "$(resolved_release_version)"
 set_env_value "${CORE_DIR}/.env" "DEPLOYCP_REPO" "${DEPLOYCP_REPO:-saiarlen/deployCP}"
 set_env_value "${CORE_DIR}/.env" "ADMINER_URL" "http://127.0.0.1:8081"
+if ! grep -q "^ALERT_WEBHOOK_URL=" "${CORE_DIR}/.env"; then
+  printf '%s\n' "ALERT_WEBHOOK_URL=" >>"${CORE_DIR}/.env"
+fi
 if [[ -x "${CORE_DIR}/scripts/linux/harden-host.sh" ]]; then
   bash "${CORE_DIR}/scripts/linux/harden-host.sh"
 fi

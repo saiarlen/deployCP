@@ -29,6 +29,10 @@ type Repositories struct {
 	UserPrefs          *UserPreferenceRepository
 	SystemData         *SystemMetricRepository
 	NginxSites         *NginxSiteRepository
+	HealthChecks       *PlatformHealthRepository
+	Backups            *PlatformBackupRepository
+	DeployConfigs      *PlatformDeployConfigRepository
+	Alerts             *AlertEventRepository
 	CronJobs           *CronJobRepository
 	Varnish            *VarnishConfigRepository
 	IPBlocks           *IPBlockRepository
@@ -57,6 +61,10 @@ func New(db *gorm.DB) *Repositories {
 		UserPrefs:          &UserPreferenceRepository{db},
 		SystemData:         &SystemMetricRepository{db},
 		NginxSites:         &NginxSiteRepository{db},
+		HealthChecks:       &PlatformHealthRepository{db},
+		Backups:            &PlatformBackupRepository{db},
+		DeployConfigs:      &PlatformDeployConfigRepository{db},
+		Alerts:             &AlertEventRepository{db},
 		CronJobs:           &CronJobRepository{db},
 		Varnish:            &VarnishConfigRepository{db},
 		IPBlocks:           &IPBlockRepository{db},
@@ -254,6 +262,18 @@ func (r *WebsiteRepository) Delete(id uint) error {
 			return err
 		}
 		if err := tx.Where("website_id = ?", id).Delete(&models.NginxSiteConfig{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("website_id = ?", id).Delete(&models.PlatformHealthCheck{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("website_id = ?", id).Delete(&models.PlatformBackup{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("website_id = ?", id).Delete(&models.PlatformDeployConfig{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("website_id = ?", id).Delete(&models.AlertEvent{}).Error; err != nil {
 			return err
 		}
 		if err := tx.Where("website_id = ?", id).Delete(&models.CronJob{}).Error; err != nil {
@@ -591,6 +611,126 @@ func (r *ManagedServiceRepository) DeleteByName(name string) error {
 }
 func (r *ManagedServiceRepository) Delete(id uint) error {
 	return r.db.Delete(&models.ManagedService{}, id).Error
+}
+
+type PlatformHealthRepository struct{ db *gorm.DB }
+
+func (r *PlatformHealthRepository) Create(item *models.PlatformHealthCheck) error {
+	return r.db.Create(item).Error
+}
+func (r *PlatformHealthRepository) LatestByWebsite(websiteID uint) (*models.PlatformHealthCheck, error) {
+	var item models.PlatformHealthCheck
+	if err := r.db.Where("website_id = ?", websiteID).Order("checked_at desc, id desc").First(&item).Error; err != nil {
+		return nil, err
+	}
+	return &item, nil
+}
+func (r *PlatformHealthRepository) HistoryByWebsite(websiteID uint, limit int) ([]models.PlatformHealthCheck, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	var items []models.PlatformHealthCheck
+	err := r.db.Where("website_id = ?", websiteID).Order("checked_at desc, id desc").Limit(limit).Find(&items).Error
+	return items, err
+}
+
+type PlatformBackupRepository struct{ db *gorm.DB }
+
+func (r *PlatformBackupRepository) Create(item *models.PlatformBackup) error {
+	return r.db.Create(item).Error
+}
+func (r *PlatformBackupRepository) Update(item *models.PlatformBackup) error {
+	return r.db.Save(item).Error
+}
+func (r *PlatformBackupRepository) Find(id uint) (*models.PlatformBackup, error) {
+	var item models.PlatformBackup
+	if err := r.db.First(&item, id).Error; err != nil {
+		return nil, err
+	}
+	return &item, nil
+}
+func (r *PlatformBackupRepository) ListByWebsite(websiteID uint) ([]models.PlatformBackup, error) {
+	var items []models.PlatformBackup
+	err := r.db.Where("website_id = ?", websiteID).Order("created_at desc, id desc").Find(&items).Error
+	return items, err
+}
+func (r *PlatformBackupRepository) Delete(id uint) error {
+	return r.db.Delete(&models.PlatformBackup{}, id).Error
+}
+
+type PlatformDeployConfigRepository struct{ db *gorm.DB }
+
+func (r *PlatformDeployConfigRepository) FindByWebsite(websiteID uint) (*models.PlatformDeployConfig, error) {
+	var item models.PlatformDeployConfig
+	if err := r.db.Where("website_id = ?", websiteID).First(&item).Error; err != nil {
+		return nil, err
+	}
+	return &item, nil
+}
+func (r *PlatformDeployConfigRepository) Upsert(item *models.PlatformDeployConfig) error {
+	var existing models.PlatformDeployConfig
+	err := r.db.Where("website_id = ?", item.WebsiteID).First(&existing).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return r.db.Create(item).Error
+	}
+	if err != nil {
+		return err
+	}
+	item.ID = existing.ID
+	item.CreatedAt = existing.CreatedAt
+	if item.DeployKeyPrivateEnc == "" {
+		item.DeployKeyPrivateEnc = existing.DeployKeyPrivateEnc
+	}
+	if item.DeployKeyPublic == "" {
+		item.DeployKeyPublic = existing.DeployKeyPublic
+	}
+	if item.DeployKeyPath == "" {
+		item.DeployKeyPath = existing.DeployKeyPath
+	}
+	return r.db.Save(item).Error
+}
+func (r *PlatformDeployConfigRepository) UpdateDeployResult(websiteID uint, status, message string, at time.Time) error {
+	return r.db.Model(&models.PlatformDeployConfig{}).Where("website_id = ?", websiteID).Updates(map[string]any{
+		"last_deploy_status":  status,
+		"last_deploy_message": message,
+		"last_deploy_at":      at,
+	}).Error
+}
+
+type AlertEventRepository struct{ db *gorm.DB }
+
+func (r *AlertEventRepository) ListOpenByWebsite(websiteID uint) ([]models.AlertEvent, error) {
+	var items []models.AlertEvent
+	err := r.db.Where("website_id = ? AND status = ?", websiteID, "open").Order("opened_at desc, id desc").Find(&items).Error
+	return items, err
+}
+func (r *AlertEventRepository) ListRecentByWebsite(websiteID uint, limit int) ([]models.AlertEvent, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	var items []models.AlertEvent
+	err := r.db.Where("website_id = ?", websiteID).Order("opened_at desc, id desc").Limit(limit).Find(&items).Error
+	return items, err
+}
+func (r *AlertEventRepository) OpenOrUpdate(websiteID uint, typ, severity, message string, openedAt time.Time) (*models.AlertEvent, bool, error) {
+	var existing models.AlertEvent
+	err := r.db.Where("website_id = ? AND type = ? AND status = ?", websiteID, typ, "open").First(&existing).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		item := &models.AlertEvent{WebsiteID: websiteID, Type: typ, Severity: severity, Status: "open", Message: message, OpenedAt: openedAt}
+		return item, true, r.db.Create(item).Error
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	existing.Severity = severity
+	existing.Message = message
+	existing.OpenedAt = openedAt
+	return &existing, false, r.db.Save(&existing).Error
+}
+func (r *AlertEventRepository) Resolve(websiteID uint, typ string, closedAt time.Time) error {
+	return r.db.Model(&models.AlertEvent{}).
+		Where("website_id = ? AND type = ? AND status = ?", websiteID, typ, "open").
+		Updates(map[string]any{"status": "resolved", "closed_at": closedAt}).Error
 }
 
 type DatabaseConnectionRepository struct{ db *gorm.DB }

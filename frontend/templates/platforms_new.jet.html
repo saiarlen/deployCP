@@ -205,6 +205,16 @@
       <button class="btn btn-ghost" type="button" onclick="saReset()">Reset Flow</button>
     </div>
   </div>
+
+  <div id="sa-create-loader" class="pw-create-loader" aria-hidden="true">
+    <div class="pw-create-loader-card" role="status" aria-live="polite">
+      <span class="pw-create-spinner" aria-hidden="true"></span>
+      <div>
+        <div class="pw-create-title">Creating platform</div>
+        <div class="pw-create-message" id="sa-create-loader-message">Preparing platform files and host configuration...</div>
+      </div>
+    </div>
+  </div>
 </form>
 
 <script>
@@ -326,6 +336,7 @@ function saValidateForm(){
   return ok;
 }
 function saReset(){
+  if($('#sa-form').hasClass('is-submitting'))return;
   $('#sa-kind').val('');
   $('#sa-category').val('');
   $('#sa-step-inputs').removeClass('is-visible');
@@ -338,6 +349,32 @@ function hideAllPanels(){
   $.each(['sa-static','sa-php','sa-go','sa-python','sa-node','sa-binary'],function(_,id){
     $('#'+id).removeClass('is-visible');
   });
+}
+function saSetSubmitting(submitting){
+  var $form=$('#sa-form'),$loader=$('#sa-create-loader'),$btn=$('.pw-submit-btn');
+  if(submitting){
+    $form.addClass('is-submitting');
+    $loader.attr('aria-hidden','false');
+    $btn.data('original-html',$btn.html()).prop('disabled',true).addClass('is-loading').html('<span class="pw-create-spinner pw-create-spinner-inline" aria-hidden="true"></span><span>Creating...</span>');
+    var steps=[
+      'Preparing platform directories...',
+      'Creating the platform user and access rules...',
+      'Writing nginx and runtime configuration...',
+      'Saving platform metadata and final checks...'
+    ];
+    var idx=0;
+    window.clearInterval(window.saCreateLoaderTimer);
+    window.saCreateLoaderTimer=window.setInterval(function(){
+      idx=(idx+1)%steps.length;
+      $('#sa-create-loader-message').text(steps[idx]);
+    },1400);
+  }else{
+    window.clearInterval(window.saCreateLoaderTimer);
+    $form.removeClass('is-submitting');
+    $loader.attr('aria-hidden','true');
+    if($btn.data('original-html'))$btn.html($btn.data('original-html'));
+    $btn.prop('disabled',false).removeClass('is-loading');
+  }
 }
   $(function(){
   if (typeof lucide !== 'undefined') lucide.createIcons();
@@ -372,7 +409,10 @@ function hideAllPanels(){
   $('#sa-form').on('submit', function(e){
     if(!saValidateForm()){
       e.preventDefault();
+      saSetSubmitting(false);
+      return;
     }
+    saSetSubmitting(true);
   });
 
   $('.sa-tile').on('click',function(){
