@@ -1198,22 +1198,24 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
           <p class="settings-section-copy">DeployCP keeps the platform identity stable after creation. You can adjust only the served folder inside <span class="font-mono text-xs">htdocs</span>.</p>
         </div>
       </div>
-      <div class="platform-structure-compact">
-        <div class="platform-structure-row platform-structure-row--root">
-          <input type="hidden" name="root_path" value="{{ Item.RootPath }}">
-          <div class="platform-structure-labels">
-            <span class="platform-structure-title">Root Directory</span>
-            <span class="platform-structure-note">Only the subpath inside <span class="font-mono text-[11px]">htdocs</span> can change.</span>
-          </div>
-          <div class="platform-structure-rootedit">
-            <div class="platform-structure-base">{{ RootPathBase }}/</div>
-            <div class="platform-structure-input">
-              <input class="field w-full font-mono text-sm" name="root_subpath" value="{{ RootPathSuffix }}" placeholder="optional/subfolder">
-            </div>
-          </div>
+      <input type="hidden" name="root_path" value="{{ Item.RootPath }}">
+      <div class="platform-structure-builder">
+        <div class="platform-structure-step">
+          <span class="platform-structure-kicker">Base</span>
+          <code>{{ RootPathBase }}/</code>
+        </div>
+        <div class="platform-structure-join" aria-hidden="true">+</div>
+        <label class="platform-structure-step platform-structure-step--input">
+          <span class="platform-structure-kicker">Served subfolder</span>
+          <input class="field font-mono text-sm" name="root_subpath" value="{{ RootPathSuffix }}" placeholder="htdocs default">
+        </label>
+        <div class="platform-structure-join" aria-hidden="true">=</div>
+        <div class="platform-structure-step">
+          <span class="platform-structure-kicker">Public root</span>
+          <code>{{ Item.RootPath }}</code>
         </div>
       </div>
-      <div class="mt-2 text-xs opacity-50">Leave the subpath blank to use the default <span class="font-mono">htdocs</span> root.</div>
+      <div class="platform-structure-foot">Leave the subfolder blank to serve directly from <span class="font-mono">htdocs</span>.</div>
       <div class="mt-4 flex justify-end">
         <button class="btn btn-primary" type="submit">Save</button>
       </div>
