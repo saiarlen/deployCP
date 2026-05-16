@@ -21,16 +21,16 @@ jobs:
             cc: gcc
 
           # Enable these only when needed
-          # - goos: linux
-          #   goarch: arm64
-          #   cc: aarch64-linux-gnu-gcc
-          #   apt_packages: gcc-aarch64-linux-gnu libc6-dev-arm64-cross
+          - goos: linux
+            goarch: arm64
+            cc: aarch64-linux-gnu-gcc
+            apt_packages: gcc-aarch64-linux-gnu libc6-dev-arm64-cross
 
-          # - goos: linux
-          #   goarch: arm
-          #   goarm: "7"
-          #   cc: arm-linux-gnueabihf-gcc
-          #   apt_packages: gcc-arm-linux-gnueabihf libc6-dev-armhf-cross
+          - goos: linux
+            goarch: arm
+            goarm: "7"
+            cc: arm-linux-gnueabihf-gcc
+            apt_packages: gcc-arm-linux-gnueabihf libc6-dev-armhf-cross
 
     steps:
       - uses: actions/checkout@v6
