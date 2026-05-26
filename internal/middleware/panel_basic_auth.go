@@ -13,7 +13,7 @@ import (
 func PanelBasicAuth(settings *repositories.SettingRepository) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		path := c.Path()
-		if strings.HasPrefix(path, "/assets/") {
+		if strings.HasPrefix(path, "/assets/") || path == "/robots.txt" {
 			return c.Next()
 		}
 		enabled := settingBool(settings, "panel_basic_auth_enabled", false)

@@ -75,6 +75,12 @@ func (s *SettingsService) Defaults() map[string]string {
 		"panel_timezone":             "UTC",
 		"panel_basic_auth_enabled":   "false",
 		"panel_basic_auth_username":  "admin",
+		"panel_robots_block_enabled": "true",
+		"panel_ip_allowlist":         "",
+		"panel_ip_denylist":          "",
+		"panel_user_agent_denylist":  "",
+		"panel_rate_limit_enabled":   "true",
+		"panel_rate_limit_per_min":   "300",
 	}
 }
 

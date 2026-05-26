@@ -3,9 +3,12 @@ package bootstrap
 import (
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"runtime"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -62,6 +65,16 @@ type Application struct {
 	SettingsHandler  *handlers.SettingsHandler
 	UpdateHandler    *handlers.UpdateHandler
 	ElfinderHandler  *handlers.ElfinderHandler
+}
+
+type panelRateLimiter struct {
+	mu      sync.Mutex
+	buckets map[string]panelRateBucket
+}
+
+type panelRateBucket struct {
+	Count   int
+	ResetAt time.Time
 }
 
 func Build() (*Application, error) {
@@ -244,6 +257,16 @@ func Build() (*Application, error) {
 		}
 		return c.Next()
 	})
+	panelLimiter := &panelRateLimiter{}
+	app.Use(func(c *fiber.Ctx) error {
+		if panelRobotsBlocked(settingsService) {
+			c.Set("X-Robots-Tag", "noindex, nofollow, noarchive")
+		}
+		if err := enforcePanelSecurity(c, settingsService, panelLimiter); err != nil {
+			return err
+		}
+		return c.Next()
+	})
 	app.Use(middleware.PanelBasicAuth(repos.Settings))
 	if cfg.Security.CSRFEnabled {
 		sm := sessionManager
@@ -364,8 +387,134 @@ func enforceSecureCookies(c *fiber.Ctx, cfg *config.Config) {
 	}
 }
 
+func panelRobotsBlocked(settings *services.SettingsService) bool {
+	if settings == nil {
+		return true
+	}
+	value, err := settings.Get("panel_robots_block_enabled")
+	if err != nil {
+		return true
+	}
+	value = strings.TrimSpace(value)
+	return value == "" || strings.EqualFold(value, "true") || value == "1" || strings.EqualFold(value, "on")
+}
+
+func panelSetting(settings *services.SettingsService, key string) string {
+	if settings == nil {
+		return ""
+	}
+	value, err := settings.Get(key)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(value)
+}
+
+func panelSettingBool(settings *services.SettingsService, key string, fallback bool) bool {
+	value := panelSetting(settings, key)
+	if value == "" {
+		return fallback
+	}
+	return strings.EqualFold(value, "true") || value == "1" || strings.EqualFold(value, "on")
+}
+
+func panelSettingInt(settings *services.SettingsService, key string, fallback int) int {
+	value := panelSetting(settings, key)
+	n, err := strconv.Atoi(value)
+	if err != nil || n < 1 {
+		return fallback
+	}
+	return n
+}
+
+func enforcePanelSecurity(c *fiber.Ctx, settings *services.SettingsService, limiter *panelRateLimiter) error {
+	clientIP := c.IP()
+	allowlist := panelSetting(settings, "panel_ip_allowlist")
+	denylist := panelSetting(settings, "panel_ip_denylist")
+	if denylist != "" && panelIPMatchesList(clientIP, denylist) {
+		return c.Status(fiber.StatusForbidden).SendString("Panel access denied from this IP.")
+	}
+	if allowlist != "" && !panelIPMatchesList(clientIP, allowlist) {
+		return c.Status(fiber.StatusForbidden).SendString("Panel access is restricted from this IP.")
+	}
+
+	userAgent := strings.ToLower(strings.TrimSpace(c.Get("User-Agent")))
+	for _, item := range strings.Split(panelSetting(settings, "panel_user_agent_denylist"), "\n") {
+		item = strings.ToLower(strings.TrimSpace(item))
+		if item != "" && strings.Contains(userAgent, item) {
+			return c.Status(fiber.StatusForbidden).SendString("Panel access denied for this user agent.")
+		}
+	}
+
+	if limiter != nil && panelSettingBool(settings, "panel_rate_limit_enabled", true) && !strings.HasPrefix(c.Path(), "/assets/") {
+		limit := panelSettingInt(settings, "panel_rate_limit_per_min", 300)
+		if !limiter.allow(clientIP, limit, time.Now()) {
+			c.Set("Retry-After", "60")
+			return c.Status(fiber.StatusTooManyRequests).SendString("Too many panel requests. Please try again shortly.")
+		}
+	}
+	return nil
+}
+
+func panelIPMatchesList(ip, list string) bool {
+	parsed := net.ParseIP(strings.TrimSpace(ip))
+	if parsed == nil {
+		return false
+	}
+	for _, item := range strings.Split(list, "\n") {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		if candidate := net.ParseIP(item); candidate != nil {
+			if candidate.Equal(parsed) {
+				return true
+			}
+			continue
+		}
+		_, network, err := net.ParseCIDR(item)
+		if err == nil && network.Contains(parsed) {
+			return true
+		}
+	}
+	return false
+}
+
+func (l *panelRateLimiter) allow(key string, limit int, now time.Time) bool {
+	if l == nil {
+		return true
+	}
+	if limit < 1 {
+		limit = 300
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.buckets == nil {
+		l.buckets = map[string]panelRateBucket{}
+	}
+	for itemKey, bucket := range l.buckets {
+		if now.After(bucket.ResetAt.Add(time.Minute)) {
+			delete(l.buckets, itemKey)
+		}
+	}
+	bucket := l.buckets[key]
+	if bucket.ResetAt.IsZero() || !now.Before(bucket.ResetAt) {
+		bucket = panelRateBucket{ResetAt: now.Add(time.Minute)}
+	}
+	bucket.Count++
+	l.buckets[key] = bucket
+	return bucket.Count <= limit
+}
+
 func (a *Application) registerRoutes() {
 	app := a.Fiber
+	app.Get("/robots.txt", func(c *fiber.Ctx) error {
+		c.Type("txt")
+		if panelRobotsBlocked(a.SettingsService) {
+			return c.SendString("User-agent: *\nDisallow: /\n")
+		}
+		return c.SendString("User-agent: *\nAllow: /\n")
+	})
 
 	app.Get("/setup", a.AuthHandler.SetupPage)
 	app.Post("/setup", a.AuthHandler.SetupCreate)
@@ -494,6 +643,7 @@ func (a *Application) registerRoutes() {
 	secured.Get("/settings", adminOnly, a.SettingsHandler.Index)
 	secured.Post("/settings", adminOnly, a.SettingsHandler.Update)
 	secured.Post("/settings/general", adminOnly, a.SettingsHandler.UpdateGeneral)
+	secured.Post("/settings/security", adminOnly, a.SettingsHandler.UpdateSecurity)
 	secured.Post("/settings/users", adminOnly, a.SettingsHandler.UsersCreate)
 	secured.Post("/settings/users/:id", adminOnly, a.SettingsHandler.UsersUpdate)
 	secured.Post("/settings/users/:id/delete", adminOnly, a.SettingsHandler.UsersDelete)

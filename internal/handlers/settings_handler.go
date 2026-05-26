@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"sort"
 	"strconv"
 	"strings"
@@ -232,10 +233,16 @@ func (h *SettingsHandler) Index(c *fiber.Ctx) error {
 		basicAuthEnabled = true
 	}
 	basicAuthUsername, _ := h.service.Get("panel_basic_auth_username")
+	panelRobotsBlocked := settingBool(h.service, "panel_robots_block_enabled")
+	panelIPAllowlist, _ := h.service.Get("panel_ip_allowlist")
+	panelIPDenylist, _ := h.service.Get("panel_ip_denylist")
+	panelUserAgentDenylist, _ := h.service.Get("panel_user_agent_denylist")
+	panelRateLimitEnabled := settingBool(h.service, "panel_rate_limit_enabled")
+	panelRateLimitPerMinute := settingInt(h.service, "panel_rate_limit_per_min", 300)
 
 	activeTab := strings.TrimSpace(strings.ToLower(c.Query("tab")))
 	switch activeTab {
-	case "general", "users", "events", "services", "firewall":
+	case "general", "security", "users", "events", "services", "firewall":
 	default:
 		activeTab = "general"
 	}
@@ -304,6 +311,12 @@ func (h *SettingsHandler) Index(c *fiber.Ctx) error {
 		"SupportedTimezones":        h.service.SupportedTimezones(),
 		"PanelBasicEnabled":         basicAuthEnabled,
 		"PanelBasicUser":            basicAuthUsername,
+		"PanelRobotsBlocked":        panelRobotsBlocked,
+		"PanelIPAllowlist":          panelIPAllowlist,
+		"PanelIPDenylist":           panelIPDenylist,
+		"PanelUserAgentDenylist":    panelUserAgentDenylist,
+		"PanelRateLimitEnabled":     panelRateLimitEnabled,
+		"PanelRateLimitPerMinute":   panelRateLimitPerMinute,
 		"GoRuntimeEntries":          goEntries,
 		"NodeRuntimeEntries":        nodeEntries,
 		"PythonRuntimeEntries":      pythonEntries,
@@ -392,19 +405,8 @@ func (h *SettingsHandler) UpdateGeneral(c *fiber.Ctx) error {
 	customDomain := strings.TrimSpace(c.FormValue("panel_custom_domain"))
 	proftpdMasqueradeAddress := strings.TrimSpace(c.FormValue("proftpd_masquerade_address"))
 	panelTimezone := strings.TrimSpace(c.FormValue("panel_timezone"))
-	basicEnabled := boolFromForm(c, "panel_basic_auth_enabled")
-	username := strings.TrimSpace(strings.ToLower(c.FormValue("panel_basic_auth_username")))
-	password := strings.TrimSpace(c.FormValue("panel_basic_auth_password"))
 	actor := currentUserID(c)
 	ip := c.IP()
-
-	if username == "" {
-		existing, _ := h.service.Get("panel_basic_auth_username")
-		username = strings.TrimSpace(strings.ToLower(existing))
-	}
-	if username == "" {
-		username = "admin"
-	}
 
 	if err := h.service.Update("panel_custom_domain", customDomain, actor, ip); err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
@@ -435,19 +437,72 @@ func (h *SettingsHandler) UpdateGeneral(c *fiber.Ctx) error {
 		h.base.Sessions.SetFlash(c, err.Error())
 		return c.Redirect("/settings?tab=general")
 	}
+
+	h.base.Sessions.SetFlash(c, "general settings updated")
+	return c.Redirect("/settings?tab=general")
+}
+
+func (h *SettingsHandler) UpdateSecurity(c *fiber.Ctx) error {
+	basicEnabled := boolFromForm(c, "panel_basic_auth_enabled")
+	robotsBlocked := boolFromForm(c, "panel_robots_block_enabled")
+	rateLimitEnabled := boolFromForm(c, "panel_rate_limit_enabled")
+	username := strings.TrimSpace(strings.ToLower(c.FormValue("panel_basic_auth_username")))
+	password := strings.TrimSpace(c.FormValue("panel_basic_auth_password"))
+	ipAllowlist := strings.TrimSpace(c.FormValue("panel_ip_allowlist"))
+	ipDenylist := strings.TrimSpace(c.FormValue("panel_ip_denylist"))
+	userAgentDenylist := normalizePanelList(c.FormValue("panel_user_agent_denylist"))
+	rateLimitPerMinute := strings.TrimSpace(c.FormValue("panel_rate_limit_per_min"))
+	actor := currentUserID(c)
+	ip := c.IP()
+
+	if username == "" {
+		existing, _ := h.service.Get("panel_basic_auth_username")
+		username = strings.TrimSpace(strings.ToLower(existing))
+	}
+	if username == "" {
+		username = "admin"
+	}
+	normalizedAllowlist, err := normalizePanelIPList(ipAllowlist)
+	if err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect("/settings?tab=security")
+	}
+	normalizedDenylist, err := normalizePanelIPList(ipDenylist)
+	if err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect("/settings?tab=security")
+	}
+	if normalizedAllowlist != "" && !panelIPMatchesList(ip, normalizedAllowlist) {
+		h.base.Sessions.SetFlash(c, "your current IP must be included in the panel allowlist")
+		return c.Redirect("/settings?tab=security")
+	}
+	if normalizedDenylist != "" && panelIPMatchesList(ip, normalizedDenylist) {
+		h.base.Sessions.SetFlash(c, "your current IP cannot be included in the panel denylist")
+		return c.Redirect("/settings?tab=security")
+	}
+	if userAgentDenylist != "" && panelUserAgentMatchesList(c.Get("User-Agent"), userAgentDenylist) {
+		h.base.Sessions.SetFlash(c, "your current browser user agent cannot be included in the denylist")
+		return c.Redirect("/settings?tab=security")
+	}
+	rateLimit, err := strconv.Atoi(rateLimitPerMinute)
+	if err != nil || rateLimit < 1 || rateLimit > 10000 {
+		h.base.Sessions.SetFlash(c, "panel rate limit must be between 1 and 10000 requests per minute")
+		return c.Redirect("/settings?tab=security")
+	}
+
 	if err := h.service.Update("panel_basic_auth_username", username, actor, ip); err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
-		return c.Redirect("/settings?tab=general")
+		return c.Redirect("/settings?tab=security")
 	}
 	if password != "" {
 		hash, err := utils.HashPassword(password)
 		if err != nil {
 			h.base.Sessions.SetFlash(c, err.Error())
-			return c.Redirect("/settings?tab=general")
+			return c.Redirect("/settings?tab=security")
 		}
 		if err := h.service.Update("panel_basic_auth_password_hash", hash, actor, ip); err != nil {
 			h.base.Sessions.SetFlash(c, err.Error())
-			return c.Redirect("/settings?tab=general")
+			return c.Redirect("/settings?tab=security")
 		}
 	}
 
@@ -456,21 +511,46 @@ func (h *SettingsHandler) UpdateGeneral(c *fiber.Ctx) error {
 		if strings.TrimSpace(hash) == "" {
 			h.base.Sessions.SetFlash(c, "basic auth password is required before enabling")
 			_ = h.service.Update("panel_basic_auth_enabled", "false", actor, ip)
-			return c.Redirect("/settings?tab=general")
+			return c.Redirect("/settings?tab=security")
 		}
 		if err := h.service.Update("panel_basic_auth_enabled", "true", actor, ip); err != nil {
 			h.base.Sessions.SetFlash(c, err.Error())
-			return c.Redirect("/settings?tab=general")
+			return c.Redirect("/settings?tab=security")
 		}
 	} else {
 		if err := h.service.Update("panel_basic_auth_enabled", "false", actor, ip); err != nil {
 			h.base.Sessions.SetFlash(c, err.Error())
-			return c.Redirect("/settings?tab=general")
+			return c.Redirect("/settings?tab=security")
 		}
 	}
 
-	h.base.Sessions.SetFlash(c, "general settings updated")
-	return c.Redirect("/settings?tab=general")
+	if err := h.service.Update("panel_robots_block_enabled", boolSetting(robotsBlocked), actor, ip); err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect("/settings?tab=security")
+	}
+	if err := h.service.Update("panel_ip_allowlist", normalizedAllowlist, actor, ip); err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect("/settings?tab=security")
+	}
+	if err := h.service.Update("panel_ip_denylist", normalizedDenylist, actor, ip); err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect("/settings?tab=security")
+	}
+	if err := h.service.Update("panel_user_agent_denylist", userAgentDenylist, actor, ip); err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect("/settings?tab=security")
+	}
+	if err := h.service.Update("panel_rate_limit_enabled", boolSetting(rateLimitEnabled), actor, ip); err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect("/settings?tab=security")
+	}
+	if err := h.service.Update("panel_rate_limit_per_min", strconv.Itoa(rateLimit), actor, ip); err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect("/settings?tab=security")
+	}
+
+	h.base.Sessions.SetFlash(c, "security settings updated")
+	return c.Redirect("/settings?tab=security")
 }
 
 func (h *SettingsHandler) UsersCreate(c *fiber.Ctx) error {
@@ -1120,6 +1200,110 @@ func parsePositiveInt(raw string, fallback int) int {
 		return fallback
 	}
 	return n
+}
+
+func settingBool(service *services.SettingsService, key string) bool {
+	if service == nil {
+		return false
+	}
+	value, _ := service.Get(key)
+	value = strings.TrimSpace(value)
+	return strings.EqualFold(value, "true") || value == "1" || strings.EqualFold(value, "on")
+}
+
+func settingInt(service *services.SettingsService, key string, fallback int) int {
+	if service == nil {
+		return fallback
+	}
+	value, _ := service.Get(key)
+	n, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil {
+		return fallback
+	}
+	return n
+}
+
+func boolSetting(value bool) string {
+	if value {
+		return "true"
+	}
+	return "false"
+}
+
+func normalizePanelList(value string) string {
+	parts := strings.FieldsFunc(value, func(r rune) bool {
+		return r == ',' || r == '\n' || r == '\r' || r == '\t'
+	})
+	out := make([]string, 0, len(parts))
+	seen := map[string]struct{}{}
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		key := strings.ToLower(part)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, part)
+	}
+	return strings.Join(out, "\n")
+}
+
+func normalizePanelIPList(value string) (string, error) {
+	normalized := normalizePanelList(value)
+	if normalized == "" {
+		return "", nil
+	}
+	for _, item := range strings.Split(normalized, "\n") {
+		if net.ParseIP(item) != nil {
+			continue
+		}
+		if _, _, err := net.ParseCIDR(item); err == nil {
+			continue
+		}
+		return "", fmt.Errorf("invalid panel IP or CIDR: %s", item)
+	}
+	return normalized, nil
+}
+
+func panelIPMatchesList(ip, list string) bool {
+	parsed := net.ParseIP(strings.TrimSpace(ip))
+	if parsed == nil {
+		return false
+	}
+	for _, item := range strings.Split(list, "\n") {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		if candidate := net.ParseIP(item); candidate != nil {
+			if candidate.Equal(parsed) {
+				return true
+			}
+			continue
+		}
+		_, network, err := net.ParseCIDR(item)
+		if err == nil && network.Contains(parsed) {
+			return true
+		}
+	}
+	return false
+}
+
+func panelUserAgentMatchesList(userAgent, list string) bool {
+	userAgent = strings.ToLower(strings.TrimSpace(userAgent))
+	if userAgent == "" {
+		return false
+	}
+	for _, item := range strings.Split(list, "\n") {
+		item = strings.ToLower(strings.TrimSpace(item))
+		if item != "" && strings.Contains(userAgent, item) {
+			return true
+		}
+	}
+	return false
 }
 
 func parseUintMultiFormValues(c *fiber.Ctx, key string) []uint {

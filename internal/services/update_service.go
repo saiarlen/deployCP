@@ -233,7 +233,7 @@ func (s *UpdateService) readView(includeLog bool) UpdateView {
 	current := s.CurrentVersion()
 	latest := s.getSetting(updateLatestVersionKey)
 	latestURL := s.getSetting(updateLatestURLKey)
-	checkedAt := s.getSetting(updateCheckedAtKey)
+	checkedAt := formatUpdateTimestamp(s.getSetting(updateCheckedAtKey))
 	available := s.CheckEnabled() && current != "" && latest != "" && normalizeVersion(current) != normalizeVersion(latest)
 	state := s.readJobState()
 
@@ -249,8 +249,8 @@ func (s *UpdateService) readView(includeLog bool) UpdateView {
 		State:           state.State,
 		Message:         state.Message,
 		TargetVersion:   state.Target,
-		StartedAt:       state.StartedAt,
-		FinishedAt:      state.FinishedAt,
+		StartedAt:       formatUpdateTimestamp(state.StartedAt),
+		FinishedAt:      formatUpdateTimestamp(state.FinishedAt),
 		LogPath:         state.LogPath,
 		UnitName:        state.UnitName,
 	}
@@ -399,4 +399,16 @@ func boolString(v bool) string {
 		return "true"
 	}
 	return "false"
+}
+
+func formatUpdateTimestamp(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	t, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return value
+	}
+	return t.In(time.Local).Format("2006-01-02T15:04:05Z07:00")
 }

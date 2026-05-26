@@ -16,6 +16,7 @@
 
   <div class="settings-tabs" role="tablist" style="margin-bottom:var(--space-5)">
     <button type="button" class="settings-tab {{ if ActiveTab == "general" }}settings-tab-active{{ end }}" data-tab="general" role="tab"><i data-lucide="sliders-horizontal"></i><span>General</span></button>
+    <button type="button" class="settings-tab {{ if ActiveTab == "security" }}settings-tab-active{{ end }}" data-tab="security" role="tab"><i data-lucide="lock-keyhole"></i><span>Security</span></button>
     <button type="button" class="settings-tab {{ if ActiveTab == "users" }}settings-tab-active{{ end }}" data-tab="users" role="tab"><i data-lucide="users"></i><span>Users</span></button>
     <button type="button" class="settings-tab {{ if ActiveTab == "events" }}settings-tab-active{{ end }}" data-tab="events" role="tab"><i data-lucide="history"></i><span>Events</span></button>
     <button type="button" class="settings-tab {{ if ActiveTab == "services" }}settings-tab-active{{ end }}" data-tab="services" role="tab"><i data-lucide="server-cog"></i><span>Services</span></button>
@@ -23,11 +24,16 @@
   </div>
 
   <div id="panel-general" class="settings-panel {{ if ActiveTab == "general" }}settings-panel-active{{ end }}">
-    <div class="grid gap-5 lg:grid-cols-2">
+    <div class="space-y-5">
       <section class="surface p-5 sm:p-6">
-        <h2 class="text-lg font-semibold">General</h2>
-        <p class="text-sm opacity-70 mt-1">Panel identity and access controls.</p>
-        <form action="/settings/general" method="post" class="space-y-4 mt-4">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 class="text-lg font-semibold">Panel Identity</h2>
+            <p class="text-sm opacity-70 mt-1">Domain, FTP address, and local time display.</p>
+          </div>
+          <span class="badge badge-neutral">General</span>
+        </div>
+        <form action="/settings/general" method="post" class="grid gap-4 lg:grid-cols-3 mt-4">
           <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
           <label class="block text-sm font-medium">DeployCP Custom Domain
             <input class="field mt-2" name="panel_custom_domain" value="{{ CustomDomain }}" placeholder="panel.example.com">
@@ -42,35 +48,21 @@
               {{ end }}
             </select>
           </label>
-          <div class="rounded-lg border border-[var(--border)] p-4">
-            <label class="inline-flex items-center gap-2 text-sm font-medium">
-              <input type="checkbox" name="panel_basic_auth_enabled" value="on" {{ if PanelBasicEnabled }}checked{{ end }}>
-              Enable Basic Auth for Panel
-            </label>
-            <div class="grid gap-4 sm:grid-cols-2 mt-3">
-              <label class="block text-sm font-medium">Username
-                <input class="field mt-2" id="panel-basic-auth-username" name="panel_basic_auth_username" value="{{ PanelBasicUser }}" placeholder="admin">
-              </label>
-              <label class="block text-sm font-medium">Password
-                <div class="flex gap-2 mt-2">
-                  <input class="field flex-1" type="text" name="panel_basic_auth_password" id="panel-basic-auth-password" autocomplete="new-password" placeholder="Leave blank to keep current">
-                  <button type="button" class="btn" onclick="document.getElementById('panel-basic-auth-password').value=settingsGeneratePassword()">Generate</button>
-                </div>
-              </label>
-            </div>
-          </div>
-          <div class="flex justify-end">
+          <div class="lg:col-span-3 flex justify-end">
             <button class="btn btn-primary" type="submit">Save General Settings</button>
           </div>
         </form>
       </section>
 
-      
-
       <section class="surface p-5 sm:p-6">
-        <h2 class="text-lg font-semibold">Runtime Version Catalogs</h2>
-        <p class="text-sm opacity-70 mt-1">These versions are available in platform create and update runtime selectors.</p>
-        <div class="space-y-4 mt-4">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 class="text-lg font-semibold">Runtime Catalogs</h2>
+            <p class="text-sm opacity-70 mt-1">Versions available in platform runtime selectors.</p>
+          </div>
+          <span class="badge badge-neutral">Catalog</span>
+        </div>
+        <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 mt-4">
           <div class="rounded-lg border border-[var(--border)] p-4">
             <div class="font-medium text-sm mb-2">Go</div>
             <div class="flex flex-wrap gap-2">
@@ -97,7 +89,7 @@
           </div>
         </div>
       </section>
-      <section class="surface p-5 sm:p-6 lg:col-span-2">
+      <section class="surface p-5 sm:p-6">
         <h2 class="text-lg font-semibold">Application Info</h2>
         <p class="text-sm opacity-70 mt-1">Basic panel information and on-demand release checks.</p>
         <div class="rounded-lg border border-[var(--border)] p-4 mt-4 space-y-3" id="app-update-card">
@@ -130,6 +122,105 @@
         </div>
       </section>
     </div>
+  </div>
+
+  <div id="panel-security" class="settings-panel {{ if ActiveTab == "security" }}settings-panel-active{{ end }}">
+    <form action="/settings/security" method="post" class="space-y-5">
+      <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+      <section class="surface p-5 sm:p-6">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 class="text-lg font-semibold">Panel Security</h2>
+            <p class="text-sm opacity-70 mt-1">Authentication, request pacing, crawler controls, and request filtering for DeployCP only.</p>
+          </div>
+          <span class="badge badge-neutral">Panel only</span>
+        </div>
+
+        <div class="grid gap-4 xl:grid-cols-3 mt-5">
+          <div class="rounded-lg border border-[var(--border)] p-4">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 class="text-sm font-semibold">Access Controls</h3>
+                <p class="text-xs opacity-70 mt-1">Extra browser prompt before panel login.</p>
+              </div>
+              <label class="inline-flex items-center gap-2 text-sm font-medium">
+                <input type="checkbox" name="panel_basic_auth_enabled" value="on" {{ if PanelBasicEnabled }}checked{{ end }}>
+                Basic Auth
+              </label>
+            </div>
+            <div class="grid gap-4 sm:grid-cols-2 mt-4">
+              <label class="block text-sm font-medium">Username
+                <input class="field mt-2" id="panel-basic-auth-username" name="panel_basic_auth_username" value="{{ PanelBasicUser }}" placeholder="admin">
+              </label>
+              <label class="block text-sm font-medium">Password
+                <div class="flex gap-2 mt-2">
+                  <input class="field flex-1" type="text" name="panel_basic_auth_password" id="panel-basic-auth-password" autocomplete="new-password" placeholder="Leave blank to keep current">
+                  <button type="button" class="btn" onclick="document.getElementById('panel-basic-auth-password').value=settingsGeneratePassword()">Generate</button>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <div class="rounded-lg border border-[var(--border)] p-4">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 class="text-sm font-semibold">Rate Limit</h3>
+                <p class="text-xs opacity-70 mt-1">Throttle panel requests per client IP.</p>
+              </div>
+              <label class="inline-flex items-center gap-2 text-sm font-medium">
+                <input type="checkbox" name="panel_rate_limit_enabled" value="on" {{ if PanelRateLimitEnabled }}checked{{ end }}>
+                Enabled
+              </label>
+            </div>
+            <label class="block text-sm font-medium mt-4">Requests per IP per minute
+              <input class="field mt-2" type="number" name="panel_rate_limit_per_min" min="1" max="10000" value="{{ PanelRateLimitPerMinute }}">
+            </label>
+          </div>
+
+          <div class="rounded-lg border border-[var(--border)] p-4">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 class="text-sm font-semibold">Crawler Controls</h3>
+                <p class="text-xs opacity-70 mt-1">Noindex headers and robots policy.</p>
+              </div>
+              <label class="inline-flex items-center gap-2 text-sm font-medium">
+                <input type="checkbox" name="panel_robots_block_enabled" value="on" {{ if PanelRobotsBlocked }}checked{{ end }}>
+                Block indexing
+              </label>
+            </div>
+            <p class="text-xs opacity-70 mt-4">Serves <span class="font-mono">/robots.txt</span> and sends <span class="font-mono">X-Robots-Tag</span> when enabled.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="surface p-5 sm:p-6">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 class="text-lg font-semibold">Request Filtering</h2>
+            <p class="text-sm opacity-70 mt-1">Panel-only IP and user-agent filters applied before login.</p>
+          </div>
+          <span class="badge badge-neutral">HTTP layer</span>
+        </div>
+        <div class="grid gap-4 lg:grid-cols-3 mt-4">
+          <label class="block text-sm font-medium">IP Allowlist
+            <textarea class="field mt-2 font-mono text-xs" name="panel_ip_allowlist" rows="5" placeholder="203.0.113.10&#10;198.51.100.0/24">{{ PanelIPAllowlist }}</textarea>
+            <span class="block text-xs opacity-70 mt-2">Empty allows any IP not denied.</span>
+          </label>
+          <label class="block text-sm font-medium">IP Denylist
+            <textarea class="field mt-2 font-mono text-xs" name="panel_ip_denylist" rows="5" placeholder="192.0.2.10&#10;203.0.113.0/24">{{ PanelIPDenylist }}</textarea>
+            <span class="block text-xs opacity-70 mt-2">Blocked before login.</span>
+          </label>
+          <label class="block text-sm font-medium">User-Agent Denylist
+            <textarea class="field mt-2 font-mono text-xs" name="panel_user_agent_denylist" rows="5" placeholder="BadBot&#10;curl">{{ PanelUserAgentDenylist }}</textarea>
+            <span class="block text-xs opacity-70 mt-2">Case-insensitive substring matches.</span>
+          </label>
+        </div>
+      </section>
+
+      <div class="flex justify-end">
+        <button class="btn btn-primary" type="submit">Save Security Settings</button>
+      </div>
+    </form>
   </div>
 
   <div id="panel-users" class="settings-panel {{ if ActiveTab == "users" }}settings-panel-active{{ end }}">
@@ -978,7 +1069,7 @@ $(function () {
     return true;
   }
 
-  function syncGeneralConditionalRules() {
+  function syncSecurityConditionalRules() {
     var basicEnabled = $('input[name="panel_basic_auth_enabled"]').is(':checked');
     $('#panel-basic-auth-username').prop('required', basicEnabled);
   }
@@ -1050,11 +1141,11 @@ $(function () {
   }
 
   $('.settings-panel form').attr('novalidate', 'novalidate');
-  syncGeneralConditionalRules();
+  syncSecurityConditionalRules();
   $('.settings-user-platforms-wrap[data-msd]').each(function () { setupPlatformPicker($(this)); });
   $('[data-user-form]').each(function () { syncUserRolePlatforms($(this)); });
 
-  $(document).on('change', 'input[name="panel_basic_auth_enabled"]', syncGeneralConditionalRules);
+  $(document).on('change', 'input[name="panel_basic_auth_enabled"]', syncSecurityConditionalRules);
   $(document).on('change', '[data-role-select]', function () {
     syncUserRolePlatforms($(this).closest('form'));
   });
