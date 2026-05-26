@@ -20,7 +20,7 @@ func NewDB(cfg *config.Config) (*gorm.DB, error) {
 	if err := os.MkdirAll(filepath.Dir(cfg.Database.SQLitePath), 0o755); err != nil {
 		return nil, err
 	}
-	db, err := gorm.Open(sqlite.Open(cfg.Database.SQLitePath), &gorm.Config{Logger: logger.Default.LogMode(logger.Warn)})
+	db, err := gorm.Open(sqlite.Open(cfg.Database.SQLitePath), &gorm.Config{Logger: databaseLogger()})
 	if err != nil {
 		return nil, err
 	}
@@ -28,6 +28,19 @@ func NewDB(cfg *config.Config) (*gorm.DB, error) {
 		return nil, err
 	}
 	return db, nil
+}
+
+func databaseLogger() logger.Interface {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("DEPLOYCP_DB_LOG_LEVEL"))) {
+	case "silent", "quiet", "off":
+		return logger.Default.LogMode(logger.Silent)
+	case "info":
+		return logger.Default.LogMode(logger.Info)
+	case "error":
+		return logger.Default.LogMode(logger.Error)
+	default:
+		return logger.Default.LogMode(logger.Warn)
+	}
 }
 
 func migrate(cfg *config.Config, db *gorm.DB) error {

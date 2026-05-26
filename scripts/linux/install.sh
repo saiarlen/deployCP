@@ -179,6 +179,36 @@ reset_adminer_helper() {
     "${CORE_DIR}/storage/generated/adminer-helper/adminer-source.txt"
 }
 
+run_deploycp_cli_quiet() {
+  local command="$1"
+  shift || true
+  (
+    cd "${CORE_DIR}"
+    DEPLOYCP_ENV_FILE="${CORE_DIR}/.env" \
+    DEPLOYCP_DB_LOG_LEVEL=quiet \
+      "${CORE_DIR}/bin/${BIN_NAME}" "$command" "$@"
+  )
+}
+
+print_summary_row() {
+  local label="$1"
+  local value="$2"
+  local width=45
+  local prefix=""
+  value="${value:-}"
+  if [[ -z "$value" ]]; then
+    printf "║ %-12s │ %-45s ║\n" "$label" ""
+    return
+  fi
+  while [[ ${#value} -gt $width ]]; do
+    prefix="${value:0:$width}"
+    printf "║ %-12s │ %-45s ║\n" "$label" "$prefix"
+    label=""
+    value="${value:$width}"
+  done
+  printf "║ %-12s │ %-45s ║\n" "$label" "$value"
+}
+
 if [[ "$(id -u)" -ne 0 ]]; then
   echo "run as root" >&2
   exit 1
@@ -998,39 +1028,33 @@ ensure_service_enabled "$VARNISH_SERVICE_NAME"
 ensure_service_enabled "$CRON_SERVICE_NAME"
 
 if [[ -x "${CORE_DIR}/bin/${BIN_NAME}" ]]; then
-  (
-    cd "${CORE_DIR}"
-    DEPLOYCP_ENV_FILE="${CORE_DIR}/.env" "${CORE_DIR}/bin/${BIN_NAME}" bootstrap-host
-  )
-  (
-    cd "${CORE_DIR}"
-    DEPLOYCP_ENV_FILE="${CORE_DIR}/.env" "${CORE_DIR}/bin/${BIN_NAME}" reconcile-managed
-  )
+  run_deploycp_cli_quiet bootstrap-host
+  run_deploycp_cli_quiet reconcile-managed
   systemctl start "${SERVICE_NAME}"
-  (
-    cd "${CORE_DIR}"
-    DEPLOYCP_ENV_FILE="${CORE_DIR}/.env" "${CORE_DIR}/bin/${BIN_NAME}" verify-host
-  ) || true
+  run_deploycp_cli_quiet verify-host || true
 
   # Resolve display values for the post-install message.
   DISPLAY_PORT="$(read_env_value "${CORE_DIR}/.env" "APP_PORT")"
   DISPLAY_PORT="${DISPLAY_PORT:-2024}"
   SERVER_IP="$(detect_display_host)"
+  DISPLAY_VERSION="$(read_env_value "${CORE_DIR}/.env" "APP_VERSION")"
+  DISPLAY_VERSION="${DISPLAY_VERSION:-$(resolved_release_version)}"
+  DISPLAY_VERSION="${DISPLAY_VERSION:-dev}"
+  PANEL_URL="http://${SERVER_IP}:${DISPLAY_PORT}"
 
   echo ""
-  echo "══════════════════════════════════════════════════════════════"
-  echo "  DeployCP installed successfully!"
-  echo "══════════════════════════════════════════════════════════════"
-  echo ""
-  echo "  Open the panel to create your admin account:"
-  echo ""
-  echo "  ➜  http://${SERVER_IP}:${DISPLAY_PORT}"
-  echo ""
-  echo "  Config:   ${CORE_DIR}/.env"
-  echo "  Service:  systemctl status ${SERVICE_NAME}"
-  echo "  Logs:     journalctl -u ${SERVICE_NAME} -f"
-  echo ""
-  echo "══════════════════════════════════════════════════════════════"
+  echo "╔══════════════════════════════════════════════════════════════╗"
+  echo "║                    DeployCP Installation                    ║"
+  echo "╠══════════════════════════════════════════════════════════════╣"
+  print_summary_row "Name" "DeployCP"
+  print_summary_row "Version" "${DISPLAY_VERSION}"
+  print_summary_row "Panel URL" "${PANEL_URL}"
+  print_summary_row "Config" "${CORE_DIR}/.env"
+  print_summary_row "Service" "systemctl status ${SERVICE_NAME}"
+  print_summary_row "Logs" "journalctl -u ${SERVICE_NAME} -f"
+  echo "╠══════════════════════════════════════════════════════════════╣"
+  echo "║  Open the panel URL above to create your admin account.      ║"
+  echo "╚══════════════════════════════════════════════════════════════╝"
   echo ""
 else
   echo ""
