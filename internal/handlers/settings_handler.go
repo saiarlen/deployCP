@@ -62,6 +62,7 @@ type SettingsHandler struct {
 	runtimeService     *services.RuntimeService
 	ftpService         *services.FTPService
 	updateService      *services.UpdateService
+	panelDomainService *services.PanelDomainService
 }
 
 type runtimeSummary struct {
@@ -91,6 +92,7 @@ func NewSettingsHandler(
 	runtimeService *services.RuntimeService,
 	ftpService *services.FTPService,
 	updateService *services.UpdateService,
+	panelDomainService *services.PanelDomainService,
 ) *SettingsHandler {
 	return &SettingsHandler{
 		base:               &BaseHandler{Config: cfg, Sessions: sessions},
@@ -107,6 +109,7 @@ func NewSettingsHandler(
 		runtimeService:     runtimeService,
 		ftpService:         ftpService,
 		updateService:      updateService,
+		panelDomainService: panelDomainService,
 	}
 }
 
@@ -402,12 +405,23 @@ func (h *SettingsHandler) Update(c *fiber.Ctx) error {
 }
 
 func (h *SettingsHandler) UpdateGeneral(c *fiber.Ctx) error {
-	customDomain := strings.TrimSpace(c.FormValue("panel_custom_domain"))
+	customDomain := services.NormalizePanelDomain(c.FormValue("panel_custom_domain"))
 	proftpdMasqueradeAddress := strings.TrimSpace(c.FormValue("proftpd_masquerade_address"))
 	panelTimezone := strings.TrimSpace(c.FormValue("panel_timezone"))
 	actor := currentUserID(c)
 	ip := c.IP()
 
+	existingCustomDomain, _ := h.service.Get("panel_custom_domain")
+	if h.panelDomainService != nil && (customDomain != "" || strings.TrimSpace(existingCustomDomain) != "") {
+		if err := h.panelDomainService.Configure(c.Context(), customDomain, actor, ip); err != nil {
+			if customDomain == "" {
+				h.base.Sessions.SetFlash(c, err.Error())
+			} else {
+				h.base.Sessions.SetFlash(c, friendlySSLIssueMessage(customDomain, err))
+			}
+			return c.Redirect("/settings?tab=general")
+		}
+	}
 	if err := h.service.Update("panel_custom_domain", customDomain, actor, ip); err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
 		return c.Redirect("/settings?tab=general")

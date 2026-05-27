@@ -237,13 +237,16 @@ detect_distro_family() {
   echo unknown
 }
 
+apt_get_install() {
+  DEBIAN_FRONTEND=noninteractive PYTHONWARNINGS=ignore::SyntaxWarning apt-get "$@"
+}
+
 install_packages() {
   local manager="$1"
   case "$manager" in
     apt)
-      export DEBIAN_FRONTEND=noninteractive
-      apt-get update -y
-      apt-get install -y nginx certbot curl tar sqlite3 ca-certificates openssl procps cron redis-server proftpd-basic varnish mariadb-server postgresql ufw fail2ban logrotate acl
+      apt_get_install update -y
+      apt_get_install install -y nginx certbot curl tar sqlite3 ca-certificates openssl procps cron redis-server proftpd-basic varnish mariadb-server postgresql ufw fail2ban logrotate acl
       ;;
     dnf)
       dnf install -y nginx certbot curl tar sqlite sqlite-libs ca-certificates openssl procps-ng cronie redis proftpd varnish mariadb-server postgresql-server firewalld fail2ban logrotate acl
@@ -283,8 +286,7 @@ install_named_packages() {
   [[ $# -gt 0 ]] || return 0
   case "$manager" in
     apt)
-      export DEBIAN_FRONTEND=noninteractive
-      apt-get install -y "$@"
+      apt_get_install install -y "$@"
       ;;
     dnf) dnf install -y "$@" ;;
     yum) yum install -y "$@" ;;
@@ -509,16 +511,60 @@ is_public_ipv4() {
   return 0
 }
 
+normalize_display_host() {
+  local host="$1"
+  host="${host#http://}"
+  host="${host#https://}"
+  host="${host%%/*}"
+  host="${host%%:*}"
+  host="${host#[}"
+  host="${host%]}"
+  echo "$host"
+}
+
+is_local_display_host() {
+  local host="$1"
+  case "${host,,}" in
+    ""|"localhost"|"0.0.0.0"|"::"|"[::]"|127.*)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+detected_external_ipv4() {
+  local candidate=""
+  local endpoint=""
+  for endpoint in https://api.ipify.org https://ifconfig.me/ip; do
+    candidate="$(curl -fsS --max-time 3 "$endpoint" 2>/dev/null || true)"
+    candidate="${candidate//$'\n'/}"
+    candidate="${candidate//$'\r'/}"
+    if is_public_ipv4 "$candidate"; then
+      echo "$candidate"
+      return
+    fi
+  done
+}
+
 detect_display_host() {
   local candidate=""
+  local env_base_host=""
   local env_host=""
 
-  env_host="$(read_env_value "${CORE_DIR}/.env" "APP_HOST" 2>/dev/null || true)"
-  env_host="${env_host#http://}"
-  env_host="${env_host#https://}"
-  env_host="${env_host%%/*}"
-  env_host="${env_host%%:*}"
-  if [[ -n "$env_host" ]]; then
+  env_base_host="$(normalize_display_host "$(read_env_value "${CORE_DIR}/.env" "APP_BASE_URL" 2>/dev/null || true)")"
+  if ! is_local_display_host "$env_base_host"; then
+    echo "$env_base_host"
+    return
+  fi
+
+  candidate="$(detected_external_ipv4)"
+  if [[ -n "$candidate" ]]; then
+    echo "$candidate"
+    return
+  fi
+
+  env_host="$(normalize_display_host "$(read_env_value "${CORE_DIR}/.env" "APP_HOST" 2>/dev/null || true)")"
+  if ! is_local_display_host "$env_host"; then
     echo "$env_host"
     return
   fi
@@ -1044,7 +1090,7 @@ if [[ -x "${CORE_DIR}/bin/${BIN_NAME}" ]]; then
 
   echo ""
   echo "╔══════════════════════════════════════════════════════════════╗"
-  echo "║                    DeployCP Installation                    ║"
+  echo "║                    DeployCP Installation Completed :)        ║"
   echo "╠══════════════════════════════════════════════════════════════╣"
   print_summary_row "Name" "DeployCP"
   print_summary_row "Version" "${DISPLAY_VERSION}"

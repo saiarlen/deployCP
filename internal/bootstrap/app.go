@@ -56,6 +56,7 @@ type Application struct {
 	HostLifecycle    *services.HostLifecycleService
 	UpdateService    *services.UpdateService
 	PlatformOps      *services.PlatformOpsService
+	PanelDomain      *services.PanelDomainService
 
 	AuthHandler      *handlers.AuthHandler
 	DashboardHandler *handlers.DashboardHandler
@@ -157,6 +158,7 @@ func Build() (*Application, error) {
 	if err := settingsService.ApplyConfiguredTimezone(); err != nil {
 		_ = settingsService.ApplyTimezone("UTC")
 	}
+	panelDomainService := services.NewPanelDomainService(cfg, settingsService, repos.Websites, platformAdapter, runner, auditService)
 	updateService := services.NewUpdateService(cfg, repos.Settings, auditService)
 	updateService.Start()
 	panelUserService := services.NewPanelUserService(repos.Users, repos.UserPlatformAccess, auditService)
@@ -330,12 +332,13 @@ func Build() (*Application, error) {
 		HostLifecycle:    hostLifecycleService,
 		UpdateService:    updateService,
 		PlatformOps:      platformOpsService,
+		PanelDomain:      panelDomainService,
 		AuthHandler:      handlers.NewAuthHandler(cfg, sessionManager, authService, settingsService),
 		DashboardHandler: handlers.NewDashboardHandler(cfg, sessionManager, dashboardService),
 		WebsiteHandler:   handlers.NewWebsiteHandler(cfg, sessionManager, websiteService, repos.SiteUsers, siteUserService, databaseService, sslService, repos.Databases, repos.SSL, settingsService, repos.NginxSites, repos.CronJobs, repos.Varnish, repos.IPBlocks, repos.BotBlocks, repos.BasicAuths, repos.CloudflareConfigs, repos.FTPUsers, appService, cronService, ftpService, varnishService, platformAdapter, platformOpsService),
 		AppHandler:       handlers.NewAppHandler(cfg, sessionManager, appService, websiteService, settingsService, siteUserService, repos.SiteUsers, databaseService, sslService, repos.Databases, repos.FTPUsers, ftpService, platformOpsService),
 		ServiceHandler:   handlers.NewServiceHandler(cfg, sessionManager, serviceService),
-		SettingsHandler:  handlers.NewSettingsHandler(cfg, sessionManager, settingsService, serviceService, panelUserService, repos.Audit, repos.Firewalls, repos.UserPlatformAccess, websiteService, appService, auditService, firewallService, runtimeService, ftpService, updateService),
+		SettingsHandler:  handlers.NewSettingsHandler(cfg, sessionManager, settingsService, serviceService, panelUserService, repos.Audit, repos.Firewalls, repos.UserPlatformAccess, websiteService, appService, auditService, firewallService, runtimeService, ftpService, updateService, panelDomainService),
 		UpdateHandler:    handlers.NewUpdateHandler(cfg, sessionManager, updateService),
 		ElfinderHandler:  handlers.NewElfinderHandler(cfg, sessionManager, websiteService, platformAdapter, runner),
 	}

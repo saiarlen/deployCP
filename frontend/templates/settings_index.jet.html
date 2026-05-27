@@ -29,7 +29,7 @@
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 class="text-lg font-semibold">Panel Identity</h2>
-            <p class="text-sm opacity-70 mt-1">Domain, FTP address, and local time display.</p>
+            <p class="text-sm opacity-70 mt-1">Panel domain, trusted HTTPS certificate, FTP address, and local time display.</p>
           </div>
           <span class="badge badge-neutral">General</span>
         </div>
@@ -37,6 +37,7 @@
           <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
           <label class="block text-sm font-medium">DeployCP Custom Domain
             <input class="field mt-2" name="panel_custom_domain" value="{{ CustomDomain }}" placeholder="panel.example.com">
+            <span class="text-xs text-[var(--text-muted)] mt-1 block">DNS must point to this server and ports 80/443 must be reachable.</span>
           </label>
           <label class="block text-sm font-medium">MasqueradeAddress (proftpd)
             <input class="field mt-2" name="proftpd_masquerade_address" value="{{ ProftpdMasqueradeAddress }}" placeholder="203.0.113.10">
@@ -49,7 +50,7 @@
             </select>
           </label>
           <div class="lg:col-span-3 flex justify-end">
-            <button class="btn btn-primary" type="submit">Save General Settings</button>
+            <button class="btn btn-primary" type="submit">Save and Configure Panel Domain</button>
           </div>
         </form>
       </section>

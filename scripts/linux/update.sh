@@ -31,14 +31,17 @@ package_available() {
   esac
 }
 
+apt_get_install() {
+  DEBIAN_FRONTEND=noninteractive PYTHONWARNINGS=ignore::SyntaxWarning apt-get "$@"
+}
+
 install_named_packages() {
   local manager="$1"
   shift
   [[ $# -gt 0 ]] || return 0
   case "$manager" in
     apt)
-      export DEBIAN_FRONTEND=noninteractive
-      apt-get install -y "$@"
+      apt_get_install install -y "$@"
       ;;
     dnf) dnf install -y "$@" ;;
     yum) yum install -y "$@" ;;
