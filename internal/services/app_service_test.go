@@ -151,6 +151,57 @@ func TestPM2RuntimeServiceDefinitionOmitsUnsupportedExecModeFlag(t *testing.T) {
 	}
 }
 
+func TestBuildAppServiceDefinitionNormalizesMemoryLimit(t *testing.T) {
+	app := &models.GoApp{
+		Name:             "example.com",
+		ServiceName:      "deploycp-app-example-com",
+		Runtime:          "go",
+		ProcessManager:   "systemd",
+		BinaryPath:       "/srv/example/app",
+		WorkingDirectory: "/srv/example/htdocs",
+		MaxMemory:        "512",
+	}
+
+	def := buildAppServiceDefinition(app, nil)
+	if def.MemoryMax != "512M" {
+		t.Fatalf("MemoryMax = %q, want 512M", def.MemoryMax)
+	}
+}
+
+func TestNormalizeAppMaxMemoryTreatsZeroAsUnset(t *testing.T) {
+	for _, input := range []string{"0", "0m", "0MB"} {
+		got, err := normalizeAppMaxMemory(input)
+		if err != nil {
+			t.Fatalf("normalizeAppMaxMemory(%q) returned error: %v", input, err)
+		}
+		if got != "" {
+			t.Fatalf("normalizeAppMaxMemory(%q) = %q, want empty", input, got)
+		}
+	}
+}
+
+func TestPM2RuntimeServiceDefinitionUsesMemoryRestartOnly(t *testing.T) {
+	app := &models.GoApp{
+		Name:             "example.com",
+		ServiceName:      "deploycp-app-example-com",
+		Runtime:          "node",
+		ProcessManager:   "pm2",
+		BinaryPath:       "/srv/example/.deploycp/node-tools/node_modules/.bin/pm2-runtime",
+		EntryPoint:       "index.js",
+		WorkingDirectory: "/srv/example/htdocs",
+		MaxMemory:        "512mb",
+	}
+
+	def := buildAppServiceDefinition(app, nil)
+	got := strings.Join(def.Args, " ")
+	if !strings.Contains(got, "--max-memory-restart 512M") {
+		t.Fatalf("pm2 args missing normalized memory restart: %q", got)
+	}
+	if def.MemoryMax != "" {
+		t.Fatalf("pm2 service should not also set systemd MemoryMax, got %q", def.MemoryMax)
+	}
+}
+
 func TestCleanupDanglingNginxEnabledConfigs(t *testing.T) {
 	enabledDir := t.TempDir()
 	availableDir := t.TempDir()

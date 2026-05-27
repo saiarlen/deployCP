@@ -146,6 +146,7 @@ func renderUnit(def platform.ServiceDefinition) string {
 	builder.WriteString(fmt.Sprintf("Description=%s\n", def.Description))
 	builder.WriteString("After=network.target\n\n")
 	builder.WriteString("[Service]\n")
+	builder.WriteString("Type=simple\n")
 	if def.User != "" {
 		builder.WriteString(fmt.Sprintf("User=%s\n", def.User))
 	}
@@ -159,6 +160,12 @@ func renderUnit(def platform.ServiceDefinition) string {
 		restart = "on-failure"
 	}
 	builder.WriteString(fmt.Sprintf("Restart=%s\n", restart))
+	builder.WriteString("RestartSec=5\n")
+	builder.WriteString("KillMode=control-group\n")
+	builder.WriteString("LimitNOFILE=50000\n")
+	if strings.TrimSpace(def.MemoryMax) != "" {
+		builder.WriteString(fmt.Sprintf("MemoryMax=%s\n", strings.TrimSpace(def.MemoryMax)))
+	}
 	if def.StdoutPath != "" {
 		builder.WriteString(fmt.Sprintf("StandardOutput=append:%s\n", def.StdoutPath))
 	}
@@ -177,6 +184,7 @@ func validateServiceDefinition(def platform.ServiceDefinition) error {
 		"working dir":    def.WorkingDir,
 		"user":           def.User,
 		"restart policy": def.RestartPolicy,
+		"memory max":     def.MemoryMax,
 		"stdout path":    def.StdoutPath,
 		"stderr path":    def.StderrPath,
 	}

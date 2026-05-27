@@ -211,12 +211,12 @@
           </select>
         </label>
 
-        <label class="block text-sm font-medium">Workers
+        <label class="block text-sm font-medium rt-pm-field rt-pm-pm2 rt-pm-gunicorn rt-pm-uwsgi">Workers
           <input class="field mt-2" type="number" name="workers" min="0" value="{{ Status.App.Workers }}" placeholder="0 = auto/default">
           <span class="text-xs opacity-50 mt-1">0 = use process manager default</span>
         </label>
 
-        <label class="block text-sm font-medium">Timeout (seconds)
+        <label class="block text-sm font-medium rt-pm-field rt-pm-gunicorn rt-pm-uwsgi">Timeout (seconds)
           <input class="field mt-2" type="number" name="timeout" min="0" value="{{ Status.App.Timeout }}" placeholder="0 = default">
           <span class="text-xs opacity-50 mt-1">0 = use process manager default</span>
         </label>
@@ -284,7 +284,7 @@
           </select>
         </label>
 
-        <label class="block text-sm font-medium rt-pm-field rt-pm-gunicorn rt-pm-uwsgi">Worker Class
+        <label class="block text-sm font-medium rt-pm-field rt-pm-gunicorn">Worker Class
           <select class="field mt-2" name="worker_class">
             <option value="" {{ if Status.App.WorkerClass == "" }}selected{{ end }}>default (sync)</option>
             <option value="sync" {{ if Status.App.WorkerClass == "sync" }}selected{{ end }}>sync</option>
@@ -1111,8 +1111,8 @@ $(function () {
 
   function togglePmFields() {
     var pm = $('#rt-pm').val() || 'systemd';
-    $('.rt-pm-field').hide();
-    $('.rt-pm-' + pm).show();
+    $('.rt-pm-field').hide().find(':input').prop('disabled', true);
+    $('.rt-pm-' + pm).show().find(':input').prop('disabled', false);
   }
   $('#rt-pm').on('change', togglePmFields);
   togglePmFields();
@@ -1602,12 +1602,12 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
           </select>
         </label>
 
-        <label class="block text-sm font-medium">Workers
+        <label class="block text-sm font-medium rt-pm-field rt-pm-pm2 rt-pm-gunicorn rt-pm-uwsgi">Workers
           <input class="field mt-2" type="number" name="workers" min="0" value="{{ LinkedApp.Workers }}" placeholder="0 = auto/default">
           <span class="text-xs opacity-50 mt-1">0 = use process manager default</span>
         </label>
 
-        <label class="block text-sm font-medium">Timeout (seconds)
+        <label class="block text-sm font-medium rt-pm-field rt-pm-gunicorn rt-pm-uwsgi">Timeout (seconds)
           <input class="field mt-2" type="number" name="timeout" min="0" value="{{ LinkedApp.Timeout }}" placeholder="0 = default">
         </label>
 
@@ -1632,7 +1632,7 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
           </select>
         </label>
 
-        <label class="block text-sm font-medium rt-pm-field rt-pm-gunicorn rt-pm-uwsgi">Worker Class
+        <label class="block text-sm font-medium rt-pm-field rt-pm-gunicorn">Worker Class
           <select class="field mt-2" name="worker_class">
             <option value="" {{ if LinkedApp.WorkerClass == "" }}selected{{ end }}>default (sync)</option>
             <option value="sync" {{ if LinkedApp.WorkerClass == "sync" }}selected{{ end }}>sync</option>
@@ -1757,12 +1757,12 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
           <span class="text-xs opacity-50 mt-1">The managed process will bind to this local port.</span>
         </label>
 
-        <label class="block text-sm font-medium">Workers
+        <label class="block text-sm font-medium ca-pm-field ca-pm-pm2 ca-pm-gunicorn ca-pm-uwsgi" style="display:none">Workers
           <input class="field mt-2" type="number" name="workers" min="0" value="0" placeholder="0 = auto/default">
           <span class="text-xs opacity-50 mt-1">0 = use process manager default</span>
         </label>
 
-        <label class="block text-sm font-medium">Timeout (seconds)
+        <label class="block text-sm font-medium ca-pm-field ca-pm-gunicorn ca-pm-uwsgi" style="display:none">Timeout (seconds)
           <input class="field mt-2" type="number" name="timeout" min="0" value="0" placeholder="0 = default">
         </label>
 
@@ -1779,7 +1779,7 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
           </select>
         </label>
 
-        <label class="block text-sm font-medium ca-pm-field ca-pm-gunicorn ca-pm-uwsgi" style="display:none">Worker Class
+        <label class="block text-sm font-medium ca-pm-field ca-pm-gunicorn" style="display:none">Worker Class
           <select class="field mt-2" name="worker_class">
             <option value="">default (sync)</option>
             <option value="sync">sync</option>
@@ -2717,6 +2717,7 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
             <button class="btn fm-btn" id="fm-btn-upload" type="button" title="Upload"><i data-lucide="upload"></i></button>
             <button class="btn fm-btn" id="fm-btn-newfolder" type="button" title="New Folder"><i data-lucide="folder-plus"></i></button>
             <button class="btn fm-btn" id="fm-btn-newfile" type="button" title="New File"><i data-lucide="file-plus"></i></button>
+            <button class="btn fm-btn" id="fm-btn-select-all" type="button" title="Select All"><i data-lucide="list-checks"></i></button>
             <button class="btn fm-btn" id="fm-btn-refresh" type="button" title="Refresh"><i data-lucide="refresh-cw"></i></button>
           </div>
         </div>
@@ -3371,12 +3372,17 @@ $(function () {
     var fmCwdPath = '/';
     var fmRootHash = '';
     var fmSelected = null;
+    var fmSelectedMap = {};
+    var fmSelectedOrder = [];
+    var fmVisibleFiles = [];
+    var fmLastSelectedHash = '';
     var fmClipboard = null;
     var fmUploadQueue = [];
     var fmUploadBusy = false;
     var fmMonaco = null;
     var fmMonacoReady = false;
     var fmMonacoQueue = [];
+    var fmKeyboardActive = false;
     var isDark = !document.body.classList.contains('light-theme');
 
     require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs' } });
@@ -3490,10 +3496,92 @@ $(function () {
       return lowerName.endsWith('.zip') || lowerName.endsWith('.tar.gz') || lowerName.endsWith('.tgz') || lowerName.endsWith('.tar');
     }
 
+    function fmSetSelectedFiles(files) {
+      fmSelectedMap = {};
+      fmSelectedOrder = [];
+      (files || []).forEach(function(file) {
+        if (!file || !file.hash || file.volumeid) return;
+        if (fmSelectedMap[file.hash]) return;
+        fmSelectedMap[file.hash] = file;
+        fmSelectedOrder.push(file.hash);
+      });
+      fmSelected = fmSelectedOrder.length ? fmSelectedMap[fmSelectedOrder[fmSelectedOrder.length - 1]] : null;
+      fmLastSelectedHash = fmSelected && fmSelected.hash ? fmSelected.hash : '';
+      fmSyncSelectionUI();
+    }
+
+    function fmSelectedFiles() {
+      return fmSelectedOrder.map(function(hash) { return fmSelectedMap[hash]; }).filter(Boolean);
+    }
+
+    function fmSelectedHashes() {
+      return fmSelectedFiles().map(function(file) { return file.hash; });
+    }
+
+    function fmSelectOnly(file) {
+      fmSetSelectedFiles(file ? [file] : []);
+    }
+
+    function fmToggleSelection(file) {
+      if (!file || !file.hash) return;
+      if (fmSelectedMap[file.hash]) {
+        delete fmSelectedMap[file.hash];
+        fmSelectedOrder = fmSelectedOrder.filter(function(hash) { return hash !== file.hash; });
+      } else {
+        fmSelectedMap[file.hash] = file;
+        fmSelectedOrder.push(file.hash);
+      }
+      fmSelected = fmSelectedOrder.length ? fmSelectedMap[fmSelectedOrder[fmSelectedOrder.length - 1]] : null;
+      fmLastSelectedHash = file.hash;
+      fmSyncSelectionUI();
+    }
+
+    function fmSelectRange(file) {
+      if (!file || !file.hash || !fmLastSelectedHash) {
+        fmSelectOnly(file);
+        return;
+      }
+      var start = fmVisibleFiles.findIndex(function(item) { return item.hash === fmLastSelectedHash; });
+      var end = fmVisibleFiles.findIndex(function(item) { return item.hash === file.hash; });
+      if (start < 0 || end < 0) {
+        fmSelectOnly(file);
+        return;
+      }
+      if (start > end) {
+        var tmp = start;
+        start = end;
+        end = tmp;
+      }
+      fmSetSelectedFiles(fmVisibleFiles.slice(start, end + 1));
+      fmLastSelectedHash = file.hash;
+    }
+
+    function fmSelectAllVisible() {
+      fmSetSelectedFiles(fmVisibleFiles);
+    }
+
+    function fmClearSelection() {
+      fmSetSelectedFiles([]);
+    }
+
+    function fmSyncSelectionUI() {
+      $('.fm-file-row').each(function() {
+        var file = $(this).data('file');
+        $(this).toggleClass('is-selected', !!(file && fmSelectedMap[file.hash]));
+      });
+      fmUpdateStatusbar(fmVisibleFiles.length);
+    }
+
+    function fmTargetsPayload(files) {
+      return (files || []).map(function(file) { return file && file.hash; }).filter(Boolean);
+    }
+
     function fmUpdateStatusbar(fileCount) {
       var parts = [];
       if (typeof fileCount === 'number') parts.push(fileCount + ' items');
-      if (fmSelected && fmSelected.name) parts.push('Selected: ' + fmSelected.name);
+      var selected = fmSelectedFiles();
+      if (selected.length === 1) parts.push('Selected: ' + selected[0].name);
+      if (selected.length > 1) parts.push(selected.length + ' selected');
       if (fmClipboard && fmClipboard.targets && fmClipboard.targets.length) {
         parts.push((fmClipboard.cut ? 'Cut' : 'Copied') + ': ' + fmClipboard.name);
       }
@@ -3588,11 +3676,14 @@ $(function () {
       });
     }
 
-    function fmShowCompressModal(file) {
-      var baseName = (file.name || 'archive').replace(/\.(tar\.gz|tgz|zip|tar)$/i, '');
+    function fmShowCompressModal(files) {
+      files = Array.isArray(files) ? files.filter(Boolean) : (files ? [files] : []);
+      if (!files.length) return;
+      var file = files[0];
+      var baseName = files.length > 1 ? 'archive' : (file.name || 'archive').replace(/\.(tar\.gz|tgz|zip|tar)$/i, '');
       var defaultName = baseName + '.zip';
       fmShowModal({
-        title: 'Compress Item',
+        title: files.length > 1 ? 'Compress Selection' : 'Compress Item',
         subtitle: 'Create a .zip archive in the current directory.',
         confirmText: 'Compress',
         body:
@@ -3603,7 +3694,7 @@ $(function () {
         onSubmit: function(form) {
           var name = $.trim($(form).find('[name="name"]').val());
           if (!name) return;
-          fmApi({ cmd: 'archive', target: file.hash, 'targets[]': file.hash, name: name }, function() {
+          fmApi({ cmd: 'archive', target: file.hash, 'targets[]': fmTargetsPayload(files), name: name }, function() {
             fmHideModal();
             fmOpen(fmCwd);
             fmToast(true, 'Archive created');
@@ -3619,36 +3710,41 @@ $(function () {
       }, null, { busyText: 'Extracting archive...' });
     }
 
-    function fmConfirmDelete(file) {
+    function fmConfirmDelete(files) {
+      files = Array.isArray(files) ? files.filter(Boolean) : (files ? [files] : []);
+      if (!files.length) return;
+      var label = files.length === 1 ? files[0].name : files.length + ' selected items';
       fmShowModal({
-        title: 'Delete Item',
+        title: files.length > 1 ? 'Delete Selected Items' : 'Delete Item',
         subtitle: 'This permanently removes the selected file or folder.',
         confirmText: 'Delete',
-        body: '<p class="fm-modal-help">Delete <span class="font-mono">' + fmEscape(file.name) + '</span>?</p>',
+        body: '<p class="fm-modal-help">Delete <span class="font-mono">' + fmEscape(label) + '</span>?</p>',
         onSubmit: function() {
-          fmApi({ cmd: 'rm', 'targets[]': file.hash }, function() {
+          fmApi({ cmd: 'rm', 'targets[]': fmTargetsPayload(files) }, function() {
             fmHideModal();
             fmOpen(fmCwd);
-            fmToast(true, 'Item deleted');
+            fmToast(true, files.length > 1 ? 'Items deleted' : 'Item deleted');
           }, null, { button: $('#fm-modal-confirm'), buttonText: 'Deleting...', busyText: 'Deleting item...' });
         }
       });
     }
 
-    function fmSetClipboard(file, cut) {
+    function fmSetClipboard(files, cut) {
+      files = Array.isArray(files) ? files.filter(Boolean) : (files ? [files] : []);
+      if (!files.length) return;
       fmClipboard = {
-        targets: [file.hash],
+        targets: fmTargetsPayload(files),
         cut: !!cut,
-        name: file.name || 'item'
+        name: files.length === 1 ? (files[0].name || 'item') : files.length + ' items'
       };
       fmUpdateStatusbar();
-      fmToast(true, (cut ? 'Cut' : 'Copied') + ' ' + file.name);
+      fmToast(true, (cut ? 'Cut ' : 'Copied ') + fmClipboard.name);
     }
 
     function fmPaste(dstHash) {
       if (!fmClipboard || !fmClipboard.targets || !fmClipboard.targets.length) return;
       var payload = { cmd: 'paste', dst: dstHash || fmCwd, cut: fmClipboard.cut ? '1' : '0' };
-      payload['targets[]'] = fmClipboard.targets[0];
+      payload['targets[]'] = fmClipboard.targets;
       fmApi(payload, function() {
         var wasCut = fmClipboard && fmClipboard.cut;
         if (wasCut) fmClipboard = null;
@@ -3824,6 +3920,8 @@ $(function () {
       var $list = $('#fm-filelist').empty();
       $list.append('<div class="fm-filelist-head"><span>Name</span><span style="text-align:right">Size</span><span class="fm-file-owner">Owner / Group</span><span class="fm-file-perms">Perms</span><span class="fm-file-date">Modified</span><span></span></div>');
       if (!files || !files.length) {
+        fmVisibleFiles = [];
+        fmClearSelection();
         $list.append('<div class="fm-empty">Empty folder</div>');
         fmUpdateStatusbar(0);
         return;
@@ -3834,6 +3932,7 @@ $(function () {
         if (ad !== bd) return ad - bd;
         return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
       });
+      fmVisibleFiles = files.filter(function(item){ return !item.volumeid; });
       files.forEach(function(f) {
         if (f.volumeid) return;
         var isDir = f.mime === 'directory';
@@ -3861,17 +3960,17 @@ $(function () {
         });
         $row.on('click', function(e) {
           if ($(e.target).closest('.fm-file-action').length) return;
-          $('.fm-file-row').removeClass('is-selected');
-          $(this).addClass('is-selected');
-          fmSelected = $(this).data('file');
-          fmUpdateStatusbar(files.filter(function(item){ return !item.volumeid; }).length);
+          var file = $(this).data('file');
+          if (e.shiftKey) fmSelectRange(file);
+          else if (e.metaKey || e.ctrlKey) fmToggleSelection(file);
+          else fmSelectOnly(file);
         });
         $row.on('contextmenu', function(e) {
           e.preventDefault();
-          fmSelected = $(this).data('file');
-          $('.fm-file-row').removeClass('is-selected');
-          $(this).addClass('is-selected');
-          fmShowContext(e.clientX, e.clientY, $(this).data('file'));
+          var file = $(this).data('file');
+          if (!fmSelectedMap[file.hash]) fmSelectOnly(file);
+          fmSelected = file;
+          fmShowContext(e.clientX, e.clientY, file);
         });
         $row.find('.fm-action-edit').on('click', function() { fmEdit($row.data('file')); });
         $row.find('.fm-action-download').on('click', function() { window.open(fmUrl + '?cmd=file&target=' + encodeURIComponent($row.data('file').hash) + '&download=1', '_blank'); });
@@ -3880,7 +3979,7 @@ $(function () {
         $list.append($row);
       });
       if (typeof lucide !== 'undefined') lucide.createIcons();
-      fmUpdateStatusbar(files.filter(function(item){ return !item.volumeid; }).length);
+      fmSyncSelectionUI();
     }
 
     function fmOpen(hash) {
@@ -3898,7 +3997,7 @@ $(function () {
         }
         fmCwdParent = data.cwd ? (data.cwd.phash || '') : '';
         fmCwdPath = data.options && data.options.path ? data.options.path : '/';
-        fmSelected = null;
+        fmClearSelection();
         fmUpdateLocationPath();
         fmRenderFiles(data.files || []);
         fmRenderTree();
@@ -3909,12 +4008,28 @@ $(function () {
     function fmShowContext(x, y, file) {
       fmHideContext();
       var isDir = file && file.mime === 'directory';
+      var selected = fmSelectedFiles();
+      var hasSelection = selected.length > 0;
+      var useSelection = file && selected.length > 1 && fmSelectedMap[file.hash];
       var $menu = $('<div class="fm-context" id="fm-context"></div>');
       if (!file) {
         $menu.append($('<div class="fm-context-item"></div>').html('<i data-lucide="folder-plus"></i> New Folder').on('click', function(){ fmHideContext(); fmShowCreateModal('folder'); }));
         $menu.append($('<div class="fm-context-item"></div>').html('<i data-lucide="file-plus"></i> New File').on('click', function(){ fmHideContext(); fmShowCreateModal('file'); }));
         $menu.append($('<div class="fm-context-item"></div>').html('<i data-lucide="upload"></i> Upload').on('click', function(){ fmHideContext(); fmOpenUploadModal(); }));
+        $menu.append($('<div class="fm-context-item"></div>').html('<i data-lucide="list-checks"></i> Select All').toggleClass('is-disabled', !fmVisibleFiles.length).on('click', function(){ if (!fmVisibleFiles.length) return; fmHideContext(); fmSelectAllVisible(); }));
         $menu.append($('<div class="fm-context-item"></div>').html('<i data-lucide="clipboard-paste"></i> Paste').toggleClass('is-disabled', !fmClipboard).on('click', function(){ if (!fmClipboard) return; fmHideContext(); fmPaste(fmCwd); }));
+      }
+      if (useSelection) {
+        $menu.append($('<div class="fm-context-item"></div>').html('<i data-lucide="copy"></i> Copy Selected').on('click', function(){ fmSetClipboard(selected, false); fmHideContext(); }));
+        $menu.append($('<div class="fm-context-item"></div>').html('<i data-lucide="scissors"></i> Cut Selected').on('click', function(){ fmSetClipboard(selected, true); fmHideContext(); }));
+        $menu.append($('<div class="fm-context-item"></div>').html('<i data-lucide="archive"></i> Compress Selected').on('click', function(){ fmHideContext(); fmShowCompressModal(selected); }));
+        $menu.append($('<div class="fm-context-item"></div>').html('<i data-lucide="clipboard-paste"></i> Paste Here').toggleClass('is-disabled', !fmClipboard).on('click', function(){ if (!fmClipboard) return; fmHideContext(); fmPaste(fmDestinationHash(file)); }));
+        $menu.append('<div class="fm-context-sep"></div>');
+        $menu.append($('<div class="fm-context-item fm-context-danger"></div>').html('<i data-lucide="trash-2"></i> Delete Selected').on('click', function(){ fmHideContext(); fmConfirmDelete(selected); }));
+        $menu.css({ left: Math.min(x, window.innerWidth - 230) + 'px', top: Math.min(y, window.innerHeight - 260) + 'px' });
+        $('body').append($menu);
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+        return;
       }
       if (isDir) {
         $menu.append($('<div class="fm-context-item"></div>').html('<i data-lucide="folder-open"></i> Open').on('click', function(){ fmHideContext(); fmOpen(file.hash); }));
@@ -3937,6 +4052,11 @@ $(function () {
         }
         $menu.append('<div class="fm-context-sep"></div>');
         $menu.append($('<div class="fm-context-item fm-context-danger"></div>').html('<i data-lucide="trash-2"></i> Delete').on('click', function(){ fmHideContext(); fmConfirmDelete(file); }));
+      } else if (hasSelection) {
+        $menu.append($('<div class="fm-context-item"></div>').html('<i data-lucide="copy"></i> Copy Selected').on('click', function(){ fmSetClipboard(selected, false); fmHideContext(); }));
+        $menu.append($('<div class="fm-context-item"></div>').html('<i data-lucide="scissors"></i> Cut Selected').on('click', function(){ fmSetClipboard(selected, true); fmHideContext(); }));
+        $menu.append('<div class="fm-context-sep"></div>');
+        $menu.append($('<div class="fm-context-item fm-context-danger"></div>').html('<i data-lucide="trash-2"></i> Delete Selected').on('click', function(){ fmHideContext(); fmConfirmDelete(selected); }));
       }
       $menu.css({ left: Math.min(x, window.innerWidth - 230) + 'px', top: Math.min(y, window.innerHeight - 260) + 'px' });
       $('body').append($menu);
@@ -3948,8 +4068,6 @@ $(function () {
     $('.fm-main, #fm-filelist, #fm-sidebar').on('contextmenu', function(e) {
       if ($(e.target).closest('.fm-file-row').length) return;
       e.preventDefault();
-      $('.fm-file-row').removeClass('is-selected');
-      fmSelected = null;
       fmShowContext(e.clientX, e.clientY, null);
       fmUpdateStatusbar();
     });
@@ -3980,6 +4098,11 @@ $(function () {
 
     $('#fm-btn-newfolder').on('click', function() { fmShowCreateModal('folder'); });
     $('#fm-btn-newfile').on('click', function() { fmShowCreateModal('file'); });
+    $('#fm-btn-select-all').on('click', function() {
+      if (!fmVisibleFiles.length) return;
+      if (fmSelectedFiles().length === fmVisibleFiles.length) fmClearSelection();
+      else fmSelectAllVisible();
+    });
     $('#fm-btn-refresh').on('click', function() {
       var $btn = $(this);
       fmSetButtonLoading($btn, true, 'Refreshing...');
@@ -3991,6 +4114,25 @@ $(function () {
       }, 250);
     });
     $('#fm-btn-back').on('click', function() { if (fmCwdParent) fmOpen(fmCwdParent); });
+
+    $fm.on('mousedown focusin', function() {
+      fmKeyboardActive = true;
+    });
+    $(document).on('mousedown focusin', function(e) {
+      if (!$(e.target).closest('#fm, #fm-modal, #fm-upload-modal, #fm-editor-overlay').length) fmKeyboardActive = false;
+    });
+    $(document).on('keydown', function(e) {
+      var target = e.target;
+      if (!fmKeyboardActive && !$(target).closest('#fm').length) return;
+      if ($(target).is('input, textarea, select') || $(target).closest('.monaco-editor').length) return;
+      if ((e.ctrlKey || e.metaKey) && String(e.key || '').toLowerCase() === 'a') {
+        e.preventDefault();
+        fmSelectAllVisible();
+      }
+      if (e.key === 'Escape') {
+        fmClearSelection();
+      }
+    });
 
     $('#fm-btn-upload').on('click', function() {
       fmOpenUploadModal();
@@ -4385,8 +4527,8 @@ $(function () {
   if ($('#rt-pm').length) {
     function togglePmFields() {
       var pm = $('#rt-pm').val() || 'systemd';
-      $('.rt-pm-field').hide();
-      $('.rt-pm-' + pm).show();
+      $('.rt-pm-field').hide().find(':input').prop('disabled', true);
+      $('.rt-pm-' + pm).show().find(':input').prop('disabled', false);
     }
     $('#rt-pm').on('change', togglePmFields);
     togglePmFields();
@@ -4471,8 +4613,8 @@ $(function () {
 	    }
     function toggleCaPm() {
       var pm = $('#ca-pm').val() || 'systemd';
-      $('.ca-pm-field').hide();
-      $('.ca-pm-' + pm).show();
+      $('.ca-pm-field').hide().find(':input').prop('disabled', true);
+      $('.ca-pm-' + pm).show().find(':input').prop('disabled', false);
       updateBinaryHints();
     }
     $('#ca-runtime').on('change', toggleCaRuntime);

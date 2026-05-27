@@ -55,13 +55,19 @@ func TestRenderUnitQuotesExecArgsAndEnvironment(t *testing.T) {
 		User:          "deployuser",
 		Environment:   map[string]string{"APP_VALUE": `100% "ok"`},
 		RestartPolicy: "on-failure",
+		MemoryMax:     "512M",
 	})
 
 	for _, want := range []string{
 		`User=deployuser`,
+		`Type=simple`,
 		`WorkingDirectory=/opt/my\x20app`,
 		`ExecStart="/opt/my app/bin/server" "--message" "hello \"world\""`,
 		`Environment="APP_VALUE=100%% \"ok\""`,
+		`RestartSec=5`,
+		`KillMode=control-group`,
+		`LimitNOFILE=50000`,
+		`MemoryMax=512M`,
 	} {
 		if !strings.Contains(unit, want) {
 			t.Fatalf("unit did not contain %q:\n%s", want, unit)

@@ -11,6 +11,7 @@ type ServiceDefinition struct {
 	User          string
 	Environment   map[string]string
 	RestartPolicy string
+	MemoryMax     string
 	StdoutPath    string
 	StderrPath    string
 }

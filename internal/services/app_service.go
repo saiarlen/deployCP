@@ -480,7 +480,11 @@ func (s *AppService) UpdateRuntimeSettings(ctx context.Context, id uint, process
 	app.EntryPoint = normalizePythonProcessManagerEntryPoint(app.Runtime, app.ProcessManager, app.EntryPoint)
 	app.Workers = workers
 	app.WorkerClass = workerClass
-	app.MaxMemory = maxMemory
+	normalizedMaxMemory, err := normalizeAppMaxMemory(maxMemory)
+	if err != nil {
+		return err
+	}
+	app.MaxMemory = normalizedMaxMemory
 	app.Timeout = timeout
 	app.ExecMode = execMode
 	if strings.TrimSpace(app.Host) == "" {
@@ -1165,6 +1169,9 @@ func (s *AppService) validate(in AppInput) error {
 	if err := validateRuntimeServiceInput(in); err != nil {
 		return err
 	}
+	if _, err := normalizeAppMaxMemory(in.MaxMemory); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -1529,7 +1536,52 @@ func normalizeAppInput(in AppInput) AppInput {
 	}
 	in.ProcessManager = normalizeProcessManager(in.ProcessManager)
 	in.EntryPoint = normalizePythonProcessManagerEntryPoint(in.Runtime, in.ProcessManager, in.EntryPoint)
+	if maxMemory, err := normalizeAppMaxMemory(in.MaxMemory); err == nil {
+		in.MaxMemory = maxMemory
+	} else {
+		in.MaxMemory = strings.TrimSpace(in.MaxMemory)
+	}
 	return in
+}
+
+func normalizeAppMaxMemory(value string) (string, error) {
+	value = strings.ToUpper(strings.TrimSpace(value))
+	if value == "" {
+		return "", nil
+	}
+	if strings.HasSuffix(value, "KB") || strings.HasSuffix(value, "MB") || strings.HasSuffix(value, "GB") {
+		value = strings.TrimSuffix(value, "B")
+	}
+	suffix := byte(0)
+	last := value[len(value)-1]
+	if last < '0' || last > '9' {
+		suffix = last
+		value = strings.TrimSpace(value[:len(value)-1])
+	}
+	if value == "" {
+		return "", fmt.Errorf("max memory must be a number with optional K, M, or G suffix")
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return "", fmt.Errorf("max memory must be a number with optional K, M, or G suffix")
+		}
+	}
+	amount, err := strconv.ParseUint(value, 10, 64)
+	if err != nil {
+		return "", fmt.Errorf("max memory is too large")
+	}
+	if amount == 0 {
+		return "", nil
+	}
+	if suffix == 0 {
+		suffix = 'M'
+	}
+	switch suffix {
+	case 'K', 'M', 'G':
+	default:
+		return "", fmt.Errorf("max memory must use K, M, or G suffix")
+	}
+	return value + string(suffix), nil
 }
 
 func normalizePythonProcessManagerEntryPoint(runtime, processManager, entryPoint string) string {
@@ -1774,6 +1826,10 @@ func buildAppServiceDefinition(app *models.GoApp, env map[string]string) platfor
 		StderrPath:    absoluteRuntimePath(app.StderrLogPath),
 	}
 	pm := normalizeProcessManager(app.ProcessManager)
+	maxMemory := normalizeStoredAppMaxMemory(app.MaxMemory)
+	if pm != "pm2" {
+		base.MemoryMax = maxMemory
+	}
 	switch pm {
 	case "pm2":
 		base.ExecPath = app.BinaryPath
@@ -1784,8 +1840,8 @@ func buildAppServiceDefinition(app *models.GoApp, env map[string]string) platfor
 		if app.ExecMode != "" && !isPM2RuntimeBinary(app.BinaryPath) {
 			args = append(args, "--exec-mode", app.ExecMode)
 		}
-		if app.MaxMemory != "" {
-			args = append(args, "--max-memory-restart", app.MaxMemory)
+		if maxMemory != "" {
+			args = append(args, "--max-memory-restart", maxMemory)
 		}
 		if extra := strings.Fields(strings.TrimSpace(app.StartArgs)); len(extra) > 0 {
 			args = append(args, extra...)
@@ -1828,6 +1884,14 @@ func buildAppServiceDefinition(app *models.GoApp, env map[string]string) platfor
 		base.Args = serviceArgs(app)
 	}
 	return base
+}
+
+func normalizeStoredAppMaxMemory(value string) string {
+	normalized, err := normalizeAppMaxMemory(value)
+	if err != nil {
+		return strings.TrimSpace(value)
+	}
+	return normalized
 }
 
 func isPM2RuntimeBinary(path string) bool {
