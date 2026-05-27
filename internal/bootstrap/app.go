@@ -472,7 +472,6 @@ func enforceSecureCookies(c *fiber.Ctx, cfg *config.Config) {
 	c.Response().Header.VisitAllCookie(func(_, value []byte) {
 		cookies = append(cookies, string(append([]byte(nil), value...)))
 	})
-	c.Response().Header.Del(fiber.HeaderSetCookie)
 	for _, cookie := range cookies {
 		var parsed fasthttp.Cookie
 		if err := parsed.Parse(cookie); err != nil {
