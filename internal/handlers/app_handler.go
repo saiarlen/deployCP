@@ -656,20 +656,7 @@ func (h *AppHandler) ManageOpenPostgresGUI(c *fiber.Ctx) error {
 }
 
 func (h *AppHandler) runtimeVersions(runtime string) []string {
-	versions := h.settings.RuntimeVersions(runtime)
-	if len(versions) > 0 {
-		return versions
-	}
-	switch strings.ToLower(strings.TrimSpace(runtime)) {
-	case "go":
-		return []string{"go1.25", "go1.24", "go1.23", "go1.22", "go1.21"}
-	case "python":
-		return []string{"python3.13", "python3.12", "python3.11", "python3.10", "python3.9"}
-	case "node":
-		return []string{"node24", "node22", "node20", "node18"}
-	default:
-		return []string{}
-	}
+	return h.settings.RuntimeVersions(runtime)
 }
 
 func (h *AppHandler) createDatabaseFromScopedForm(c *fiber.Ctx, fallbackLabel string, appID uint) error {

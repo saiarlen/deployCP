@@ -281,6 +281,30 @@ if [ -f "$runtime_env" ]; then
 fi
 export HOME="$allowed"
 export DEPLOYCP_ALLOWED_ROOT="$allowed"
+requested_command="${SSH_ORIGINAL_COMMAND:-}"
+if [ "${1:-}" = "-c" ] && [ -n "${2:-}" ]; then
+  requested_command="$2"
+fi
+if [ -n "$requested_command" ]; then
+  set -- $requested_command
+  command_name="$(basename -- "${1:-}")"
+  case "$command_name" in
+    sftp-server)
+      cd "$allowed" 2>/dev/null || cd "$HOME"
+      for server in /usr/lib/openssh/sftp-server /usr/libexec/sftp-server /usr/lib/ssh/sftp-server; do
+        if [ -x "$server" ]; then
+          exec "$server"
+        fi
+      done
+      printf 'SFTP subsystem unavailable\n' >&2
+      exit 127
+      ;;
+    *)
+      printf 'Command access is restricted for this platform user.\n' >&2
+      exit 126
+      ;;
+  esac
+fi
 state_root="$allowed/.deploycp-user-state/$USER"
 if ! mkdir -p "$state_root/cache" "$state_root/data" "$state_root/config" >/dev/null 2>&1; then
   state_root="/tmp/deploycp-user/$USER"
