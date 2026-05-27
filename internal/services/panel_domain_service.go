@@ -264,6 +264,7 @@ func renderPanelNginxConfig(cfg *config.Config, domain, webroot, certPath, keyPa
 	b.WriteString(fmt.Sprintf("    server_name %s;\n", domain))
 	b.WriteString(fmt.Sprintf("    access_log %s;\n", panelNginxAccessLogPath(cfg)))
 	b.WriteString(fmt.Sprintf("    error_log %s warn;\n", panelNginxErrorLogPath(cfg)))
+	writePanelProbeBlocks(&b)
 	b.WriteString("    location ^~ /.well-known/acme-challenge/ {\n")
 	b.WriteString(fmt.Sprintf("        root %s;\n", webroot))
 	b.WriteString("        default_type text/plain;\n")
@@ -284,6 +285,7 @@ func renderPanelNginxConfig(cfg *config.Config, domain, webroot, certPath, keyPa
 		b.WriteString(fmt.Sprintf("    server_name %s;\n", domain))
 		b.WriteString(fmt.Sprintf("    access_log %s;\n", panelNginxAccessLogPath(cfg)))
 		b.WriteString(fmt.Sprintf("    error_log %s warn;\n", panelNginxErrorLogPath(cfg)))
+		writePanelProbeBlocks(&b)
 		b.WriteString(fmt.Sprintf("    ssl_certificate %s;\n", certPath))
 		b.WriteString(fmt.Sprintf("    ssl_certificate_key %s;\n", keyPath))
 		b.WriteString("    ssl_session_cache shared:deploycp_panel_ssl:10m;\n")
@@ -292,6 +294,23 @@ func renderPanelNginxConfig(cfg *config.Config, domain, webroot, certPath, keyPa
 		b.WriteString("}\n")
 	}
 	return b.String()
+}
+
+func writePanelProbeBlocks(b *strings.Builder) {
+	b.WriteString("    location ~* ^/(php-cgi|cgi-bin|wp-|wordpress|vendor/phpunit|actuator|telescope|debug/default|console|server-status|server-info|login\\.action|v2/_catalog|ecp/current/exporttool|trace\\.axd|info\\.php|@vite/env) {\n")
+	b.WriteString("        return 444;\n")
+	b.WriteString("    }\n")
+	b.WriteString("    location ~* ^/(\\.env|\\.git|\\.svn|\\.hg|\\.DS_Store|config\\.json|.*sftp\\.json) {\n")
+	b.WriteString("        return 444;\n")
+	b.WriteString("    }\n")
+	ifBlocks := []string{
+		"auto_prepend_file",
+		"allow_url_include",
+		"php://input",
+	}
+	for _, item := range ifBlocks {
+		b.WriteString(fmt.Sprintf("    if ($query_string ~* \"%s\") { return 444; }\n", item))
+	}
 }
 
 func writePanelProxy(b *strings.Builder, cfg *config.Config) {
@@ -305,7 +324,9 @@ func writePanelProxy(b *strings.Builder, cfg *config.Config) {
 	b.WriteString("        proxy_set_header Host $host;\n")
 	b.WriteString("        proxy_set_header X-Real-IP $remote_addr;\n")
 	b.WriteString("        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n")
+	b.WriteString("        proxy_set_header X-Forwarded-Host $host;\n")
 	b.WriteString("        proxy_set_header X-Forwarded-Proto $scheme;\n")
+	b.WriteString("        proxy_set_header X-Forwarded-Port $server_port;\n")
 	b.WriteString("        proxy_set_header Upgrade $http_upgrade;\n")
 	b.WriteString("        proxy_set_header Connection \"upgrade\";\n")
 	b.WriteString("    }\n")

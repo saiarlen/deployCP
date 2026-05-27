@@ -19,6 +19,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/requestid"
 	"github.com/gofiber/fiber/v2/middleware/session"
 	storage "github.com/gofiber/storage/sqlite3/v2"
+	"github.com/valyala/fasthttp"
 	"gorm.io/gorm"
 
 	"deploycp/internal/config"
@@ -210,6 +211,7 @@ func Build() (*Application, error) {
 	app.Use(recover.New())
 	app.Use(requestid.New())
 	app.Use(panelAccessLogger(cfg))
+	app.Use(blockPanelProbeRequests)
 	app.Use(func(c *fiber.Ctx) error {
 		err := c.Next()
 		enforceSecureCookies(c, cfg)
@@ -395,6 +397,34 @@ func panelAccessLogger(cfg *config.Config) fiber.Handler {
 	}
 }
 
+func blockPanelProbeRequests(c *fiber.Ctx) error {
+	if isPanelProbeRequest(c.Method(), c.OriginalURL(), string(c.Request().URI().QueryString())) {
+		return c.Status(fiber.StatusNotFound).SendString("not found")
+	}
+	return c.Next()
+}
+
+func isPanelProbeRequest(method, originalURL, rawQuery string) bool {
+	target := strings.ToLower(strings.TrimSpace(originalURL))
+	query := strings.ToLower(strings.TrimSpace(rawQuery))
+	if method == "" && target == "" && query == "" {
+		return false
+	}
+	badFragments := []string{
+		"/php-cgi", "/cgi-bin", "auto_prepend_file", "allow_url_include", "php://input",
+		"/.env", "/.git", "/.svn", "/.hg", "/.ds_store", "/config.json", "/sftp.json",
+		"/server-status", "/server-info", "/actuator", "/telescope", "/debug/default",
+		"/xmlrpc.php", "/wp-", "/wordpress", "/vendor/phpunit", "/ecp/current/exporttool",
+		"/console", "/login.action", "/v2/_catalog", "/trace.axd", "/info.php", "/@vite/env",
+	}
+	for _, fragment := range badFragments {
+		if strings.Contains(target, fragment) || strings.Contains(query, fragment) {
+			return true
+		}
+	}
+	return false
+}
+
 func writePanelLogLine(cfg *config.Config, name, line string) {
 	path := panelLogPath(cfg, name)
 	if path == "" {
@@ -438,18 +468,18 @@ func enforceSecureCookies(c *fiber.Ctx, cfg *config.Config) {
 	if !secureCookiesForRequest(cfg, c) {
 		return
 	}
-	values := c.Response().Header.PeekAll(fiber.HeaderSetCookie)
-	if len(values) == 0 {
-		return
-	}
+	cookies := make([]string, 0, 2)
+	c.Response().Header.VisitAllCookie(func(_, value []byte) {
+		cookies = append(cookies, string(append([]byte(nil), value...)))
+	})
 	c.Response().Header.Del(fiber.HeaderSetCookie)
-	for _, value := range values {
-		cookie := string(value)
-		lower := strings.ToLower(cookie)
-		if !strings.Contains(lower, "; secure") && !strings.HasSuffix(lower, " secure") {
-			cookie += "; Secure"
+	for _, cookie := range cookies {
+		var parsed fasthttp.Cookie
+		if err := parsed.Parse(cookie); err != nil {
+			continue
 		}
-		c.Response().Header.Add(fiber.HeaderSetCookie, cookie)
+		parsed.SetSecure(true)
+		c.Response().Header.SetCookie(&parsed)
 	}
 }
 
