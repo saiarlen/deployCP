@@ -65,6 +65,9 @@ func (s *PanelDomainService) Configure(ctx context.Context, domain string, actor
 	if err := os.MkdirAll(filepath.Join(webroot, ".well-known", "acme-challenge"), 0o755); err != nil {
 		return fmt.Errorf("prepare panel ACME webroot: %w", err)
 	}
+	if err := os.MkdirAll(panelLogDir(s.cfg), 0o755); err != nil {
+		return fmt.Errorf("prepare panel log directory: %w", err)
+	}
 	restore := s.restorePoint()
 
 	if err := s.writeAndReload(ctx, renderPanelNginxConfig(s.cfg, domain, webroot, "", "")); err != nil {
@@ -259,6 +262,8 @@ func renderPanelNginxConfig(cfg *config.Config, domain, webroot, certPath, keyPa
 	b.WriteString("    listen 80;\n")
 	b.WriteString("    listen [::]:80;\n")
 	b.WriteString(fmt.Sprintf("    server_name %s;\n", domain))
+	b.WriteString(fmt.Sprintf("    access_log %s;\n", panelNginxAccessLogPath(cfg)))
+	b.WriteString(fmt.Sprintf("    error_log %s warn;\n", panelNginxErrorLogPath(cfg)))
 	b.WriteString("    location ^~ /.well-known/acme-challenge/ {\n")
 	b.WriteString(fmt.Sprintf("        root %s;\n", webroot))
 	b.WriteString("        default_type text/plain;\n")
@@ -277,6 +282,8 @@ func renderPanelNginxConfig(cfg *config.Config, domain, webroot, certPath, keyPa
 		b.WriteString("    listen 443 ssl http2;\n")
 		b.WriteString("    listen [::]:443 ssl http2;\n")
 		b.WriteString(fmt.Sprintf("    server_name %s;\n", domain))
+		b.WriteString(fmt.Sprintf("    access_log %s;\n", panelNginxAccessLogPath(cfg)))
+		b.WriteString(fmt.Sprintf("    error_log %s warn;\n", panelNginxErrorLogPath(cfg)))
 		b.WriteString(fmt.Sprintf("    ssl_certificate %s;\n", certPath))
 		b.WriteString(fmt.Sprintf("    ssl_certificate_key %s;\n", keyPath))
 		b.WriteString("    ssl_session_cache shared:deploycp_panel_ssl:10m;\n")
@@ -302,6 +309,22 @@ func writePanelProxy(b *strings.Builder, cfg *config.Config) {
 	b.WriteString("        proxy_set_header Upgrade $http_upgrade;\n")
 	b.WriteString("        proxy_set_header Connection \"upgrade\";\n")
 	b.WriteString("    }\n")
+}
+
+func panelLogDir(cfg *config.Config) string {
+	root := strings.TrimSpace(cfg.Paths.LogRoot)
+	if root == "" {
+		root = filepath.Join(cfg.Paths.StorageRoot, "logs")
+	}
+	return filepath.Join(root, "panel")
+}
+
+func panelNginxAccessLogPath(cfg *config.Config) string {
+	return filepath.Join(panelLogDir(cfg), "nginx-access.log")
+}
+
+func panelNginxErrorLogPath(cfg *config.Config) string {
+	return filepath.Join(panelLogDir(cfg), "nginx-error.log")
 }
 
 func validatePanelDomain(domain string) error {

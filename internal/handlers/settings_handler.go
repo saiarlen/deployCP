@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -45,6 +47,12 @@ type settingsPlatformOption struct {
 	Runtime string
 	Kind    string
 	Label   string
+}
+
+type panelLogView struct {
+	Name  string
+	Label string
+	Path  string
 }
 
 type SettingsHandler struct {
@@ -305,6 +313,7 @@ func (h *SettingsHandler) Index(c *fiber.Ctx) error {
 		"EventsTotal":               eventsTotal,
 		"EventsStart":               eventsStart,
 		"EventsEnd":                 eventsEnd,
+		"PanelLogs":                 h.panelLogsForView(),
 		"FirewallRules":             firewallRules,
 		"FirewallBackend":           firewallBackend,
 		"FirewallHostActive":        firewallHostActive,
@@ -454,6 +463,32 @@ func (h *SettingsHandler) UpdateGeneral(c *fiber.Ctx) error {
 
 	h.base.Sessions.SetFlash(c, "general settings updated")
 	return c.Redirect("/settings?tab=general")
+}
+
+func (h *SettingsHandler) PanelLog(c *fiber.Ctx) error {
+	name := strings.TrimSpace(c.Params("name"))
+	label, path, ok := h.panelLogTarget(name)
+	if !ok {
+		return c.Status(fiber.StatusNotFound).SendString("panel log not found")
+	}
+	lines, _ := strconv.Atoi(c.Query("lines", "300"))
+	if lines <= 0 || lines > 5000 {
+		lines = 300
+	}
+	content, err := tailPanelLog(path, lines)
+	if err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+		return c.Redirect("/settings?tab=events")
+	}
+	return h.base.Render(c, "services_logs", fiber.Map{
+		"Title":      fmt.Sprintf("Panel Log: %s", label),
+		"Name":       label,
+		"Logs":       strings.TrimSpace(content),
+		"Lines":      lines,
+		"BackURL":    "/settings?tab=events",
+		"EmptyTitle": "No log entries yet",
+		"EmptyCopy":  "This file is created automatically after matching panel traffic or errors occur.",
+	})
 }
 
 func (h *SettingsHandler) UpdateSecurity(c *fiber.Ctx) error {
@@ -1214,6 +1249,61 @@ func parsePositiveInt(raw string, fallback int) int {
 		return fallback
 	}
 	return n
+}
+
+func (h *SettingsHandler) panelLogsForView() []panelLogView {
+	out := make([]panelLogView, 0, 4)
+	for _, item := range []struct {
+		name  string
+		label string
+	}{
+		{"app-access", "App Access"},
+		{"app-error", "App Errors"},
+		{"nginx-access", "Nginx Access"},
+		{"nginx-error", "Nginx Errors"},
+	} {
+		_, path, ok := h.panelLogTarget(item.name)
+		if !ok {
+			continue
+		}
+		out = append(out, panelLogView{Name: item.name, Label: item.label, Path: path})
+	}
+	return out
+}
+
+func (h *SettingsHandler) panelLogTarget(name string) (string, string, bool) {
+	root := strings.TrimSpace(h.base.Config.Paths.LogRoot)
+	if root == "" {
+		root = filepath.Join(h.base.Config.Paths.StorageRoot, "logs")
+	}
+	logDir := filepath.Join(root, "panel")
+	switch strings.TrimSpace(strings.ToLower(name)) {
+	case "app-access":
+		return "App Access", filepath.Join(logDir, "app-access.log"), true
+	case "app-error":
+		return "App Errors", filepath.Join(logDir, "app-error.log"), true
+	case "nginx-access":
+		return "Nginx Access", filepath.Join(logDir, "nginx-access.log"), true
+	case "nginx-error":
+		return "Nginx Errors", filepath.Join(logDir, "nginx-error.log"), true
+	default:
+		return "", "", false
+	}
+}
+
+func tailPanelLog(path string, lines int) (string, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	rows := strings.Split(string(content), "\n")
+	if len(rows) > lines {
+		rows = rows[len(rows)-lines:]
+	}
+	return strings.Join(rows, "\n"), nil
 }
 
 func settingBool(service *services.SettingsService, key string) bool {

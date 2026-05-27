@@ -96,10 +96,21 @@ func (h *ServiceHandler) Action(c *fiber.Ctx) error {
 func (h *ServiceHandler) Logs(c *fiber.Ctx) error {
 	ref := strings.TrimSpace(c.Params("ref"))
 	lines, _ := strconv.Atoi(c.Query("lines", "200"))
+	if lines <= 0 || lines > 5000 {
+		lines = 200
+	}
 	name, logs, err := h.service.LogsByRef(c.Context(), ref, lines)
 	if err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
 		return c.Redirect("/settings?tab=services")
 	}
-	return h.base.Render(c, "services_logs", fiber.Map{"Title": fmt.Sprintf("Logs: %s", name), "Name": name, "Logs": logs})
+	return h.base.Render(c, "services_logs", fiber.Map{
+		"Title":      fmt.Sprintf("Logs: %s", name),
+		"Name":       name,
+		"Logs":       strings.TrimSpace(logs),
+		"Lines":      lines,
+		"BackURL":    "/settings?tab=services",
+		"EmptyTitle": "No log entries yet",
+		"EmptyCopy":  "This service has not written any recent journal lines for the selected range.",
+	})
 }

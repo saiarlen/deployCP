@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -192,6 +194,7 @@ func Build() (*Application, error) {
 					msg = fe.Message
 				}
 			}
+			writePanelLogLine(cfg, "app-error.log", fmt.Sprintf("%s %s %s %s %d %q\n", time.Now().Format(time.RFC3339), c.IP(), c.Method(), c.OriginalURL(), code, msg))
 			acc := strings.ToLower(c.Get("Accept", ""))
 			if strings.Contains(acc, "application/json") && !strings.Contains(acc, "text/html") {
 				return c.Status(code).JSON(fiber.Map{"error": msg})
@@ -206,6 +209,7 @@ func Build() (*Application, error) {
 
 	app.Use(recover.New())
 	app.Use(requestid.New())
+	app.Use(panelAccessLogger(cfg))
 	app.Use(func(c *fiber.Ctx) error {
 		err := c.Next()
 		enforceSecureCookies(c, cfg)
@@ -358,6 +362,65 @@ func isDatabaseUIProxyPath(path string) bool {
 	return parts[2] == "manage" &&
 		parts[3] == "database" &&
 		(parts[5] == "adminer" || parts[5] == "postgres-adminer")
+}
+
+func panelAccessLogger(cfg *config.Config) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		start := time.Now()
+		err := c.Next()
+		status := c.Response().StatusCode()
+		if err != nil && status < 400 {
+			status = fiber.StatusInternalServerError
+		}
+		duration := time.Since(start)
+		reqID := c.GetRespHeader(fiber.HeaderXRequestID)
+		if reqID == "" {
+			reqID = "-"
+		}
+		line := fmt.Sprintf(
+			"%s %s %s %q %d %d %s %q %q %s\n",
+			start.Format(time.RFC3339),
+			c.IP(),
+			reqID,
+			c.Method()+" "+c.OriginalURL()+" "+c.Protocol(),
+			status,
+			len(c.Response().Body()),
+			duration.Round(time.Millisecond),
+			c.Get(fiber.HeaderReferer),
+			c.Get(fiber.HeaderUserAgent),
+			c.Get("X-Forwarded-For"),
+		)
+		writePanelLogLine(cfg, "app-access.log", line)
+		return err
+	}
+}
+
+func writePanelLogLine(cfg *config.Config, name, line string) {
+	path := panelLogPath(cfg, name)
+	if path == "" {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return
+	}
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+	_, _ = file.WriteString(line)
+}
+
+func panelLogPath(cfg *config.Config, name string) string {
+	name = filepath.Base(strings.TrimSpace(name))
+	if name == "." || name == "" {
+		return ""
+	}
+	root := strings.TrimSpace(cfg.Paths.LogRoot)
+	if root == "" {
+		root = filepath.Join(cfg.Paths.StorageRoot, "logs")
+	}
+	return filepath.Join(root, "panel", name)
 }
 
 func secureCookiesForRequest(cfg *config.Config, c *fiber.Ctx) bool {
@@ -647,6 +710,7 @@ func (a *Application) registerRoutes() {
 	secured.Post("/settings", adminOnly, a.SettingsHandler.Update)
 	secured.Post("/settings/general", adminOnly, a.SettingsHandler.UpdateGeneral)
 	secured.Post("/settings/security", adminOnly, a.SettingsHandler.UpdateSecurity)
+	secured.Get("/settings/panel-logs/:name", adminOnly, a.SettingsHandler.PanelLog)
 	secured.Post("/settings/users", adminOnly, a.SettingsHandler.UsersCreate)
 	secured.Post("/settings/users/:id", adminOnly, a.SettingsHandler.UsersUpdate)
 	secured.Post("/settings/users/:id/delete", adminOnly, a.SettingsHandler.UsersDelete)

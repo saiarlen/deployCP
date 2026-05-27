@@ -98,6 +98,7 @@ ensure_logrotate() {
   cat >/etc/logrotate.d/deploycp <<EOF
 ${CORE_DIR}/storage/logs/*.log
 ${CORE_DIR}/storage/logs/*/*.log
+${DATA_DIR}/logs/*/*.log
 ${DATA_DIR}/logs/*/*/*.log
 ${DATA_DIR}/sites/*/logs/*.log
 {
@@ -141,8 +142,8 @@ if [[ "$(id -u)" -ne 0 ]]; then
 fi
 
 ensure_default_envs
-mkdir -p "${CORE_DIR}/storage/logs" "${DATA_DIR}/backups"
-chown -R "${APP_USER}:${APP_USER}" "${CORE_DIR}/storage/logs" "${DATA_DIR}/backups"
+mkdir -p "${CORE_DIR}/storage/logs" "${DATA_DIR}/logs/panel" "${DATA_DIR}/backups"
+chown -R "${APP_USER}:${APP_USER}" "${CORE_DIR}/storage/logs" "${DATA_DIR}/logs/panel" "${DATA_DIR}/backups"
 ensure_fail2ban
 ensure_logrotate
 ensure_backup_job

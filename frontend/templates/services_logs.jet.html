@@ -1,15 +1,36 @@
-<div class="page-top">
-  <div style="display:flex;gap:var(--space-2);flex-wrap:wrap">
-    <a class="btn" href="/settings"><i data-lucide="arrow-left"></i> Back</a>
-    <a class="btn" href="?lines=200">200 lines</a>
-    <a class="btn" href="?lines=500">500 lines</a>
-    <a class="btn {{ if Lines == 1000 }}btn-primary{{ end }}" href="?lines=1000">1000 lines</a>
+<div class="surface p-5 sm:p-6 mb-5">
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <h1 class="text-xl font-semibold">{{ if Name }}{{ Name }}{{ else }}Logs{{ end }}</h1>
+      <p class="text-sm opacity-70 mt-1">Recent log output from the selected source.</p>
+    </div>
+    <div class="flex flex-wrap gap-2">
+      <a class="btn" href="{{ if BackURL }}{{ BackURL }}{{ else }}/settings{{ end }}"><i data-lucide="arrow-left"></i> Back</a>
+      <a class="btn {{ if Lines == 200 }}btn-primary{{ end }}" href="?lines=200">200 lines</a>
+      <a class="btn {{ if Lines == 500 }}btn-primary{{ end }}" href="?lines=500">500 lines</a>
+      <a class="btn {{ if Lines == 1000 }}btn-primary{{ end }}" href="?lines=1000">1000 lines</a>
+    </div>
   </div>
 </div>
 
-<div class="section-shell">
-  <div style="padding:var(--space-4)">
-    <pre class="log">{{ Logs }}</pre>
+<section class="surface p-0 overflow-hidden">
+  <div class="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
+    <div>
+      <div class="text-sm font-medium">{{ if Name }}{{ Name }}{{ else }}Log Output{{ end }}</div>
+      <div class="text-xs opacity-70">Showing up to {{ if Lines }}{{ Lines }}{{ else }}200{{ end }} lines</div>
+    </div>
+    <a class="btn" href="">Refresh</a>
   </div>
-</div>
+  {{ if Logs }}
+  <pre class="log" style="margin:0;border:0;border-radius:0;max-height:70vh;min-height:420px;overflow:auto">{{ Logs }}</pre>
+  {{ else }}
+  <div class="log-empty" style="min-height:360px;display:flex;align-items:center;justify-content:center;text-align:center;padding:48px 24px">
+    <div>
+      <div class="font-medium">{{ if EmptyTitle }}{{ EmptyTitle }}{{ else }}No log entries yet{{ end }}</div>
+      <div class="text-sm opacity-70 mt-2">{{ if EmptyCopy }}{{ EmptyCopy }}{{ else }}Logs will appear here after the service writes output.{{ end }}</div>
+    </div>
+  </div>
+  {{ end }}
+</section>
+
 <script>if (typeof lucide !== 'undefined') lucide.createIcons();</script>

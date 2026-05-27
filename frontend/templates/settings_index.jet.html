@@ -372,6 +372,24 @@
   </div>
 
   <div id="panel-events" class="settings-panel {{ if ActiveTab == "events" }}settings-panel-active{{ end }}">
+    <section class="surface p-5 sm:p-6 mb-5">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 class="text-lg font-semibold">Panel Access Logs</h2>
+          <p class="text-sm opacity-70 mt-1">Direct panel requests and panel-domain nginx proxy traffic.</p>
+        </div>
+        <span class="badge badge-neutral">Panel only</span>
+      </div>
+      <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 mt-4">
+        {{ range _, log := PanelLogs }}
+        <a class="rounded-lg border border-[var(--border)] p-4 block hover:border-[var(--border-strong)]" href="/settings/panel-logs/{{ log.Name }}">
+          <div class="font-medium text-sm">{{ log.Label }}</div>
+          <div class="text-xs opacity-70 mt-1 font-mono">{{ log.Path }}</div>
+        </a>
+        {{ end }}
+      </div>
+    </section>
+
     <section class="surface p-5 sm:p-6">
       <h2 class="text-lg font-semibold">Application Events</h2>
       <p class="text-sm opacity-70 mt-1">Latest audit trail across panel actions ({{ EventsStart }}-{{ EventsEnd }} of {{ EventsTotal }}).</p>
