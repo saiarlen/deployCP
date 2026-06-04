@@ -512,19 +512,38 @@ func (u *userManager) SyncHome(ctx context.Context, username, homeDir, allowedRo
 		return err
 	}
 	ensureParentTraversable(homeDir)
-	if _, err := u.runner.Run(ctx, system.CommandRequest{
-		Binary:      "/usr/sbin/usermod",
-		Args:        []string{"-d", homeDir, "-s", shellPath, username},
-		Timeout:     15 * time.Second,
-		AuditAction: "site_user.home.sync",
-	}); err != nil {
-		return err
+	currentHome, currentShell, ok := u.currentUserHomeShell(ctx, username)
+	if !ok || filepath.Clean(currentHome) != filepath.Clean(homeDir) || strings.TrimSpace(currentShell) != strings.TrimSpace(shellPath) {
+		if _, err := u.runner.Run(ctx, system.CommandRequest{
+			Binary:      "/usr/sbin/usermod",
+			Args:        []string{"-d", homeDir, "-s", shellPath, username},
+			Timeout:     15 * time.Second,
+			AuditAction: "site_user.home.sync",
+		}); err != nil {
+			return err
+		}
 	}
 	allowed := filepath.Join(homeDir, ".deploycp_allowed_root")
 	if err := utils.WriteFileAtomic(allowed, []byte(strings.TrimSpace(allowedRoot)+"\n"), 0o644); err != nil {
 		return err
 	}
 	return nil
+}
+
+func (u *userManager) currentUserHomeShell(ctx context.Context, username string) (string, string, bool) {
+	res, err := u.runner.Run(ctx, system.CommandRequest{
+		Binary:  "/usr/bin/getent",
+		Args:    []string{"passwd", username},
+		Timeout: 5 * time.Second,
+	})
+	if err != nil {
+		return "", "", false
+	}
+	parts := strings.Split(strings.TrimSpace(res.Stdout), ":")
+	if len(parts) < 7 {
+		return "", "", false
+	}
+	return strings.TrimSpace(parts[5]), strings.TrimSpace(parts[6]), true
 }
 
 // ensureParentTraversable walks up from the given path and sets o+x on each
@@ -614,6 +633,9 @@ func (u *userManager) SyncSharedAccess(ctx context.Context, root, primaryUser, g
 		allMembers = append(allMembers, member)
 	}
 	for _, member := range allMembers {
+		if u.userInGroup(ctx, member, groupName) {
+			continue
+		}
 		if _, err := u.runner.Run(ctx, system.CommandRequest{
 			Binary:      "/usr/sbin/usermod",
 			Args:        []string{"-a", "-G", groupName, member},
@@ -676,6 +698,23 @@ func (u *userManager) SyncSharedAccess(ctx context.Context, root, primaryUser, g
 		})
 	}
 	return nil
+}
+
+func (u *userManager) userInGroup(ctx context.Context, username, groupName string) bool {
+	res, err := u.runner.Run(ctx, system.CommandRequest{
+		Binary:  "/usr/bin/id",
+		Args:    []string{"-nG", username},
+		Timeout: 5 * time.Second,
+	})
+	if err != nil {
+		return false
+	}
+	for _, group := range strings.Fields(res.Stdout) {
+		if group == groupName {
+			return true
+		}
+	}
+	return false
 }
 
 type nginxManager struct{ runner *system.Runner }

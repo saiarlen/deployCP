@@ -275,7 +275,7 @@
           <span class="text-xs opacity-50 mt-1">PM2: --max-memory-restart &middot; Systemd: MemoryMax</span>
         </label>
 
-        <label class="block text-sm font-medium">Start Args
+        <label class="block text-sm font-medium rt-start-args">Start Args
           <input class="field mt-2 font-mono text-xs" type="text" name="start_args" value="{{ Status.App.StartArgs }}" placeholder="-- start -H 127.0.0.1 -p 3000">
           <span class="text-xs opacity-50 mt-1">Optional arguments passed after the entry point or process command.</span>
         </label>
@@ -1644,7 +1644,7 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
           <span class="text-xs opacity-50 mt-1">PM2: --max-memory-restart &middot; Systemd: MemoryMax</span>
         </label>
 
-        <label class="block text-sm font-medium">Start Args
+        <label class="block text-sm font-medium rt-start-args">Start Args
           <input class="field mt-2 font-mono text-xs" type="text" name="start_args" value="{{ LinkedApp.StartArgs }}" placeholder="-- start -H 127.0.0.1 -p 3000">
           <span class="text-xs opacity-50 mt-1">Arguments passed after the entry point. For Next.js, match the proxy port.</span>
         </label>
@@ -1769,9 +1769,13 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
           <span class="text-xs opacity-50 mt-1" id="ca-binary-hint">Absolute path to the compiled binary or command</span>
         </label>
 
-        <label class="block text-sm font-medium ca-field ca-interpreted" style="display:none" id="ca-entry-label">Entry Point
-          <input class="field mt-2" type="text" name="entry_point" placeholder="app.py / index.js">
-          <span class="text-xs opacity-50 mt-1">Main script file to execute</span>
+        <div class="ca-pm-note ca-pm-note-pm2 rounded-md border border-[var(--border)] p-3 text-sm text-[var(--text-muted)]" style="display:none">
+          DeployCP manages PM2 with <span class="font-mono text-xs">pm2-runtime</span>. For a package.json start script, use App Command <span class="font-mono text-xs">npm</span> and Start Args <span class="font-mono text-xs">-- start</span>.
+        </div>
+
+        <label class="block text-sm font-medium ca-field ca-interpreted" style="display:none" id="ca-entry-label">App Command / Script
+          <input class="field mt-2" type="text" name="entry_point" placeholder="npm / index.js / node_modules/.bin/next">
+          <span class="text-xs opacity-50 mt-1">Command or script to run from the working directory</span>
         </label>
 
         <label class="block text-sm font-medium ca-field ca-interpreted" style="display:none">Start Args
@@ -4574,8 +4578,13 @@ $(function () {
   if ($('#rt-pm').length) {
     function togglePmFields() {
       var pm = $('#rt-pm').val() || 'systemd';
+      var rt = $('#rt-pm').data('runtime') || '';
       $('.rt-pm-field').hide().find(':input').prop('disabled', true);
       $('.rt-pm-' + pm).show().find(':input').prop('disabled', false);
+      $('.rt-start-args').hide().find(':input').prop('disabled', true);
+      if (pm === 'pm2' || pm === 'gunicorn' || pm === 'uwsgi' || rt === 'node') {
+        $('.rt-start-args').show().find(':input').prop('disabled', false);
+      }
     }
     $('#rt-pm').on('change', togglePmFields);
     togglePmFields();
@@ -4586,7 +4595,7 @@ $(function () {
     var defaultPm = { go: 'systemd', binary: 'systemd', python: 'systemd', node: 'systemd' };
     var defaultEntryPoint = {
       python: { gunicorn: 'app:app', uwsgi: 'app:app', pm2: 'app.py', systemd: 'app.py' },
-      node:   { pm2: 'index.js', systemd: 'index.js' }
+      node:   { pm2: 'npm', systemd: 'index.js' }
     };
 	    function rebuildPmOptions(rt) {
 	      var allowed = pmByRuntime[rt] || ['systemd'];
@@ -4631,7 +4640,7 @@ $(function () {
       } else if (pm === 'uwsgi') {
         title = 'uWSGI Command'; placeholder = 'uwsgi'; hint = 'DeployCP creates a per-site venv and installs uwsgi there';
       } else if (pm === 'pm2') {
-        title = 'PM2 Command'; placeholder = 'pm2'; hint = rt === 'node' ? 'DeployCP installs PM2 per-site; package.json dependencies are installed during setup' : 'Leave blank to default to "pm2"';
+        title = 'PM2 Runtime'; placeholder = 'Managed by DeployCP'; hint = 'DeployCP installs and runs pm2-runtime for this platform';
       } else if (rt === 'python') {
         title = 'Python Interpreter'; placeholder = 'python3'; hint = 'DeployCP creates a per-site venv; add requirements.txt for app packages';
       } else if (rt === 'node') {
@@ -4642,10 +4651,22 @@ $(function () {
       $('#ca-binary-title').text(title);
       $('#ca-binary-input').attr('placeholder', placeholder);
       $('#ca-binary-hint').text(hint);
+      if (pm === 'pm2') {
+        $('#ca-binary-label').hide();
+        $('#ca-binary-input').prop('disabled', true);
+      } else {
+        $('#ca-binary-label').show();
+        $('#ca-binary-input').prop('disabled', false);
+      }
       var epInfo = (defaultEntryPoint[rt] || {})[pm] || '';
       if (epInfo) {
-        $('#ca-entry-label input').attr('placeholder', epInfo);
-        $('#ca-entry-label .text-xs').text('Leave blank to default to "' + epInfo + '"');
+        if (rt === 'node' && pm === 'pm2') {
+          $('#ca-entry-label input').attr('placeholder', 'npm / node_modules/.bin/next / index.js');
+          $('#ca-entry-label .text-xs').text('Use npm with Start Args "-- start", or point to a script/binary in the working directory');
+        } else {
+          $('#ca-entry-label input').attr('placeholder', epInfo);
+          $('#ca-entry-label .text-xs').text('Leave blank to default to "' + epInfo + '"');
+        }
       }
     }
 	    function toggleCaRuntime() {
@@ -4661,7 +4682,9 @@ $(function () {
     function toggleCaPm() {
       var pm = $('#ca-pm').val() || 'systemd';
       $('.ca-pm-field').hide().find(':input').prop('disabled', true);
+      $('.ca-pm-note').hide();
       $('.ca-pm-' + pm).show().find(':input').prop('disabled', false);
+      $('.ca-pm-note-' + pm).show();
       updateBinaryHints();
     }
     $('#ca-runtime').on('change', toggleCaRuntime);

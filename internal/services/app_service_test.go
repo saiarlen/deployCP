@@ -151,6 +151,49 @@ func TestPM2RuntimeServiceDefinitionOmitsUnsupportedExecModeFlag(t *testing.T) {
 	}
 }
 
+func TestPM2NodeNPMEntryPointResolvesFromRuntimePath(t *testing.T) {
+	binDir := t.TempDir()
+	npmPath := filepath.Join(binDir, "npm")
+	if err := os.WriteFile(npmPath, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	app := &models.GoApp{
+		Name:             "example.com",
+		ServiceName:      "deploycp-app-example-com",
+		Runtime:          "node",
+		ProcessManager:   "pm2",
+		BinaryPath:       "/srv/example/.deploycp/node-tools/node_modules/.bin/pm2-runtime",
+		EntryPoint:       "npm",
+		WorkingDirectory: "/srv/example/htdocs",
+		StartArgs:        "-- start",
+	}
+
+	def := buildAppServiceDefinition(app, map[string]string{"PATH": binDir})
+	got := strings.Join(def.Args, " ")
+	if !strings.Contains(got, npmPath) {
+		t.Fatalf("pm2 npm entrypoint was not resolved from PATH: %q", got)
+	}
+	if strings.Contains(got, " start npm ") {
+		t.Fatalf("pm2 args still use bare npm entrypoint: %q", got)
+	}
+}
+
+func TestNormalizeAppInputDefaultsNodePM2PackageStart(t *testing.T) {
+	in := normalizeAppInput(AppInput{
+		Runtime:        "node",
+		ProcessManager: "pm2",
+	})
+	if in.BinaryPath != "pm2" {
+		t.Fatalf("BinaryPath = %q, want pm2", in.BinaryPath)
+	}
+	if in.EntryPoint != "npm" {
+		t.Fatalf("EntryPoint = %q, want npm", in.EntryPoint)
+	}
+	if in.StartArgs != "-- start" {
+		t.Fatalf("StartArgs = %q, want -- start", in.StartArgs)
+	}
+}
+
 func TestBuildAppServiceDefinitionNormalizesMemoryLimit(t *testing.T) {
 	app := &models.GoApp{
 		Name:             "example.com",

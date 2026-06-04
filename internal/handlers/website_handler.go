@@ -2078,8 +2078,15 @@ func (h *WebsiteHandler) ManageCreateLinkedApp(c *fiber.Ctx) error {
 				entryPoint = "app.py"
 			}
 		case "node":
-			entryPoint = "index.js"
+			if processManager == "pm2" {
+				entryPoint = "npm"
+			} else {
+				entryPoint = "index.js"
+			}
 		}
+	}
+	if runtime == "node" && processManager == "pm2" && strings.TrimSpace(entryPoint) == "npm" && strings.TrimSpace(startArgs) == "" {
+		startArgs = "-- start"
 	}
 
 	workers, _ := strconv.Atoi(c.FormValue("workers"))

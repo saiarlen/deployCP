@@ -1536,6 +1536,17 @@ func normalizeAppInput(in AppInput) AppInput {
 		in.ExecutionMode = defaultExecutionMode(in.Runtime)
 	}
 	in.ProcessManager = normalizeProcessManager(in.ProcessManager)
+	if in.ProcessManager == "pm2" && strings.TrimSpace(in.BinaryPath) == "" {
+		in.BinaryPath = "pm2"
+	}
+	if strings.TrimSpace(in.Runtime) == "node" && in.ProcessManager == "pm2" {
+		if strings.TrimSpace(in.EntryPoint) == "" {
+			in.EntryPoint = "npm"
+		}
+		if strings.TrimSpace(in.EntryPoint) == "npm" && strings.TrimSpace(in.StartArgs) == "" {
+			in.StartArgs = "-- start"
+		}
+	}
 	in.EntryPoint = normalizePythonProcessManagerEntryPoint(in.Runtime, in.ProcessManager, in.EntryPoint)
 	if maxMemory, err := normalizeAppMaxMemory(in.MaxMemory); err == nil {
 		in.MaxMemory = maxMemory
@@ -1834,7 +1845,7 @@ func buildAppServiceDefinition(app *models.GoApp, env map[string]string) platfor
 	switch pm {
 	case "pm2":
 		base.ExecPath = app.BinaryPath
-		args := []string{"start", app.EntryPoint, "--name", app.ServiceName}
+		args := []string{"start", pm2EntryPoint(app, env), "--name", app.ServiceName}
 		if app.Workers > 0 {
 			args = append(args, "-i", fmt.Sprintf("%d", app.Workers))
 		}
@@ -1885,6 +1896,37 @@ func buildAppServiceDefinition(app *models.GoApp, env map[string]string) platfor
 		base.Args = serviceArgs(app)
 	}
 	return base
+}
+
+func pm2EntryPoint(app *models.GoApp, env map[string]string) string {
+	entry := strings.TrimSpace(app.EntryPoint)
+	if normalizeProcessManager(app.ProcessManager) != "pm2" || strings.TrimSpace(app.Runtime) != "node" {
+		return entry
+	}
+	switch entry {
+	case "npm", "node", "npx":
+		if resolved, err := resolveManagedNodeBinaryFromEnv(env, entry); err == nil && strings.TrimSpace(resolved) != "" {
+			return resolved
+		}
+	}
+	return entry
+}
+
+func resolveManagedNodeBinaryFromEnv(env map[string]string, command string) (string, error) {
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return "", fmt.Errorf("node runtime command is required")
+	}
+	for _, dir := range filepath.SplitList(strings.TrimSpace(env["PATH"])) {
+		if strings.TrimSpace(dir) == "" {
+			continue
+		}
+		candidate := filepath.Join(dir, command)
+		if st, err := os.Stat(candidate); err == nil && !st.IsDir() && st.Mode().Perm()&0o111 != 0 {
+			return candidate, nil
+		}
+	}
+	return command, nil
 }
 
 func normalizeStoredAppMaxMemory(value string) string {
