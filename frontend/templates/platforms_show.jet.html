@@ -847,6 +847,9 @@
   {{ if IsAdmin }}
   <div class="surface p-5 mb-5">
     <h3 class="text-sm font-semibold mb-4">Git Deploy</h3>
+    <div class="mb-4 rounded-md border border-[var(--border)] p-3 text-sm text-[var(--text-muted)]">
+      First deploy clones into the Work Directory only when it is empty. If the directory already contains files, either empty/back up the folder first, choose an empty subfolder, or initialize it as a Git repo for the same remote.
+    </div>
     <form action="{{ OpsActionBase }}/deploy-config" method="post" class="space-y-4">
       <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
       <div class="grid gap-4 md:grid-cols-2">
@@ -894,6 +897,12 @@
     </form>
     {{ if Ops.DeployConfig }}{{ if Ops.DeployConfig.LastDeployAt }}
     <div class="mt-4 rounded-md border border-[var(--border)] p-3 text-sm">Last deploy: <span class="badge {{ if Ops.DeployConfig.LastDeployStatus == "success" }}badge-ok{{ else }}badge-danger{{ end }}">{{ Ops.DeployConfig.LastDeployStatus }}</span> {{ formatTimePtr(Ops.DeployConfig.LastDeployAt) }}</div>
+    {{ if Ops.DeployConfig.LastDeployMessage }}
+    <div class="mt-3 rounded-md border border-[var(--border)] p-3">
+      <div class="mb-2 text-xs font-semibold uppercase text-[var(--text-muted)]">Last Deploy Output</div>
+      <pre class="max-h-72 overflow-auto whitespace-pre-wrap break-words font-mono text-xs">{{ Ops.DeployConfig.LastDeployMessage }}</pre>
+    </div>
+    {{ end }}
     {{ end }}{{ end }}
   </div>
 
@@ -1884,6 +1893,9 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
   {{ if IsAdmin }}
   <div class="surface p-5 mb-5">
     <h3 class="text-sm font-semibold mb-4">Git Deploy</h3>
+    <div class="mb-4 rounded-md border border-[var(--border)] p-3 text-sm text-[var(--text-muted)]">
+      First deploy clones into the Work Directory only when it is empty. If the directory already contains files, either empty/back up the folder first, choose an empty subfolder, or initialize it as a Git repo for the same remote.
+    </div>
     <form action="{{ OpsActionBase }}/deploy-config" method="post" class="space-y-4">
       <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
       <div class="grid gap-4 md:grid-cols-2">
@@ -1931,6 +1943,12 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
     </form>
     {{ if Ops.DeployConfig }}{{ if Ops.DeployConfig.LastDeployAt }}
     <div class="mt-4 rounded-md border border-[var(--border)] p-3 text-sm">Last deploy: <span class="badge {{ if Ops.DeployConfig.LastDeployStatus == "success" }}badge-ok{{ else }}badge-danger{{ end }}">{{ Ops.DeployConfig.LastDeployStatus }}</span> {{ formatTimePtr(Ops.DeployConfig.LastDeployAt) }}</div>
+    {{ if Ops.DeployConfig.LastDeployMessage }}
+    <div class="mt-3 rounded-md border border-[var(--border)] p-3">
+      <div class="mb-2 text-xs font-semibold uppercase text-[var(--text-muted)]">Last Deploy Output</div>
+      <pre class="max-h-72 overflow-auto whitespace-pre-wrap break-words font-mono text-xs">{{ Ops.DeployConfig.LastDeployMessage }}</pre>
+    </div>
+    {{ end }}
     {{ end }}{{ end }}
   </div>
 

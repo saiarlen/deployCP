@@ -380,11 +380,38 @@ func (h *WebsiteHandler) ManageOpsDeploy(c *fiber.Ctx) error {
 	}
 	result, err := h.ops.Deploy(c.Context(), id, strings.TrimSpace(c.FormValue("branch")), currentUserID(c), c.IP())
 	if err != nil {
-		h.base.Sessions.SetFlash(c, "Deploy failed: "+err.Error())
+		message := err.Error()
+		if result != nil && strings.TrimSpace(result.Output) != "" {
+			message = deployFlashOutput(result.Output)
+		}
+		h.base.Sessions.SetFlash(c, "Deploy failed: "+message)
 	} else {
 		h.base.Sessions.SetFlash(c, "Deploy completed: "+result.Status)
 	}
 	return c.Redirect(platformURLWithTab(kind, id, "operations"))
+}
+
+func deployFlashOutput(output string) string {
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	out := make([]string, 0, 3)
+	for i := len(lines) - 1; i >= 0 && len(out) < 3; i-- {
+		line := strings.TrimSpace(lines[i])
+		if line == "" || strings.HasPrefix(line, "$ git ") {
+			continue
+		}
+		out = append(out, line)
+	}
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
+	}
+	message := strings.Join(out, " ")
+	if message == "" {
+		message = strings.TrimSpace(output)
+	}
+	if len(message) > 500 {
+		message = message[:500] + "..."
+	}
+	return message
 }
 
 func (h *WebsiteHandler) ManageOpsRuntimeRestart(c *fiber.Ctx) error {
