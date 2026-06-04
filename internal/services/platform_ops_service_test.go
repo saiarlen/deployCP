@@ -2,12 +2,19 @@ package services
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"errors"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"golang.org/x/crypto/ssh"
+
+	"deploycp/internal/config"
+	"deploycp/internal/models"
 )
 
 func TestValidateGitRefNameRejectsUnsafeRefs(t *testing.T) {
@@ -92,6 +99,52 @@ func TestWriteTarGzAddsMetadataAndSkipsDeployPrivateKey(t *testing.T) {
 	}
 	if names[".deploycp/deploy/id_deploy"] {
 		t.Fatal("deploy private key must not be archived")
+	}
+}
+
+func TestGenerateDeploySSHKeyWritesMatchingDeployKey(t *testing.T) {
+	privateKey, publicKey, err := generateDeploySSHKey("example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(publicKey, "ssh-ed25519 ") {
+		t.Fatalf("expected ed25519 public key, got %q", publicKey)
+	}
+	parsedPublic, _, _, _, err := ssh.ParseAuthorizedKey([]byte(publicKey))
+	if err != nil {
+		t.Fatalf("generated public key is not an authorized key: %v", err)
+	}
+	rawPrivate, err := ssh.ParseRawPrivateKey([]byte(privateKey))
+	if err != nil {
+		t.Fatalf("generated private key is not parseable: %v", err)
+	}
+	signer, err := ssh.NewSignerFromKey(rawPrivate)
+	if err != nil {
+		t.Fatalf("generated private key cannot sign: %v", err)
+	}
+	if !bytes.Equal(parsedPublic.Marshal(), signer.PublicKey().Marshal()) {
+		t.Fatal("generated public key does not match private key")
+	}
+
+	home := t.TempDir()
+	service := &PlatformOpsService{cfg: &config.Config{Security: config.SecurityConfig{SessionSecret: "test-secret-with-enough-length"}}}
+	site := &models.Website{Name: "example.com", RootPath: filepath.Join(home, "htdocs")}
+	keyPath, storedPublic, enc, err := service.writeDeployKey(site, privateKey, publicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if storedPublic != publicKey {
+		t.Fatal("stored public key changed")
+	}
+	if enc == "" {
+		t.Fatal("encrypted private key was not stored")
+	}
+	info, err := os.Stat(keyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("deploy private key mode = %o, want 600", info.Mode().Perm())
 	}
 }
 

@@ -360,10 +360,13 @@ func (h *WebsiteHandler) ManageOpsSaveDeployConfig(c *fiber.Ctx) error {
 		WorkDir:            strings.TrimSpace(c.FormValue("work_dir")),
 		DeployCommand:      c.FormValue("deploy_command"),
 		DeployKeyPrivate:   c.FormValue("deploy_key_private"),
+		GenerateDeployKey:  strings.TrimSpace(c.FormValue("deploy_key_action")) == "generate",
 		RestartAfterDeploy: boolFromForm(c, "restart_after_deploy"),
 	}
 	if err := h.ops.SaveDeployConfig(c.Context(), id, in, currentUserID(c), c.IP()); err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
+	} else if in.GenerateDeployKey {
+		h.base.Sessions.SetFlash(c, "Deploy key generated. Copy the public key into GitHub Deploy keys.")
 	} else {
 		h.base.Sessions.SetFlash(c, "Deploy configuration saved")
 	}

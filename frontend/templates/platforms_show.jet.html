@@ -865,12 +865,23 @@
       </label>
       <label class="block text-sm font-medium">Private Deploy Key
         <textarea class="field mt-2 font-mono text-xs" name="deploy_key_private" rows="4" placeholder="Paste a replacement private key only when rotating it"></textarea>
-        {{ if Ops.DeployConfig }}{{ if Ops.DeployConfig.DeployKeyPublic }}<span class="text-xs opacity-60 mt-1 block">Stored key: {{ Ops.DeployConfig.DeployKeyPublic }}</span>{{ end }}{{ end }}
+        <span class="text-xs opacity-60 mt-1 block">Paste an existing private key, or generate a new deploy key below and add its public key to GitHub.</span>
       </label>
+      {{ if Ops.DeployConfig }}{{ if Ops.DeployConfig.DeployKeyPublic }}
+      <label class="block text-sm font-medium">Public Deploy Key for GitHub
+        <textarea class="field mt-2 font-mono text-xs" rows="2" readonly>{{ Ops.DeployConfig.DeployKeyPublic }}</textarea>
+      </label>
+      {{ end }}{{ end }}
       <label class="inline-flex items-center gap-2 text-sm"><input type="checkbox" name="restart_after_deploy" {{ if !Ops.DeployConfig || Ops.DeployConfig.RestartAfterDeploy }}checked{{ end }}> Restart runtime after deploy</label>
       <div class="flex flex-wrap justify-between gap-2">
-        <button class="btn btn-primary" type="submit">Save Deploy Config</button>
-        <button class="btn platform-copy-action" type="button" data-copy-value="{{ Ops.DeployCommand }}" data-copy-success="Deploy command copied">Copy Hook Command</button>
+        <div class="flex flex-wrap gap-2">
+          <button class="btn btn-primary" type="submit">Save Deploy Config</button>
+          <button class="btn" type="submit" name="deploy_key_action" value="generate">Generate Deploy Key</button>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          {{ if Ops.DeployConfig }}{{ if Ops.DeployConfig.DeployKeyPublic }}<button class="btn platform-copy-action" type="button" data-copy-value="{{ Ops.DeployConfig.DeployKeyPublic }}" data-copy-success="Public deploy key copied">Copy Public Key</button>{{ end }}{{ end }}
+          <button class="btn platform-copy-action" type="button" data-copy-value="{{ Ops.DeployCommand }}" data-copy-success="Deploy command copied">Copy Hook Command</button>
+        </div>
       </div>
     </form>
     <form action="{{ OpsActionBase }}/deploy" method="post" class="mt-4 flex flex-wrap items-end gap-2" data-runtime-loading>
@@ -1891,12 +1902,23 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
       </label>
       <label class="block text-sm font-medium">Private Deploy Key
         <textarea class="field mt-2 font-mono text-xs" name="deploy_key_private" rows="4" placeholder="Paste a replacement private key only when rotating it"></textarea>
-        {{ if Ops.DeployConfig }}{{ if Ops.DeployConfig.DeployKeyPublic }}<span class="text-xs opacity-60 mt-1 block">Stored key: {{ Ops.DeployConfig.DeployKeyPublic }}</span>{{ end }}{{ end }}
+        <span class="text-xs opacity-60 mt-1 block">Paste an existing private key, or generate a new deploy key below and add its public key to GitHub.</span>
       </label>
+      {{ if Ops.DeployConfig }}{{ if Ops.DeployConfig.DeployKeyPublic }}
+      <label class="block text-sm font-medium">Public Deploy Key for GitHub
+        <textarea class="field mt-2 font-mono text-xs" rows="2" readonly>{{ Ops.DeployConfig.DeployKeyPublic }}</textarea>
+      </label>
+      {{ end }}{{ end }}
       <label class="inline-flex items-center gap-2 text-sm"><input type="checkbox" name="restart_after_deploy" {{ if !Ops.DeployConfig || Ops.DeployConfig.RestartAfterDeploy }}checked{{ end }}> Restart runtime after deploy</label>
       <div class="flex flex-wrap justify-between gap-2">
-        <button class="btn btn-primary" type="submit">Save Deploy Config</button>
-        <button class="btn platform-copy-action" type="button" data-copy-value="{{ Ops.DeployCommand }}" data-copy-success="Deploy command copied">Copy Hook Command</button>
+        <div class="flex flex-wrap gap-2">
+          <button class="btn btn-primary" type="submit">Save Deploy Config</button>
+          <button class="btn" type="submit" name="deploy_key_action" value="generate">Generate Deploy Key</button>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          {{ if Ops.DeployConfig }}{{ if Ops.DeployConfig.DeployKeyPublic }}<button class="btn platform-copy-action" type="button" data-copy-value="{{ Ops.DeployConfig.DeployKeyPublic }}" data-copy-success="Public deploy key copied">Copy Public Key</button>{{ end }}{{ end }}
+          <button class="btn platform-copy-action" type="button" data-copy-value="{{ Ops.DeployCommand }}" data-copy-success="Deploy command copied">Copy Hook Command</button>
+        </div>
       </div>
     </form>
     <form action="{{ OpsActionBase }}/deploy" method="post" class="mt-4 flex flex-wrap items-end gap-2" data-runtime-loading>

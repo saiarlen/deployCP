@@ -4,10 +4,13 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -23,6 +26,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"golang.org/x/crypto/ssh"
 
 	"deploycp/internal/config"
 	"deploycp/internal/models"
@@ -63,6 +67,7 @@ type PlatformDeployInput struct {
 	WorkDir            string
 	DeployCommand      string
 	DeployKeyPrivate   string
+	GenerateDeployKey  bool
 	RestartAfterDeploy bool
 }
 
@@ -167,8 +172,20 @@ func (s *PlatformOpsService) SaveDeployConfig(ctx context.Context, websiteID uin
 		cfg.DeployKeyPublic = existing.DeployKeyPublic
 		cfg.DeployKeyPath = existing.DeployKeyPath
 	}
-	if strings.TrimSpace(in.DeployKeyPrivate) != "" {
-		keyPath, pub, enc, err := s.writeDeployKey(site, in.DeployKeyPrivate)
+	if in.GenerateDeployKey {
+		privateKey, publicKey, err := generateDeploySSHKey(site.Name)
+		if err != nil {
+			return err
+		}
+		keyPath, pub, enc, err := s.writeDeployKey(site, privateKey, publicKey)
+		if err != nil {
+			return err
+		}
+		cfg.DeployKeyPath = keyPath
+		cfg.DeployKeyPublic = pub
+		cfg.DeployKeyPrivateEnc = enc
+	} else if strings.TrimSpace(in.DeployKeyPrivate) != "" {
+		keyPath, pub, enc, err := s.writeDeployKey(site, in.DeployKeyPrivate, "")
 		if err != nil {
 			return err
 		}
@@ -184,6 +201,7 @@ func (s *PlatformOpsService) SaveDeployConfig(ctx context.Context, websiteID uin
 		"branch":      in.Branch,
 		"work_dir":    workDir,
 		"has_key":     cfg.DeployKeyPrivateEnc != "",
+		"generated":   in.GenerateDeployKey,
 		"restart":     in.RestartAfterDeploy,
 		"has_command": strings.TrimSpace(in.DeployCommand) != "",
 	})
@@ -954,7 +972,7 @@ func (s *PlatformOpsService) resolvePlatformWorkDir(site *models.Website, raw st
 	return clean, nil
 }
 
-func (s *PlatformOpsService) writeDeployKey(site *models.Website, privateKey string) (string, string, string, error) {
+func (s *PlatformOpsService) writeDeployKey(site *models.Website, privateKey, publicKey string) (string, string, string, error) {
 	privateKey = strings.TrimSpace(privateKey)
 	if privateKey == "" {
 		return "", "", "", fmt.Errorf("private key is empty")
@@ -968,7 +986,10 @@ func (s *PlatformOpsService) writeDeployKey(site *models.Website, privateKey str
 	if err := utils.WriteFileAtomic(keyPath, []byte(privateKey+"\n"), 0o600); err != nil {
 		return "", "", "", err
 	}
-	pub := strings.TrimSpace(s.sshKeygenPublic(keyPath))
+	pub := strings.TrimSpace(publicKey)
+	if pub == "" {
+		pub = strings.TrimSpace(s.sshKeygenPublic(keyPath))
+	}
 	enc, err := utils.EncryptString(s.cfg.Security.SessionSecret, privateKey)
 	if err != nil {
 		return "", "", "", err
@@ -977,6 +998,29 @@ func (s *PlatformOpsService) writeDeployKey(site *models.Website, privateKey str
 		pub = "sha256:" + hex.EncodeToString(keyHash[:])[:24]
 	}
 	return keyPath, pub, enc, nil
+}
+
+func generateDeploySSHKey(label string) (string, string, error) {
+	pubKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return "", "", err
+	}
+	comment := "deploycp"
+	label = strings.TrimSpace(label)
+	if label != "" {
+		comment += "-" + label
+	}
+	privateBlock, err := ssh.MarshalPrivateKey(privateKey, comment)
+	if err != nil {
+		return "", "", err
+	}
+	sshPub, err := ssh.NewPublicKey(pubKey)
+	if err != nil {
+		return "", "", err
+	}
+	privatePEM := strings.TrimSpace(string(pem.EncodeToMemory(privateBlock)))
+	publicAuthorizedKey := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(sshPub)))
+	return privatePEM, publicAuthorizedKey, nil
 }
 
 func (s *PlatformOpsService) sshKeygenPublic(keyPath string) string {

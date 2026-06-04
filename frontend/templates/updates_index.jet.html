@@ -122,16 +122,45 @@
       }
     }
 
+    function parseJSONResponse(resp) {
+      var contentType = (resp.headers.get('content-type') || '').toLowerCase();
+      if (contentType.indexOf('application/json') !== -1) {
+        return resp.json().then(function (data) {
+          if (!resp.ok) throw new Error((data && data.error) || 'Request failed');
+          return data;
+        });
+      }
+      return resp.text().then(function (text) {
+        var message = 'Panel returned a non-JSON response';
+        if (resp.status === 401 || resp.status === 403) {
+          message = 'Your session is no longer authorized. Refresh the page and sign in again.';
+        } else if (resp.status >= 500) {
+          message = 'Panel returned a server error while the update was running.';
+        } else if (/<html[\s>]/i.test(text) || /^\s*</.test(text)) {
+          message = 'Panel returned an HTML page while the update was running.';
+        }
+        throw new Error(message);
+      });
+    }
+
     function poll() {
-      fetch('/updates/status', { headers: { 'Accept': 'application/json' } })
-        .then(function (resp) { return resp.json(); })
+      fetch('/updates/status', {
+        cache: 'no-store',
+        credentials: 'same-origin',
+        headers: { 'Accept': 'application/json' }
+      })
+        .then(parseJSONResponse)
         .then(renderStatus)
-        .catch(function () {
+        .catch(function (err) {
           pollFailures += 1;
           if (restartWaitMode) {
             setRestartMessage('DeployCP is temporarily offline while the new release is being installed. Waiting for the service to return...');
             schedulePoll(Math.min(15000, 4000 + (pollFailures * 2000)));
             return;
+          }
+          if (pollFailures === 1 && err && err.message) {
+            messageTitle.textContent = 'Update status unavailable';
+            messageBody.textContent = err.message;
           }
           schedulePoll(Math.min(15000, 4000 + (pollFailures * 1000)));
         });
@@ -145,24 +174,21 @@
         setRestartMessage('Starting the update. DeployCP will go offline briefly while the service restarts.');
         fetch('/updates/install', {
           method: 'POST',
+          cache: 'no-store',
+          credentials: 'same-origin',
           headers: {
             'Accept': 'application/json',
             'X-CSRF-Token': csrfToken
           }
         })
-          .then(function (resp) {
-            return resp.json().then(function (data) {
-              if (!resp.ok) throw new Error(data.error || 'Unable to start update');
-              return data;
-            });
-          })
+          .then(parseJSONResponse)
           .then(function () {
             setRestartMessage('Update started. Waiting for the service restart and reconnecting shortly...');
             schedulePoll(12000);
           })
           .catch(function (err) {
             var message = err && err.message ? err.message : '';
-            if (!message || /failed to fetch|networkerror|load failed/i.test(message)) {
+            if (!message || /failed to fetch|networkerror|load failed|non-json|html page|server error/i.test(message)) {
               setRestartMessage('The updater request was interrupted while DeployCP was restarting. Waiting for the service to come back...');
               schedulePoll(12000);
               return;
