@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"deploycp/internal/repositories"
 )
@@ -87,6 +88,10 @@ func (s *ReconcileService) Run(ctx context.Context, actor *uint, ip string) (*Re
 		site := websites[i]
 		if s.websites != nil {
 			if err := s.websites.RefreshConfig(ctx, site.ID); err != nil {
+				if isBusyUsermodError(err) {
+					add(fmt.Sprintf("skipped website %q user sync because the site user has running processes", site.Name))
+					continue
+				}
 				return result, err
 			}
 		}
@@ -126,4 +131,12 @@ func (s *ReconcileService) Run(ctx context.Context, actor *uint, ip string) (*Re
 	add(fmt.Sprintf("reconciled %d applications", len(apps)))
 
 	return result, nil
+}
+
+func isBusyUsermodError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "usermod: user ") && strings.Contains(msg, " is currently used by process")
 }
