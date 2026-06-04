@@ -848,9 +848,9 @@
   <div class="surface p-5 mb-5">
     <h3 class="text-sm font-semibold mb-4">Git Deploy</h3>
     <div class="mb-4 rounded-md border border-[var(--border)] p-3 text-sm text-[var(--text-muted)]">
-      First deploy clones into the Work Directory only when it is empty. If the directory already contains files, either empty/back up the folder first, choose an empty subfolder, or initialize it as a Git repo for the same remote.
+      Use an SSH repository URL like <span class="font-mono text-xs">git@github.com:org/repo.git</span> when using deploy keys. HTTPS URLs need GitHub credentials or a token and will not use the generated deploy key. First deploy clones into the Work Directory only when it is empty.
     </div>
-    <form action="{{ OpsActionBase }}/deploy-config" method="post" class="space-y-4">
+    <form action="{{ OpsActionBase }}/deploy-config" method="post" class="space-y-4" data-runtime-loading>
       <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
       <div class="grid gap-4 md:grid-cols-2">
         <label class="block text-sm font-medium">Repository URL
@@ -879,6 +879,7 @@
       <div class="flex flex-wrap justify-between gap-2">
         <div class="flex flex-wrap gap-2">
           <button class="btn btn-primary" type="submit">Save Deploy Config</button>
+          <button class="btn btn-primary" type="submit" name="deploy_config_action" value="save_deploy" data-loading-label="Saving & deploying...">Save & Deploy Now</button>
           <button class="btn" type="submit" name="deploy_key_action" value="generate">Generate Deploy Key</button>
         </div>
         <div class="flex flex-wrap gap-2">
@@ -892,7 +893,7 @@
       <label class="block text-sm font-medium">Branch Override
         <input class="field mt-2" name="branch" placeholder="{{ if Ops.DeployConfig }}{{ Ops.DeployConfig.Branch }}{{ else }}main{{ end }}">
       </label>
-      <button class="btn btn-primary" type="submit" data-loading-label="Deploying..."><i data-lucide="git-pull-request-arrow"></i> Deploy Now</button>
+      <button class="btn btn-primary" type="submit" data-loading-label="Deploying..."><i data-lucide="git-pull-request-arrow"></i> Deploy Saved Config</button>
       <button class="btn" formaction="{{ OpsActionBase }}/runtime-restart" type="submit" data-loading-label="Restarting..."><i data-lucide="refresh-cw"></i> Restart Runtime</button>
     </form>
     {{ if Ops.DeployConfig }}{{ if Ops.DeployConfig.LastDeployAt }}
@@ -1894,9 +1895,9 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
   <div class="surface p-5 mb-5">
     <h3 class="text-sm font-semibold mb-4">Git Deploy</h3>
     <div class="mb-4 rounded-md border border-[var(--border)] p-3 text-sm text-[var(--text-muted)]">
-      First deploy clones into the Work Directory only when it is empty. If the directory already contains files, either empty/back up the folder first, choose an empty subfolder, or initialize it as a Git repo for the same remote.
+      Use an SSH repository URL like <span class="font-mono text-xs">git@github.com:org/repo.git</span> when using deploy keys. HTTPS URLs need GitHub credentials or a token and will not use the generated deploy key. First deploy clones into the Work Directory only when it is empty.
     </div>
-    <form action="{{ OpsActionBase }}/deploy-config" method="post" class="space-y-4">
+    <form action="{{ OpsActionBase }}/deploy-config" method="post" class="space-y-4" data-runtime-loading>
       <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
       <div class="grid gap-4 md:grid-cols-2">
         <label class="block text-sm font-medium">Repository URL
@@ -1925,6 +1926,7 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
       <div class="flex flex-wrap justify-between gap-2">
         <div class="flex flex-wrap gap-2">
           <button class="btn btn-primary" type="submit">Save Deploy Config</button>
+          <button class="btn btn-primary" type="submit" name="deploy_config_action" value="save_deploy" data-loading-label="Saving & deploying...">Save & Deploy Now</button>
           <button class="btn" type="submit" name="deploy_key_action" value="generate">Generate Deploy Key</button>
         </div>
         <div class="flex flex-wrap gap-2">
@@ -1938,7 +1940,7 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
       <label class="block text-sm font-medium">Branch Override
         <input class="field mt-2" name="branch" placeholder="{{ if Ops.DeployConfig }}{{ Ops.DeployConfig.Branch }}{{ else }}main{{ end }}">
       </label>
-      <button class="btn btn-primary" type="submit" data-loading-label="Deploying..."><i data-lucide="git-pull-request-arrow"></i> Deploy Now</button>
+      <button class="btn btn-primary" type="submit" data-loading-label="Deploying..."><i data-lucide="git-pull-request-arrow"></i> Deploy Saved Config</button>
       <button class="btn" formaction="{{ OpsActionBase }}/runtime-restart" type="submit" data-loading-label="Restarting..."><i data-lucide="refresh-cw"></i> Restart Runtime</button>
     </form>
     {{ if Ops.DeployConfig }}{{ if Ops.DeployConfig.LastDeployAt }}

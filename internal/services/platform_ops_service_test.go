@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -30,6 +31,14 @@ func TestValidateGitRefNameRejectsUnsafeRefs(t *testing.T) {
 		if err := validateGitRefName(ref); err == nil {
 			t.Fatalf("expected %q to be rejected", ref)
 		}
+	}
+}
+
+func TestGitCommandArgsAddsSafeDirectory(t *testing.T) {
+	got := gitCommandArgs("/home/deploycp/platforms/sites/example/htdocs", "remote", "set-url", "origin", "git@github.com:org/repo.git")
+	want := []string{"-c", "safe.directory=/home/deploycp/platforms/sites/example/htdocs", "remote", "set-url", "origin", "git@github.com:org/repo.git"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("git args = %#v, want %#v", got, want)
 	}
 }
 

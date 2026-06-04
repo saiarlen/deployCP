@@ -1072,7 +1072,7 @@ func (s *PlatformOpsService) gitSync(ctx context.Context, cfg *models.PlatformDe
 }
 
 func (s *PlatformOpsService) runGit(ctx context.Context, cfg *models.PlatformDeployConfig, workDir string, output *strings.Builder, args ...string) error {
-	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd := exec.CommandContext(ctx, "git", gitCommandArgs(workDir, args...)...)
 	cmd.Dir = workDir
 	cmd.Env = os.Environ()
 	if strings.TrimSpace(cfg.DeployKeyPath) != "" {
@@ -1085,6 +1085,15 @@ func (s *PlatformOpsService) runGit(ctx context.Context, cfg *models.PlatformDep
 		return fmt.Errorf("git %s failed: %w", args[0], err)
 	}
 	return nil
+}
+
+func gitCommandArgs(workDir string, args ...string) []string {
+	workDir = filepath.Clean(strings.TrimSpace(workDir))
+	if workDir == "" || workDir == "." {
+		return args
+	}
+	out := []string{"-c", "safe.directory=" + workDir}
+	return append(out, args...)
 }
 
 func (s *PlatformOpsService) runDeployCommand(ctx context.Context, command, workDir string, output *strings.Builder) error {

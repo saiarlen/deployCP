@@ -365,6 +365,17 @@ func (h *WebsiteHandler) ManageOpsSaveDeployConfig(c *fiber.Ctx) error {
 	}
 	if err := h.ops.SaveDeployConfig(c.Context(), id, in, currentUserID(c), c.IP()); err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
+	} else if strings.TrimSpace(c.FormValue("deploy_config_action")) == "save_deploy" {
+		result, err := h.ops.Deploy(c.Context(), id, strings.TrimSpace(c.FormValue("branch")), currentUserID(c), c.IP())
+		if err != nil {
+			message := err.Error()
+			if result != nil && strings.TrimSpace(result.Output) != "" {
+				message = deployFlashOutput(result.Output)
+			}
+			h.base.Sessions.SetFlash(c, "Deploy failed: "+message)
+		} else {
+			h.base.Sessions.SetFlash(c, "Deploy configuration saved and deployed: "+result.Status)
+		}
 	} else if in.GenerateDeployKey {
 		h.base.Sessions.SetFlash(c, "Deploy key generated. Copy the public key into GitHub Deploy keys.")
 	} else {
