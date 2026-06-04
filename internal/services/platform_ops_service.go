@@ -966,6 +966,9 @@ func (s *PlatformOpsService) resolvePlatformWorkDir(site *models.Website, raw st
 		raw = filepath.Join(home, raw)
 	}
 	clean := filepath.Clean(raw)
+	if filepath.Clean(clean) == filepath.Clean(home) && filepath.Base(filepath.Clean(site.RootPath)) == "htdocs" {
+		clean = filepath.Clean(site.RootPath)
+	}
 	if !pathWithin(clean, home) {
 		return "", fmt.Errorf("deploy workdir must be inside platform home")
 	}

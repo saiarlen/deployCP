@@ -373,7 +373,7 @@ func (h *AppHandler) ShowByID(c *fiber.Ctx, id uint) error {
 		}
 	}
 	if defaultHomeDir == "" && status.App.WorkingDirectory != "" {
-		defaultHomeDir = platformHomeFromRoot(status.App.WorkingDirectory)
+		defaultHomeDir = status.App.WorkingDirectory
 	}
 	serverAddress := displayServerAddress(h.base.Config, c.Hostname())
 	opsView := services.PlatformOpsView{}
@@ -385,7 +385,7 @@ func (h *AppHandler) ShowByID(c *fiber.Ctx, id uint) error {
 		"Title":            status.App.Name,
 		"PlatformKind":     "app",
 		"Status":           status,
-		"AppWorkingDir":    platformHomeFromRoot(status.App.WorkingDirectory),
+		"AppWorkingDir":    strings.TrimSpace(status.App.WorkingDirectory),
 		"RuntimeHealth":    h.service.RuntimeInspection(status.App),
 		"RuntimeVersion":   envVarValue(status.App.EnvVars, "RUNTIME_VERSION"),
 		"GoVersions":       h.runtimeVersions("go"),

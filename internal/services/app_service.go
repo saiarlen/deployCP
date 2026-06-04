@@ -122,6 +122,9 @@ func (s *AppService) Create(ctx context.Context, in AppInput, actor *uint, ip st
 		WebsiteID:        in.WebsiteID,
 		Enabled:          in.Enabled,
 	}
+	if _, err := s.normalizeLinkedAppWorkingDirectory(app); err != nil {
+		return nil, err
+	}
 	if err := s.repo.Create(app, in.Env); err != nil {
 		return nil, err
 	}
@@ -500,6 +503,9 @@ func (s *AppService) UpdateRuntimeSettings(ctx context.Context, id uint, process
 	if restartPolicy != "" {
 		app.RestartPolicy = restartPolicy
 	}
+	if _, err := s.normalizeLinkedAppWorkingDirectory(app); err != nil {
+		return err
+	}
 	envMap := make(map[string]string)
 	for _, ev := range app.EnvVars {
 		envMap[ev.Key] = ev.Value
@@ -564,6 +570,15 @@ func (s *AppService) Reconcile(ctx context.Context, id uint, actor *uint, ip str
 	for _, ev := range app.EnvVars {
 		envMap[ev.Key] = ev.Value
 	}
+	changedWorkdir, err := s.normalizeLinkedAppWorkingDirectory(app)
+	if err != nil {
+		return err
+	}
+	if changedWorkdir {
+		if err := s.repo.Update(app, envMap); err != nil {
+			return err
+		}
+	}
 	if s.runtime != nil {
 		if err := s.runtime.ApplyPlatformRuntime(platformRuntimeRootForApp(app), app.Runtime, envMap["RUNTIME_VERSION"], actor, ip); err != nil {
 			return err
@@ -578,6 +593,30 @@ func (s *AppService) Reconcile(ctx context.Context, id uint, actor *uint, ip str
 		return err
 	}
 	return s.installService(ctx, app, envMap)
+}
+
+func (s *AppService) normalizeLinkedAppWorkingDirectory(app *models.GoApp) (bool, error) {
+	if app == nil || app.WebsiteID == nil || *app.WebsiteID == 0 || s.websites == nil {
+		return false, nil
+	}
+	site, err := s.websites.Find(*app.WebsiteID)
+	if err != nil {
+		return false, err
+	}
+	rootPath := strings.TrimSpace(site.RootPath)
+	if rootPath == "" {
+		return false, nil
+	}
+	workdir := strings.TrimSpace(app.WorkingDirectory)
+	if workdir == "" {
+		app.WorkingDirectory = rootPath
+		return true, nil
+	}
+	if filepath.Clean(workdir) == filepath.Clean(platformHomeFromWebRoot(rootPath)) {
+		app.WorkingDirectory = rootPath
+		return true, nil
+	}
+	return false, nil
 }
 
 func (s *AppService) installService(ctx context.Context, app *models.GoApp, env map[string]string) error {

@@ -211,7 +211,10 @@ func (h *WebsiteHandler) ShowByID(c *fiber.Ctx, id uint) error {
 	if item.Type == "proxy" {
 		linkedApp = websiteRuntimeApp(item)
 		if linkedApp != nil {
-			linkedAppWorkingDirectory = platformHomeFromRoot(item.RootPath)
+			linkedAppWorkingDirectory = strings.TrimSpace(linkedApp.WorkingDirectory)
+			if linkedAppWorkingDirectory == "" {
+				linkedAppWorkingDirectory = item.RootPath
+			}
 			linkedAppStatus, _ = h.appService.Status(c.Context(), linkedApp.ID)
 			if linkedAppStatus != nil && linkedAppStatus.App != nil {
 				linkedRuntimeVersion = envVarValue(linkedAppStatus.App.EnvVars, "RUNTIME_VERSION")
@@ -2021,6 +2024,7 @@ func (h *WebsiteHandler) ManageCreateLinkedApp(c *fiber.Ctx) error {
 	if workdir == "" {
 		workdir = site.RootPath
 	}
+	workdir = normalizeLinkedRuntimeWorkingDirectory(site, workdir)
 
 	port := 0
 	if site.ProxyTarget != "" {
@@ -2129,6 +2133,20 @@ func (h *WebsiteHandler) ManageCreateLinkedApp(c *fiber.Ctx) error {
 		h.base.Sessions.SetFlash(c, "Runtime configuration created")
 	}
 	return c.Redirect(platformURLWithTab("website", id, "settings"))
+}
+
+func normalizeLinkedRuntimeWorkingDirectory(site *models.Website, workdir string) string {
+	workdir = strings.TrimSpace(workdir)
+	if site == nil {
+		return workdir
+	}
+	if workdir == "" {
+		return strings.TrimSpace(site.RootPath)
+	}
+	if filepath.Clean(workdir) == filepath.Clean(platformHomeFromRoot(site.RootPath)) {
+		return strings.TrimSpace(site.RootPath)
+	}
+	return workdir
 }
 
 func (h *WebsiteHandler) ManageDeleteLinkedApp(c *fiber.Ctx) error {

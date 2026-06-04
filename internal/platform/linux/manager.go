@@ -520,7 +520,7 @@ func (u *userManager) SyncHome(ctx context.Context, username, homeDir, allowedRo
 			Timeout:     15 * time.Second,
 			AuditAction: "site_user.home.sync",
 		}); err != nil {
-			return err
+			return usermodBusyMessage(username, err)
 		}
 	}
 	allowed := filepath.Join(homeDir, ".deploycp_allowed_root")
@@ -579,11 +579,11 @@ func (u *userManager) SetPassword(ctx context.Context, username, password string
 		Timeout:     10 * time.Second,
 		AuditAction: "site_user.shell.sync",
 	})
-	return err
+	return usermodBusyMessage(username, err)
 }
 func (u *userManager) Disable(ctx context.Context, username string) error {
 	_, err := u.runner.Run(ctx, system.CommandRequest{Binary: "/usr/sbin/usermod", Args: []string{"-L", username}, Timeout: 10 * time.Second, AuditAction: "site_user.disable"})
-	return err
+	return usermodBusyMessage(username, err)
 }
 func (u *userManager) Delete(ctx context.Context, username string) error {
 	// Kill any running processes owned by this user first, otherwise userdel fails.
@@ -642,7 +642,7 @@ func (u *userManager) SyncSharedAccess(ctx context.Context, root, primaryUser, g
 			Timeout:     15 * time.Second,
 			AuditAction: "site_user.group.member",
 		}); err != nil {
-			return err
+			return usermodBusyMessage(member, err)
 		}
 	}
 	if primary := strings.TrimSpace(primaryUser); primary != "" {
@@ -715,6 +715,21 @@ func (u *userManager) userInGroup(ctx context.Context, username, groupName strin
 		}
 	}
 	return false
+}
+
+func usermodBusyMessage(username string, err error) error {
+	if err == nil {
+		return nil
+	}
+	if !isUsermodBusyError(err) {
+		return err
+	}
+	return fmt.Errorf("site user %s is currently logged in or has running processes. Close SSH/SFTP sessions for this user, including Terminus, and stop any running app process owned by this user, then retry. Linux cannot change a user account while it is active. Details: %w", strings.TrimSpace(username), err)
+}
+
+func isUsermodBusyError(err error) bool {
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "usermod: user ") && strings.Contains(msg, " is currently used by process")
 }
 
 type nginxManager struct{ runner *system.Runner }
