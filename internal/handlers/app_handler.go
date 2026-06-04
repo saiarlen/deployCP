@@ -927,6 +927,7 @@ func (h *AppHandler) ManageUpdateRuntime(c *fiber.Ctx) error {
 	maxMemory := strings.TrimSpace(c.FormValue("max_memory"))
 	execMode := strings.TrimSpace(c.FormValue("exec_mode"))
 	restartPolicy := strings.TrimSpace(c.FormValue("restart_policy"))
+	startArgs := strings.TrimSpace(c.FormValue("start_args"))
 	runtimeVersion := strings.TrimSpace(c.FormValue("runtime_version"))
 	runtimeApply := strings.TrimSpace(c.FormValue("runtime_apply"))
 	if runtimeApply == "" {
@@ -944,7 +945,7 @@ func (h *AppHandler) ManageUpdateRuntime(c *fiber.Ctx) error {
 		}
 		port = parsedPort
 	}
-	if err := h.service.UpdateRuntimeSettings(c.Context(), id, processManager, workers, workerClass, maxMemory, timeout, execMode, restartPolicy, port, runtimeVersion, runtimeApply, currentUserID(c), c.IP()); err != nil {
+	if err := h.service.UpdateRuntimeSettings(c.Context(), id, processManager, workers, workerClass, maxMemory, timeout, execMode, restartPolicy, startArgs, port, runtimeVersion, runtimeApply, currentUserID(c), c.IP()); err != nil {
 		h.base.Sessions.SetFlash(c, err.Error())
 	} else if runtimeApply == "reset" {
 		h.base.Sessions.SetFlash(c, "Runtime reset with latest settings")

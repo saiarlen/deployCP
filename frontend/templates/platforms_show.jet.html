@@ -275,6 +275,11 @@
           <span class="text-xs opacity-50 mt-1">PM2: --max-memory-restart &middot; Systemd: MemoryMax</span>
         </label>
 
+        <label class="block text-sm font-medium">Start Args
+          <input class="field mt-2 font-mono text-xs" type="text" name="start_args" value="{{ Status.App.StartArgs }}" placeholder="-- start -H 127.0.0.1 -p 3000">
+          <span class="text-xs opacity-50 mt-1">Optional arguments passed after the entry point or process command.</span>
+        </label>
+
         <label class="block text-sm font-medium">Restart Policy
           <select class="field mt-2" name="restart_policy">
             <option value="on-failure" {{ if Status.App.RestartPolicy == "on-failure" }}selected{{ end }}>on-failure</option>
@@ -875,26 +880,21 @@
         <textarea class="field mt-2 font-mono text-xs" rows="2" readonly>{{ Ops.DeployConfig.DeployKeyPublic }}</textarea>
       </label>
       {{ end }}{{ end }}
+      <div class="flex flex-wrap gap-2">
+        <button class="btn" type="submit" name="deploy_key_action" value="generate">Generate Deploy Key</button>
+        {{ if Ops.DeployConfig }}{{ if Ops.DeployConfig.DeployKeyPublic }}<button class="btn platform-copy-action" type="button" data-copy-value="{{ Ops.DeployConfig.DeployKeyPublic }}" data-copy-success="Public deploy key copied">Copy Public Key</button>{{ end }}{{ end }}
+      </div>
       <label class="inline-flex items-center gap-2 text-sm"><input type="checkbox" name="restart_after_deploy" {{ if !Ops.DeployConfig || Ops.DeployConfig.RestartAfterDeploy }}checked{{ end }}> Restart runtime after deploy</label>
       <div class="flex flex-wrap justify-between gap-2">
         <div class="flex flex-wrap gap-2">
-          <button class="btn btn-primary" type="submit">Save Deploy Config</button>
           <button class="btn btn-primary" type="submit" name="deploy_config_action" value="save_deploy" data-loading-label="Saving & deploying...">Save & Deploy Now</button>
-          <button class="btn" type="submit" name="deploy_key_action" value="generate">Generate Deploy Key</button>
-        </div>
-        <div class="flex flex-wrap gap-2">
-          {{ if Ops.DeployConfig }}{{ if Ops.DeployConfig.DeployKeyPublic }}<button class="btn platform-copy-action" type="button" data-copy-value="{{ Ops.DeployConfig.DeployKeyPublic }}" data-copy-success="Public deploy key copied">Copy Public Key</button>{{ end }}{{ end }}
-          <button class="btn platform-copy-action" type="button" data-copy-value="{{ Ops.DeployCommand }}" data-copy-success="Deploy command copied">Copy Hook Command</button>
+          <button class="btn" type="submit">Save Config</button>
         </div>
       </div>
     </form>
-    <form action="{{ OpsActionBase }}/deploy" method="post" class="mt-4 flex flex-wrap items-end gap-2" data-runtime-loading>
+    <form action="{{ OpsActionBase }}/runtime-restart" method="post" class="mt-4 flex flex-wrap justify-end gap-2" data-runtime-loading>
       <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
-      <label class="block text-sm font-medium">Branch Override
-        <input class="field mt-2" name="branch" placeholder="{{ if Ops.DeployConfig }}{{ Ops.DeployConfig.Branch }}{{ else }}main{{ end }}">
-      </label>
-      <button class="btn btn-primary" type="submit" data-loading-label="Deploying..."><i data-lucide="git-pull-request-arrow"></i> Deploy Saved Config</button>
-      <button class="btn" formaction="{{ OpsActionBase }}/runtime-restart" type="submit" data-loading-label="Restarting..."><i data-lucide="refresh-cw"></i> Restart Runtime</button>
+      <button class="btn" type="submit" data-loading-label="Restarting..."><i data-lucide="refresh-cw"></i> Restart Runtime</button>
     </form>
     {{ if Ops.DeployConfig }}{{ if Ops.DeployConfig.LastDeployAt }}
     <div class="mt-4 rounded-md border border-[var(--border)] p-3 text-sm">Last deploy: <span class="badge {{ if Ops.DeployConfig.LastDeployStatus == "success" }}badge-ok{{ else }}badge-danger{{ end }}">{{ Ops.DeployConfig.LastDeployStatus }}</span> {{ formatTimePtr(Ops.DeployConfig.LastDeployAt) }}</div>
@@ -1644,6 +1644,11 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
           <span class="text-xs opacity-50 mt-1">PM2: --max-memory-restart &middot; Systemd: MemoryMax</span>
         </label>
 
+        <label class="block text-sm font-medium">Start Args
+          <input class="field mt-2 font-mono text-xs" type="text" name="start_args" value="{{ LinkedApp.StartArgs }}" placeholder="-- start -H 127.0.0.1 -p 3000">
+          <span class="text-xs opacity-50 mt-1">Arguments passed after the entry point. For Next.js, match the proxy port.</span>
+        </label>
+
         <label class="block text-sm font-medium">Restart Policy
           <select class="field mt-2" name="restart_policy">
             <option value="on-failure" {{ if LinkedApp.RestartPolicy == "on-failure" }}selected{{ end }}>on-failure</option>
@@ -1767,6 +1772,11 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
         <label class="block text-sm font-medium ca-field ca-interpreted" style="display:none" id="ca-entry-label">Entry Point
           <input class="field mt-2" type="text" name="entry_point" placeholder="app.py / index.js">
           <span class="text-xs opacity-50 mt-1">Main script file to execute</span>
+        </label>
+
+        <label class="block text-sm font-medium ca-field ca-interpreted" style="display:none">Start Args
+          <input class="field mt-2 font-mono text-xs" type="text" name="start_args" placeholder="-- start -H 127.0.0.1 -p 3000">
+          <span class="text-xs opacity-50 mt-1">Arguments passed to the entry point, for example Next.js start options.</span>
         </label>
 
         <label class="block text-sm font-medium">Working Directory
@@ -1922,26 +1932,21 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
         <textarea class="field mt-2 font-mono text-xs" rows="2" readonly>{{ Ops.DeployConfig.DeployKeyPublic }}</textarea>
       </label>
       {{ end }}{{ end }}
+      <div class="flex flex-wrap gap-2">
+        <button class="btn" type="submit" name="deploy_key_action" value="generate">Generate Deploy Key</button>
+        {{ if Ops.DeployConfig }}{{ if Ops.DeployConfig.DeployKeyPublic }}<button class="btn platform-copy-action" type="button" data-copy-value="{{ Ops.DeployConfig.DeployKeyPublic }}" data-copy-success="Public deploy key copied">Copy Public Key</button>{{ end }}{{ end }}
+      </div>
       <label class="inline-flex items-center gap-2 text-sm"><input type="checkbox" name="restart_after_deploy" {{ if !Ops.DeployConfig || Ops.DeployConfig.RestartAfterDeploy }}checked{{ end }}> Restart runtime after deploy</label>
       <div class="flex flex-wrap justify-between gap-2">
         <div class="flex flex-wrap gap-2">
-          <button class="btn btn-primary" type="submit">Save Deploy Config</button>
           <button class="btn btn-primary" type="submit" name="deploy_config_action" value="save_deploy" data-loading-label="Saving & deploying...">Save & Deploy Now</button>
-          <button class="btn" type="submit" name="deploy_key_action" value="generate">Generate Deploy Key</button>
-        </div>
-        <div class="flex flex-wrap gap-2">
-          {{ if Ops.DeployConfig }}{{ if Ops.DeployConfig.DeployKeyPublic }}<button class="btn platform-copy-action" type="button" data-copy-value="{{ Ops.DeployConfig.DeployKeyPublic }}" data-copy-success="Public deploy key copied">Copy Public Key</button>{{ end }}{{ end }}
-          <button class="btn platform-copy-action" type="button" data-copy-value="{{ Ops.DeployCommand }}" data-copy-success="Deploy command copied">Copy Hook Command</button>
+          <button class="btn" type="submit">Save Config</button>
         </div>
       </div>
     </form>
-    <form action="{{ OpsActionBase }}/deploy" method="post" class="mt-4 flex flex-wrap items-end gap-2" data-runtime-loading>
+    <form action="{{ OpsActionBase }}/runtime-restart" method="post" class="mt-4 flex flex-wrap justify-end gap-2" data-runtime-loading>
       <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
-      <label class="block text-sm font-medium">Branch Override
-        <input class="field mt-2" name="branch" placeholder="{{ if Ops.DeployConfig }}{{ Ops.DeployConfig.Branch }}{{ else }}main{{ end }}">
-      </label>
-      <button class="btn btn-primary" type="submit" data-loading-label="Deploying..."><i data-lucide="git-pull-request-arrow"></i> Deploy Saved Config</button>
-      <button class="btn" formaction="{{ OpsActionBase }}/runtime-restart" type="submit" data-loading-label="Restarting..."><i data-lucide="refresh-cw"></i> Restart Runtime</button>
+      <button class="btn" type="submit" data-loading-label="Restarting..."><i data-lucide="refresh-cw"></i> Restart Runtime</button>
     </form>
     {{ if Ops.DeployConfig }}{{ if Ops.DeployConfig.LastDeployAt }}
     <div class="mt-4 rounded-md border border-[var(--border)] p-3 text-sm">Last deploy: <span class="badge {{ if Ops.DeployConfig.LastDeployStatus == "success" }}badge-ok{{ else }}badge-danger{{ end }}">{{ Ops.DeployConfig.LastDeployStatus }}</span> {{ formatTimePtr(Ops.DeployConfig.LastDeployAt) }}</div>

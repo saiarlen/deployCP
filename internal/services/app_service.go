@@ -467,7 +467,7 @@ func (s *AppService) Logs(id uint, lines int) (string, string, error) {
 	return stdout, stderr, nil
 }
 
-func (s *AppService) UpdateRuntimeSettings(ctx context.Context, id uint, processManager string, workers int, workerClass, maxMemory string, timeout int, execMode, restartPolicy string, port int, runtimeVersion, applyAction string, actor *uint, ip string) error {
+func (s *AppService) UpdateRuntimeSettings(ctx context.Context, id uint, processManager string, workers int, workerClass, maxMemory string, timeout int, execMode, restartPolicy, startArgs string, port int, runtimeVersion, applyAction string, actor *uint, ip string) error {
 	app, err := s.repo.Find(id)
 	if err != nil {
 		return err
@@ -487,6 +487,7 @@ func (s *AppService) UpdateRuntimeSettings(ctx context.Context, id uint, process
 	app.MaxMemory = normalizedMaxMemory
 	app.Timeout = timeout
 	app.ExecMode = execMode
+	app.StartArgs = strings.TrimSpace(startArgs)
 	if strings.TrimSpace(app.Host) == "" {
 		app.Host = "127.0.0.1"
 	}

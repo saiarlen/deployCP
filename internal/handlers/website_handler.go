@@ -1412,7 +1412,7 @@ func (h *WebsiteHandler) ManageUpdatePlatformRuntime(c *fiber.Ctx) error {
 		}
 	}
 	if linkedApp != nil {
-		if err := h.appService.UpdateRuntimeSettings(c.Context(), linkedApp.ID, linkedApp.ProcessManager, linkedApp.Workers, linkedApp.WorkerClass, linkedApp.MaxMemory, linkedApp.Timeout, linkedApp.ExecMode, linkedApp.RestartPolicy, linkedApp.Port, version, "reconfigure", currentUserID(c), c.IP()); err != nil {
+		if err := h.appService.UpdateRuntimeSettings(c.Context(), linkedApp.ID, linkedApp.ProcessManager, linkedApp.Workers, linkedApp.WorkerClass, linkedApp.MaxMemory, linkedApp.Timeout, linkedApp.ExecMode, linkedApp.RestartPolicy, linkedApp.StartArgs, linkedApp.Port, version, "reconfigure", currentUserID(c), c.IP()); err != nil {
 			h.base.Sessions.SetFlash(c, err.Error())
 			return c.Redirect(platformURLWithTab("website", id, "settings"))
 		}
