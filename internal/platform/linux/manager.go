@@ -678,6 +678,27 @@ func (u *userManager) SyncSharedAccess(ctx context.Context, root, primaryUser, g
 	return nil
 }
 
+func (u *userManager) DeleteSharedAccess(ctx context.Context, groupName string) error {
+	groupName = strings.TrimSpace(groupName)
+	if groupName == "" {
+		return nil
+	}
+	if _, err := u.runner.Run(ctx, system.CommandRequest{
+		Binary:  "/usr/bin/getent",
+		Args:    []string{"group", groupName},
+		Timeout: 5 * time.Second,
+	}); err != nil {
+		return nil
+	}
+	_, err := u.runner.Run(ctx, system.CommandRequest{
+		Binary:      "/usr/sbin/groupdel",
+		Args:        []string{groupName},
+		Timeout:     15 * time.Second,
+		AuditAction: "site_user.group.delete",
+	})
+	return err
+}
+
 type nginxManager struct{ runner *system.Runner }
 
 func (n *nginxManager) Validate(ctx context.Context, nginxBinary string) error {

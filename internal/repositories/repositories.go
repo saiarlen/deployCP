@@ -291,6 +291,9 @@ func (r *WebsiteRepository) Delete(id uint) error {
 		if err := tx.Where("website_id = ?", id).Delete(&models.BasicAuth{}).Error; err != nil {
 			return err
 		}
+		if err := tx.Where("website_id = ?", id).Delete(&models.CloudflareConfig{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Where("website_id = ?", id).Delete(&models.FTPUser{}).Error; err != nil {
 			return err
 		}
@@ -372,6 +375,9 @@ func (r *GoAppRepository) List() ([]models.GoApp, error) {
 	err := r.db.Preload("EnvVars").Where("app_runtime <> ''").Order("id desc").Find(&items).Error
 	if err == nil {
 		for i := range items {
+			if strings.TrimSpace(items[i].AppWorkingDirectory) != "" {
+				items[i].WorkingDirectory = items[i].AppWorkingDirectory
+			}
 			wid := items[i].ID
 			items[i].WebsiteID = &wid
 		}
@@ -386,6 +392,9 @@ func (r *GoAppRepository) Find(id uint) (*models.GoApp, error) {
 	var item models.GoApp
 	if err := r.db.Preload("EnvVars").Where("id = ? AND app_runtime <> ''", id).First(&item).Error; err != nil {
 		return nil, err
+	}
+	if strings.TrimSpace(item.AppWorkingDirectory) != "" {
+		item.WorkingDirectory = item.AppWorkingDirectory
 	}
 	wid := item.ID
 	item.WebsiteID = &wid
@@ -407,29 +416,29 @@ func (r *GoAppRepository) Create(item *models.GoApp, env map[string]string) erro
 		if item.WebsiteID != nil && *item.WebsiteID > 0 {
 			targetID = *item.WebsiteID
 			if err := tx.Model(&models.GoApp{}).Where("id = ?", targetID).Updates(map[string]any{
-				"name":            item.Name,
-				"type":            item.Type,
-				"app_runtime":     item.Runtime,
-				"execution_mode":  item.ExecutionMode,
-				"process_manager": item.ProcessManager,
-				"binary_path":     item.BinaryPath,
-				"entry_point":     item.EntryPoint,
-				"root_path":       item.WorkingDirectory,
-				"host":            item.Host,
-				"port":            item.Port,
-				"start_args":      item.StartArgs,
-				"health_path":     item.HealthPath,
-				"restart_policy":  item.RestartPolicy,
-				"workers":         item.Workers,
-				"worker_class":    item.WorkerClass,
-				"max_memory":      item.MaxMemory,
-				"timeout":         item.Timeout,
-				"exec_mode":       item.ExecMode,
-				"stdout_log_path": item.StdoutLogPath,
-				"stderr_log_path": item.StderrLogPath,
-				"service_name":    item.ServiceName,
-				"proxy_target":    item.ProxyTarget,
-				"enabled":         item.Enabled,
+				"name":                  item.Name,
+				"type":                  item.Type,
+				"app_runtime":           item.Runtime,
+				"execution_mode":        item.ExecutionMode,
+				"process_manager":       item.ProcessManager,
+				"binary_path":           item.BinaryPath,
+				"entry_point":           item.EntryPoint,
+				"app_working_directory": item.WorkingDirectory,
+				"host":                  item.Host,
+				"port":                  item.Port,
+				"start_args":            item.StartArgs,
+				"health_path":           item.HealthPath,
+				"restart_policy":        item.RestartPolicy,
+				"workers":               item.Workers,
+				"worker_class":          item.WorkerClass,
+				"max_memory":            item.MaxMemory,
+				"timeout":               item.Timeout,
+				"exec_mode":             item.ExecMode,
+				"stdout_log_path":       item.StdoutLogPath,
+				"stderr_log_path":       item.StderrLogPath,
+				"service_name":          item.ServiceName,
+				"proxy_target":          item.ProxyTarget,
+				"enabled":               item.Enabled,
 			}).Error; err != nil {
 				return err
 			}
@@ -462,7 +471,7 @@ func (r *GoAppRepository) Update(item *models.GoApp, env map[string]string) erro
 		if item.ProxyTarget == "" {
 			item.ProxyTarget = fmt.Sprintf("http://%s:%d", item.Host, item.Port)
 		}
-		if err := tx.Model(&models.GoApp{}).Where("id = ? AND app_runtime <> ''", item.ID).Updates(map[string]any{
+		updates := map[string]any{
 			"name":            item.Name,
 			"type":            item.Type,
 			"app_runtime":     item.Runtime,
@@ -470,7 +479,6 @@ func (r *GoAppRepository) Update(item *models.GoApp, env map[string]string) erro
 			"process_manager": item.ProcessManager,
 			"binary_path":     item.BinaryPath,
 			"entry_point":     item.EntryPoint,
-			"root_path":       item.WorkingDirectory,
 			"host":            item.Host,
 			"port":            item.Port,
 			"start_args":      item.StartArgs,
@@ -486,7 +494,13 @@ func (r *GoAppRepository) Update(item *models.GoApp, env map[string]string) erro
 			"service_name":    item.ServiceName,
 			"proxy_target":    item.ProxyTarget,
 			"enabled":         item.Enabled,
-		}).Error; err != nil {
+		}
+		if strings.TrimSpace(item.AppWorkingDirectory) != "" {
+			updates["app_working_directory"] = item.WorkingDirectory
+		} else {
+			updates["root_path"] = item.WorkingDirectory
+		}
+		if err := tx.Model(&models.GoApp{}).Where("id = ? AND app_runtime <> ''", item.ID).Updates(updates).Error; err != nil {
 			return err
 		}
 		if err := tx.Where("go_app_id = ?", item.ID).Delete(&models.AppEnvVar{}).Error; err != nil {
@@ -518,26 +532,27 @@ func (r *GoAppRepository) ClearRuntime(id uint) error {
 			return err
 		}
 		return tx.Model(&models.GoApp{}).Where("id = ?", id).Updates(map[string]any{
-			"app_runtime":     "",
-			"type":            "static",
-			"execution_mode":  "",
-			"process_manager": "",
-			"binary_path":     "",
-			"entry_point":     "",
-			"host":            "",
-			"port":            0,
-			"start_args":      "",
-			"health_path":     "",
-			"restart_policy":  "",
-			"workers":         0,
-			"worker_class":    "",
-			"max_memory":      "",
-			"timeout":         0,
-			"exec_mode":       "",
-			"stdout_log_path": "",
-			"stderr_log_path": "",
-			"service_name":    "",
-			"proxy_target":    "",
+			"app_runtime":           "",
+			"type":                  "static",
+			"execution_mode":        "",
+			"process_manager":       "",
+			"binary_path":           "",
+			"entry_point":           "",
+			"app_working_directory": "",
+			"host":                  "",
+			"port":                  0,
+			"start_args":            "",
+			"health_path":           "",
+			"restart_policy":        "",
+			"workers":               0,
+			"worker_class":          "",
+			"max_memory":            "",
+			"timeout":               0,
+			"exec_mode":             "",
+			"stdout_log_path":       "",
+			"stderr_log_path":       "",
+			"service_name":          "",
+			"proxy_target":          "",
 		}).Error
 	})
 }

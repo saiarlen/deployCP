@@ -1764,9 +1764,10 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
           <span class="text-xs opacity-50 mt-1" id="ca-binary-hint">Absolute path to the compiled binary or command</span>
         </label>
 
-        <label class="block text-sm font-medium ca-field ca-interpreted" style="display:none" id="ca-entry-label">Entry Point
+        <label class="block text-sm font-medium ca-field ca-interpreted" style="display:none" id="ca-entry-label">
+          <span id="ca-entry-title">Entry Point</span>
           <input class="field mt-2" type="text" name="entry_point" placeholder="app.py / index.js">
-          <span class="text-xs opacity-50 mt-1">Main script file to execute</span>
+          <span class="text-xs opacity-50 mt-1" id="ca-entry-hint">Main script file to execute</span>
         </label>
 
         <label class="block text-sm font-medium">Working Directory
@@ -4613,6 +4614,12 @@ $(function () {
       var rt = $('#ca-runtime').val();
       var pm = $('#ca-pm').val() || 'systemd';
       var title, placeholder, hint;
+      var hideBinary = rt === 'node' && pm === 'pm2';
+      $('#ca-binary-label').toggle(!hideBinary);
+      $('#ca-binary-input').prop('disabled', hideBinary);
+      if (hideBinary) {
+        $('#ca-binary-input').val('');
+      }
       if (rt === 'go') {
         title = 'Binary Path';
         placeholder = '{{ Item.RootPath }}/app';
@@ -4638,9 +4645,22 @@ $(function () {
       $('#ca-binary-input').attr('placeholder', placeholder);
       $('#ca-binary-hint').text(hint);
       var epInfo = (defaultEntryPoint[rt] || {})[pm] || '';
+      var epTitle = 'Entry Point';
+      var epHint = 'Main script file to execute';
+      if (rt === 'node') {
+        epTitle = 'Entry File';
+        epHint = pm === 'pm2' ? 'File passed to pm2-runtime from the working directory' : 'File passed to the selected Node runtime';
+        if (pm === 'pm2') {
+          epInfo = '.next/standalone/server.js';
+        }
+      } else if (pm === 'gunicorn' || pm === 'uwsgi') {
+        epTitle = 'WSGI Module';
+        epHint = 'Python module target loaded by the process manager';
+      }
+      $('#ca-entry-title').text(epTitle);
+      $('#ca-entry-hint').text(epHint);
       if (epInfo) {
         $('#ca-entry-label input').attr('placeholder', epInfo);
-        $('#ca-entry-label .text-xs').text('Leave blank to default to "' + epInfo + '"');
       }
     }
 	    function toggleCaRuntime() {

@@ -268,6 +268,11 @@ func (u *userManager) SyncSharedAccess(_ context.Context, root, primaryUser, gro
 	return nil
 }
 
+func (u *userManager) DeleteSharedAccess(_ context.Context, groupName string) error {
+	_ = groupName
+	return nil
+}
+
 type nginxManager struct{ runner *system.Runner }
 
 func (n *nginxManager) Validate(ctx context.Context, nginxBinary string) error {

@@ -12,6 +12,10 @@ func platformHomeFromPath(path string) string {
 	if filepath.Base(clean) == "htdocs" {
 		return filepath.Dir(clean)
 	}
+	marker := string(filepath.Separator) + "htdocs" + string(filepath.Separator)
+	if strings.Contains(clean, marker) {
+		return strings.Split(clean, marker)[0]
+	}
 	return clean
 }
 

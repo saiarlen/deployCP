@@ -122,6 +122,9 @@ func (s *AppService) Create(ctx context.Context, in AppInput, actor *uint, ip st
 		WebsiteID:        in.WebsiteID,
 		Enabled:          in.Enabled,
 	}
+	if in.WebsiteID != nil && *in.WebsiteID > 0 {
+		app.AppWorkingDirectory = in.WorkingDirectory
+	}
 	if err := s.repo.Create(app, in.Env); err != nil {
 		return nil, err
 	}

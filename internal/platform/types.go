@@ -52,6 +52,7 @@ type UserManager interface {
 	Delete(ctx context.Context, username string) error
 	ChownRecursive(ctx context.Context, username, path string) error
 	SyncSharedAccess(ctx context.Context, root, primaryUser, groupName string, members []string) error
+	DeleteSharedAccess(ctx context.Context, groupName string) error
 }
 
 type NginxManager interface {

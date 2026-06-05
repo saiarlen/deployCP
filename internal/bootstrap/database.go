@@ -87,6 +87,9 @@ func migrate(cfg *config.Config, db *gorm.DB) error {
 	if err := reconcileSecretColumns(cfg, db); err != nil {
 		return err
 	}
+	if err := repairLinkedRuntimeWorkingDirectories(db); err != nil {
+		return err
+	}
 	return mergeLegacyAppsIntoPlatforms(db)
 }
 
@@ -152,6 +155,7 @@ func reconcilePlatformColumns(db *gorm.DB) error {
 		"RootPath",
 		"Type",
 		"AppRuntime",
+		"AppWorkingDirectory",
 		"ShellRuntime",
 		"ShellRuntimeVersion",
 		"ExecutionMode",
@@ -187,6 +191,40 @@ func reconcilePlatformColumns(db *gorm.DB) error {
 		}
 		if err := migrator.AddColumn(&models.Website{}, field); err != nil {
 			return fmt.Errorf("add platforms column %s: %w", field, err)
+		}
+	}
+	return nil
+}
+
+func repairLinkedRuntimeWorkingDirectories(db *gorm.DB) error {
+	type row struct {
+		ID                  uint
+		RootPath            string
+		AppRuntime          string
+		AppWorkingDirectory string
+	}
+	var rows []row
+	if err := db.Table((&models.Website{}).TableName()).
+		Select("id", "root_path", "app_runtime", "app_working_directory").
+		Where("app_runtime <> '' AND (app_working_directory = '' OR app_working_directory IS NULL)").
+		Find(&rows).Error; err != nil {
+		return fmt.Errorf("load linked runtime workdirs: %w", err)
+	}
+	for _, item := range rows {
+		rootPath := filepath.Clean(strings.TrimSpace(item.RootPath))
+		marker := string(filepath.Separator) + "htdocs" + string(filepath.Separator)
+		if !strings.Contains(rootPath, marker) {
+			continue
+		}
+		platformHome := strings.Split(rootPath, marker)[0]
+		publicRoot := filepath.Join(platformHome, "htdocs")
+		if err := db.Table((&models.Website{}).TableName()).
+			Where("id = ?", item.ID).
+			Updates(map[string]any{
+				"root_path":             publicRoot,
+				"app_working_directory": rootPath,
+			}).Error; err != nil {
+			return fmt.Errorf("repair linked runtime workdir for platform %d: %w", item.ID, err)
 		}
 	}
 	return nil
@@ -341,32 +379,32 @@ func mergeLegacyAppsIntoPlatforms(db *gorm.DB) error {
 				if err := tx.Where("id = ?", *row.WebsiteID).First(&existing).Error; err == nil {
 					targetID = *row.WebsiteID
 					updates := map[string]any{
-						"name":              row.Name,
-						"type":              "proxy",
-						"app_runtime":       row.Runtime,
-						"execution_mode":    row.ExecutionMode,
-						"process_manager":   row.ProcessManager,
-						"binary_path":       row.BinaryPath,
-						"entry_point":       row.EntryPoint,
-						"root_path":         rootPath,
-						"host":              host,
-						"port":              port,
-						"start_args":        row.StartArgs,
-						"health_path":       row.HealthPath,
-						"restart_policy":    row.RestartPolicy,
-						"workers":           row.Workers,
-						"worker_class":      row.WorkerClass,
-						"max_memory":        row.MaxMemory,
-						"timeout":           row.Timeout,
-						"exec_mode":         row.ExecMode,
-						"stdout_log_path":   row.StdoutLogPath,
-						"stderr_log_path":   row.StderrLogPath,
-						"service_name":      row.ServiceName,
-						"proxy_target":      proxyTarget,
-						"enabled":           row.Enabled,
-						"access_log_path":   existing.AccessLogPath,
-						"error_log_path":    existing.ErrorLogPath,
-						"custom_directives": existing.CustomDirectives,
+						"name":                  row.Name,
+						"type":                  "proxy",
+						"app_runtime":           row.Runtime,
+						"execution_mode":        row.ExecutionMode,
+						"process_manager":       row.ProcessManager,
+						"binary_path":           row.BinaryPath,
+						"entry_point":           row.EntryPoint,
+						"app_working_directory": rootPath,
+						"host":                  host,
+						"port":                  port,
+						"start_args":            row.StartArgs,
+						"health_path":           row.HealthPath,
+						"restart_policy":        row.RestartPolicy,
+						"workers":               row.Workers,
+						"worker_class":          row.WorkerClass,
+						"max_memory":            row.MaxMemory,
+						"timeout":               row.Timeout,
+						"exec_mode":             row.ExecMode,
+						"stdout_log_path":       row.StdoutLogPath,
+						"stderr_log_path":       row.StderrLogPath,
+						"service_name":          row.ServiceName,
+						"proxy_target":          proxyTarget,
+						"enabled":               row.Enabled,
+						"access_log_path":       existing.AccessLogPath,
+						"error_log_path":        existing.ErrorLogPath,
+						"custom_directives":     existing.CustomDirectives,
 					}
 					if err := tx.Model(&models.Website{}).Where("id = ?", targetID).Updates(updates).Error; err != nil {
 						return fmt.Errorf("merge app %d into platform %d: %w", row.ID, targetID, err)

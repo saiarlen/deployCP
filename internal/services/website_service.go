@@ -379,6 +379,11 @@ func (s *WebsiteService) Delete(ctx context.Context, id uint, actor *uint, ip st
 	if err := s.deleteWebsiteLegacyData(site, actor, ip); err != nil {
 		return err
 	}
+	if s.adapter != nil {
+		if err := s.adapter.Users().DeleteSharedAccess(ctx, websiteSharedGroup(site.ID)); err != nil {
+			return err
+		}
+	}
 	if s.cron != nil {
 		if err := s.cron.DeleteWebsiteJobs(ctx, site.ID, actor, ip); err != nil {
 			return err
@@ -407,6 +412,12 @@ func (s *WebsiteService) Delete(ctx context.Context, id uint, actor *uint, ip st
 	if strings.TrimSpace(site.RootPath) != "" {
 		platformHome := platformHomeFromWebRoot(site.RootPath)
 		if err := removeTreeSafe(platformHome, s.cfg.Paths.DefaultSiteRoot, s.cfg.Paths.StorageRoot); err != nil {
+			return err
+		}
+	}
+	if strings.TrimSpace(s.cfg.Paths.BackupRoot) != "" {
+		backupDir := filepath.Join(s.cfg.Paths.BackupRoot, sanitizeName(site.Name))
+		if err := removeTreeSafe(backupDir, s.cfg.Paths.BackupRoot, s.cfg.Paths.StorageRoot); err != nil && !os.IsNotExist(err) {
 			return err
 		}
 	}
@@ -1722,30 +1733,35 @@ func runtimeFromWebsite(site *models.Website) *models.GoApp {
 		return nil
 	}
 	wid := site.ID
+	workingDirectory := strings.TrimSpace(site.AppWorkingDirectory)
+	if workingDirectory == "" {
+		workingDirectory = site.RootPath
+	}
 	return &models.GoApp{
-		ID:               site.ID,
-		Name:             site.Name,
-		Runtime:          site.AppRuntime,
-		ExecutionMode:    site.ExecutionMode,
-		ProcessManager:   site.ProcessManager,
-		BinaryPath:       site.BinaryPath,
-		EntryPoint:       site.EntryPoint,
-		WorkingDirectory: site.RootPath,
-		Host:             site.Host,
-		Port:             site.Port,
-		StartArgs:        site.StartArgs,
-		HealthPath:       site.HealthPath,
-		RestartPolicy:    site.RestartPolicy,
-		Workers:          site.Workers,
-		WorkerClass:      site.WorkerClass,
-		MaxMemory:        site.MaxMemory,
-		Timeout:          site.Timeout,
-		ExecMode:         site.ExecMode,
-		StdoutLogPath:    site.StdoutLogPath,
-		StderrLogPath:    site.StderrLogPath,
-		ServiceName:      site.ServiceName,
-		WebsiteID:        &wid,
-		Enabled:          site.Enabled,
+		ID:                  site.ID,
+		Name:                site.Name,
+		Runtime:             site.AppRuntime,
+		ExecutionMode:       site.ExecutionMode,
+		ProcessManager:      site.ProcessManager,
+		BinaryPath:          site.BinaryPath,
+		EntryPoint:          site.EntryPoint,
+		WorkingDirectory:    workingDirectory,
+		AppWorkingDirectory: site.AppWorkingDirectory,
+		Host:                site.Host,
+		Port:                site.Port,
+		StartArgs:           site.StartArgs,
+		HealthPath:          site.HealthPath,
+		RestartPolicy:       site.RestartPolicy,
+		Workers:             site.Workers,
+		WorkerClass:         site.WorkerClass,
+		MaxMemory:           site.MaxMemory,
+		Timeout:             site.Timeout,
+		ExecMode:            site.ExecMode,
+		StdoutLogPath:       site.StdoutLogPath,
+		StderrLogPath:       site.StderrLogPath,
+		ServiceName:         site.ServiceName,
+		WebsiteID:           &wid,
+		Enabled:             site.Enabled,
 	}
 }
 

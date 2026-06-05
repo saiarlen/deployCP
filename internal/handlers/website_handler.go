@@ -211,7 +211,7 @@ func (h *WebsiteHandler) ShowByID(c *fiber.Ctx, id uint) error {
 	if item.Type == "proxy" {
 		linkedApp = websiteRuntimeApp(item)
 		if linkedApp != nil {
-			linkedAppWorkingDirectory = platformHomeFromRoot(item.RootPath)
+			linkedAppWorkingDirectory = linkedRuntimeWorkingDirectoryDisplay(item, linkedApp.WorkingDirectory)
 			linkedAppStatus, _ = h.appService.Status(c.Context(), linkedApp.ID)
 			if linkedAppStatus != nil && linkedAppStatus.App != nil {
 				linkedRuntimeVersion = envVarValue(linkedAppStatus.App.EnvVars, "RUNTIME_VERSION")
@@ -1620,30 +1620,35 @@ func websiteRuntimeApp(item *models.Website) *models.GoApp {
 		return nil
 	}
 	wid := item.ID
+	workingDirectory := strings.TrimSpace(item.AppWorkingDirectory)
+	if workingDirectory == "" {
+		workingDirectory = item.RootPath
+	}
 	return &models.GoApp{
-		ID:               item.ID,
-		Name:             item.Name,
-		Runtime:          item.AppRuntime,
-		ExecutionMode:    item.ExecutionMode,
-		ProcessManager:   item.ProcessManager,
-		BinaryPath:       item.BinaryPath,
-		EntryPoint:       item.EntryPoint,
-		WorkingDirectory: item.RootPath,
-		Host:             item.Host,
-		Port:             item.Port,
-		StartArgs:        item.StartArgs,
-		HealthPath:       item.HealthPath,
-		RestartPolicy:    item.RestartPolicy,
-		Workers:          item.Workers,
-		WorkerClass:      item.WorkerClass,
-		MaxMemory:        item.MaxMemory,
-		Timeout:          item.Timeout,
-		ExecMode:         item.ExecMode,
-		StdoutLogPath:    item.StdoutLogPath,
-		StderrLogPath:    item.StderrLogPath,
-		ServiceName:      item.ServiceName,
-		WebsiteID:        &wid,
-		Enabled:          item.Enabled,
+		ID:                  item.ID,
+		Name:                item.Name,
+		Runtime:             item.AppRuntime,
+		ExecutionMode:       item.ExecutionMode,
+		ProcessManager:      item.ProcessManager,
+		BinaryPath:          item.BinaryPath,
+		EntryPoint:          item.EntryPoint,
+		WorkingDirectory:    workingDirectory,
+		AppWorkingDirectory: item.AppWorkingDirectory,
+		Host:                item.Host,
+		Port:                item.Port,
+		StartArgs:           item.StartArgs,
+		HealthPath:          item.HealthPath,
+		RestartPolicy:       item.RestartPolicy,
+		Workers:             item.Workers,
+		WorkerClass:         item.WorkerClass,
+		MaxMemory:           item.MaxMemory,
+		Timeout:             item.Timeout,
+		ExecMode:            item.ExecMode,
+		StdoutLogPath:       item.StdoutLogPath,
+		StderrLogPath:       item.StderrLogPath,
+		ServiceName:         item.ServiceName,
+		WebsiteID:           &wid,
+		Enabled:             item.Enabled,
 	}
 }
 
@@ -1793,6 +1798,35 @@ func platformHomeFromRoot(webRoot string) string {
 		return strings.Split(clean, string(filepath.Separator)+"htdocs"+string(filepath.Separator))[0]
 	}
 	return clean
+}
+
+func normalizeLinkedRuntimeWorkingDirectory(site *models.Website, workdir string) string {
+	clean := filepath.Clean(strings.TrimSpace(workdir))
+	if clean == "." {
+		clean = ""
+	}
+	if site == nil {
+		return clean
+	}
+	root := filepath.Clean(strings.TrimSpace(site.RootPath))
+	if clean == "" {
+		return root
+	}
+	if clean == filepath.Clean(platformHomeFromRoot(root)) {
+		return root
+	}
+	return clean
+}
+
+func linkedRuntimeWorkingDirectoryDisplay(site *models.Website, workdir string) string {
+	clean := filepath.Clean(strings.TrimSpace(workdir))
+	if clean != "." && clean != "" {
+		return clean
+	}
+	if site == nil {
+		return ""
+	}
+	return filepath.Clean(strings.TrimSpace(site.RootPath))
 }
 
 func rootPathSuffix(webRoot string) string {
@@ -2021,6 +2055,7 @@ func (h *WebsiteHandler) ManageCreateLinkedApp(c *fiber.Ctx) error {
 	if workdir == "" {
 		workdir = site.RootPath
 	}
+	workdir = normalizeLinkedRuntimeWorkingDirectory(site, workdir)
 
 	port := 0
 	if site.ProxyTarget != "" {

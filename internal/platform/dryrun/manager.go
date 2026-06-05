@@ -194,6 +194,11 @@ func (u *userManager) SyncSharedAccess(_ context.Context, root, primaryUser, gro
 	return nil
 }
 
+func (u *userManager) DeleteSharedAccess(_ context.Context, groupName string) error {
+	drylog("user", "delete shared access group=%s", groupName)
+	return nil
+}
+
 // nginxManager simulates nginx validate and reload.
 type nginxManager struct {
 	cfg *config.Config

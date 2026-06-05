@@ -42,6 +42,7 @@ type Website struct {
 	RootPath             string `gorm:"size:255;not null"`
 	Type                 string `gorm:"size:30;not null;default:static"` // static|php|proxy
 	AppRuntime           string `gorm:"size:30"`                         // go|python|node|binary (only for proxy sites)
+	AppWorkingDirectory  string `gorm:"size:255"`                        // runtime service working directory for linked app platforms
 	ShellRuntime         string `gorm:"size:30"`                         // go|python|node|php for SSH/runtime PATH only
 	ShellRuntimeVersion  string `gorm:"size:32"`
 	ExecutionMode        string `gorm:"size:16;index"` // compiled|interpreted
@@ -108,35 +109,36 @@ type SiteUser struct {
 }
 
 type GoApp struct {
-	ID               uint   `gorm:"primaryKey"`
-	Name             string `gorm:"size:120;index;not null"`
-	Runtime          string `gorm:"column:app_runtime;size:32;index"` // go|node|python|php|binary
-	ExecutionMode    string `gorm:"size:16;index"`                    // compiled|interpreted
-	ProcessManager   string `gorm:"size:24;index"`                    // systemd|pm2|gunicorn|uwsgi
-	BinaryPath       string `gorm:"size:255"`
-	EntryPoint       string `gorm:"size:255"` // required for interpreted runtimes
-	WorkingDirectory string `gorm:"column:root_path;size:255;not null"`
-	Type             string `gorm:"size:30;not null;default:proxy"`
-	ProxyTarget      string `gorm:"size:255"`
-	Host             string `gorm:"size:64"`
-	Port             int
-	StartArgs        string `gorm:"type:text"`
-	HealthPath       string `gorm:"size:255"`
-	RestartPolicy    string `gorm:"size:32"`
-	Workers          int
-	WorkerClass      string `gorm:"size:32"`
-	MaxMemory        string `gorm:"size:16"`
-	Timeout          int
-	ExecMode         string `gorm:"size:16"`
-	StdoutLogPath    string `gorm:"size:255"`
-	StderrLogPath    string `gorm:"size:255"`
-	ServiceName      string `gorm:"size:180;index"`
-	WebsiteID        *uint  `gorm:"-"`
-	Enabled          bool   `gorm:"not null;default:true"`
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
-	EnvVars          []AppEnvVar
-	Website          *Website `gorm:"-"`
+	ID                  uint   `gorm:"primaryKey"`
+	Name                string `gorm:"size:120;index;not null"`
+	Runtime             string `gorm:"column:app_runtime;size:32;index"` // go|node|python|php|binary
+	ExecutionMode       string `gorm:"size:16;index"`                    // compiled|interpreted
+	ProcessManager      string `gorm:"size:24;index"`                    // systemd|pm2|gunicorn|uwsgi
+	BinaryPath          string `gorm:"size:255"`
+	EntryPoint          string `gorm:"size:255"` // required for interpreted runtimes
+	WorkingDirectory    string `gorm:"column:root_path;size:255;not null"`
+	AppWorkingDirectory string `gorm:"column:app_working_directory;size:255"`
+	Type                string `gorm:"size:30;not null;default:proxy"`
+	ProxyTarget         string `gorm:"size:255"`
+	Host                string `gorm:"size:64"`
+	Port                int
+	StartArgs           string `gorm:"type:text"`
+	HealthPath          string `gorm:"size:255"`
+	RestartPolicy       string `gorm:"size:32"`
+	Workers             int
+	WorkerClass         string `gorm:"size:32"`
+	MaxMemory           string `gorm:"size:16"`
+	Timeout             int
+	ExecMode            string `gorm:"size:16"`
+	StdoutLogPath       string `gorm:"size:255"`
+	StderrLogPath       string `gorm:"size:255"`
+	ServiceName         string `gorm:"size:180;index"`
+	WebsiteID           *uint  `gorm:"-"`
+	Enabled             bool   `gorm:"not null;default:true"`
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+	EnvVars             []AppEnvVar
+	Website             *Website `gorm:"-"`
 }
 
 func (GoApp) TableName() string {
