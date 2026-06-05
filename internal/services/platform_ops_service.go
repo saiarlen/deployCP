@@ -162,7 +162,7 @@ func (s *PlatformOpsService) SaveDeployConfig(ctx context.Context, websiteID uin
 		RepoURL:            in.RepoURL,
 		Branch:             in.Branch,
 		WorkDir:            workDir,
-		DeployCommand:      strings.TrimSpace(in.DeployCommand),
+		DeployCommand:      normalizeDeployCommand(in.DeployCommand),
 		RestartAfterDeploy: in.RestartAfterDeploy,
 	}
 	if existing, err := s.repos.DeployConfigs.FindByWebsite(site.ID); err == nil && existing != nil {
@@ -1100,6 +1100,10 @@ func (s *PlatformOpsService) runDeployCommand(ctx context.Context, command, work
 	if runtime.GOOS == "windows" {
 		return fmt.Errorf("deploy command execution is not supported on windows")
 	}
+	command = normalizeDeployCommand(command)
+	if command == "" {
+		return nil
+	}
 	cmd := exec.CommandContext(ctx, "/bin/bash", "-lc", command)
 	cmd.Dir = workDir
 	out, err := cmd.CombinedOutput()
@@ -1109,6 +1113,12 @@ func (s *PlatformOpsService) runDeployCommand(ctx context.Context, command, work
 		return fmt.Errorf("deploy command failed: %w", err)
 	}
 	return nil
+}
+
+func normalizeDeployCommand(command string) string {
+	command = strings.ReplaceAll(command, "\r\n", "\n")
+	command = strings.ReplaceAll(command, "\r", "\n")
+	return strings.TrimSpace(command)
 }
 
 func (s *PlatformOpsService) sslExpiry(site *models.Website) (*models.SSLCertificate, int) {
