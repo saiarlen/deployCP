@@ -67,6 +67,7 @@ After install, open `http://your-server-ip:2024` to create your admin account an
 | **Varnish** | Per-site VCL fragments, aggregate include, validate, reload |
 | **Logs** | Real filesystem log paths surfaced in the panel |
 | **Operations** | Per-platform health history, Git deploy hooks, deploy keys, backups/restores, alert events, and repair |
+| **Port Info** | Admin-only managed runtime port availability plus per-service CPU, RAM, disk, and working-directory visibility |
 | **Host Hardening** | Automatic firewall bootstrap, fail2ban, logrotate, backup cron, SSH-safe install flow |
 
 Runtime behavior on live Linux:
@@ -89,6 +90,9 @@ Runtime behavior on live Linux:
 - deleting a linked runtime stops/disables/removes the service and unit, removes scoped sudoers and app logs, removes DeployCP-managed Python/Node runtime metadata, clears proxy/runtime fields, and refreshes nginx back to static `htdocs` serving
 - platform/user/FTP/database create flows roll back external resources when the panel database step fails, so failed creates should not leave orphan Linux users, FTP users, managed DB users, or partial platform rows
 - Runtime Setup checks both DeployCP-managed port conflicts and live local port availability before saving
+- Settings includes an admin-only Port Info tab for managed platform runtime ports only; it does not enumerate unrelated system ports such as nginx, SSH, database, or mail listeners
+- Port Info checks a requested port against DeployCP-managed runtime assignments and live loopback bind availability before reporting it available
+- Port Info service usage is read-only: CPU is averaged since service start, RAM comes from the service process tree, and disk usage is the runtime working directory size
 - PHP websites use real host `php-fpm`; Settings runtime add/remove owns PHP-FPM package installation/removal for managed PHP versions
 - PHP runtime install is package-managed only: it installs/repairs PHP-FPM and PHP CLI packages, verifies FPM is active, and registers a CLI wrapper without compiling PHP from source
 - first install registers the bootstrap PHP runtime as a package-managed DeployCP runtime, not as a protected host import
@@ -314,6 +318,7 @@ HTTP Request
 | `internal/system/command_runner.go` | Safe command execution abstraction |
 | `internal/system/nginx/generator.go` | Nginx config generation |
 | `internal/services/platform_ops_service.go` | Per-platform health, deploy, backup/restore, alerts, repair |
+| `internal/services/port_info_service.go` | Admin-only Settings Port Info data: managed runtime ports, port availability, and service usage |
 | `internal/services/` | All business logic and provisioning |
 | `frontend/templates/` | Jet HTML templates |
 

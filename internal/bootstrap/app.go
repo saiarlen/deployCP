@@ -169,6 +169,7 @@ func Build() (*Application, error) {
 	reconcileService := services.NewReconcileService(repos, websiteService, appService, firewallService, cronService, ftpService, varnishService, databaseService)
 	hostLifecycleService := services.NewHostLifecycleService(cfg, repos, platformAdapter, websiteService, appService, siteUserService, databaseService, firewallService, ftpService, sslService)
 	platformOpsService := services.NewPlatformOpsService(cfg, repos, platformAdapter, websiteService, appService, auditService)
+	portInfoService := services.NewPortInfoService(cfg, repos.GoApps, platformAdapter)
 
 	engine := views.NewEngine(cfg)
 
@@ -344,7 +345,7 @@ func Build() (*Application, error) {
 		WebsiteHandler:   handlers.NewWebsiteHandler(cfg, sessionManager, websiteService, repos.SiteUsers, siteUserService, databaseService, sslService, repos.Databases, repos.SSL, settingsService, repos.NginxSites, repos.CronJobs, repos.Varnish, repos.IPBlocks, repos.BotBlocks, repos.BasicAuths, repos.CloudflareConfigs, repos.FTPUsers, appService, cronService, ftpService, varnishService, platformAdapter, platformOpsService),
 		AppHandler:       handlers.NewAppHandler(cfg, sessionManager, appService, websiteService, settingsService, siteUserService, repos.SiteUsers, databaseService, sslService, repos.Databases, repos.FTPUsers, ftpService, platformOpsService),
 		ServiceHandler:   handlers.NewServiceHandler(cfg, sessionManager, serviceService),
-		SettingsHandler:  handlers.NewSettingsHandler(cfg, sessionManager, settingsService, serviceService, panelUserService, repos.Audit, repos.Firewalls, repos.UserPlatformAccess, websiteService, appService, auditService, firewallService, runtimeService, ftpService, updateService, panelDomainService),
+		SettingsHandler:  handlers.NewSettingsHandler(cfg, sessionManager, settingsService, serviceService, panelUserService, repos.Audit, repos.Firewalls, repos.UserPlatformAccess, websiteService, appService, auditService, firewallService, runtimeService, ftpService, updateService, panelDomainService, portInfoService),
 		UpdateHandler:    handlers.NewUpdateHandler(cfg, sessionManager, updateService),
 		ElfinderHandler:  handlers.NewElfinderHandler(cfg, sessionManager, websiteService, platformAdapter, runner),
 	}

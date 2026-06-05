@@ -71,6 +71,7 @@ type SettingsHandler struct {
 	ftpService         *services.FTPService
 	updateService      *services.UpdateService
 	panelDomainService *services.PanelDomainService
+	portInfoService    *services.PortInfoService
 }
 
 type runtimeSummary struct {
@@ -101,6 +102,7 @@ func NewSettingsHandler(
 	ftpService *services.FTPService,
 	updateService *services.UpdateService,
 	panelDomainService *services.PanelDomainService,
+	portInfoService *services.PortInfoService,
 ) *SettingsHandler {
 	return &SettingsHandler{
 		base:               &BaseHandler{Config: cfg, Sessions: sessions},
@@ -118,6 +120,7 @@ func NewSettingsHandler(
 		ftpService:         ftpService,
 		updateService:      updateService,
 		panelDomainService: panelDomainService,
+		portInfoService:    portInfoService,
 	}
 }
 
@@ -253,7 +256,7 @@ func (h *SettingsHandler) Index(c *fiber.Ctx) error {
 
 	activeTab := strings.TrimSpace(strings.ToLower(c.Query("tab")))
 	switch activeTab {
-	case "general", "security", "users", "events", "services", "firewall":
+	case "general", "security", "users", "events", "services", "ports", "firewall":
 	default:
 		activeTab = "general"
 	}
@@ -293,6 +296,10 @@ func (h *SettingsHandler) Index(c *fiber.Ctx) error {
 	nodeEntries = ensureDefaultRuntimeEntry(nodeEntries, nodeDefault)
 	pythonEntries = ensureDefaultRuntimeEntry(pythonEntries, pythonDefault)
 	phpEntries = ensureDefaultRuntimeEntry(phpEntries, phpDefault)
+	portInfo := services.PortInfoView{}
+	if activeTab == "ports" && h.portInfoService != nil {
+		portInfo = h.portInfoService.View(c.Context(), c.Query("port"))
+	}
 
 	return h.base.Render(c, "settings_index", fiber.Map{
 		"Title":                     "Settings",
@@ -353,6 +360,7 @@ func (h *SettingsHandler) Index(c *fiber.Ctx) error {
 		"NodeRuntimeSummary":        buildRuntimeSummary("node", nodeEntries, nodeChoices, nodeDefault),
 		"PythonRuntimeSummary":      buildRuntimeSummary("python", pythonEntries, pythonChoices, pythonDefault),
 		"PHPRuntimeSummary":         buildRuntimeSummary("php", phpEntries, phpChoices, phpDefault),
+		"PortInfo":                  portInfo,
 		"ActiveTab":                 activeTab,
 		"UpdateView":                updateView,
 	})
