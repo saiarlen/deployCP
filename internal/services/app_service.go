@@ -324,16 +324,19 @@ func (s *AppService) Status(ctx context.Context, id uint) (*AppStatus, error) {
 		return nil, err
 	}
 	status, _ := s.adapter.Services().Status(ctx, app.ServiceName)
-	healthURL := fmt.Sprintf("http://%s:%d%s", app.Host, app.Port, app.HealthPath)
-	healthOK := false
+	healthOK := status.Active
 	healthErr := ""
-	client := &http.Client{Timeout: 2 * time.Second}
-	resp, err := client.Get(healthURL)
-	if err != nil {
-		healthErr = err.Error()
-	} else {
-		healthOK = resp.StatusCode >= 200 && resp.StatusCode < 400
-		_ = resp.Body.Close()
+	if strings.TrimSpace(app.HealthPath) != "" {
+		healthURL := fmt.Sprintf("http://%s:%d%s", app.Host, app.Port, normalizedHealthPath(app.HealthPath))
+		healthOK = false
+		client := &http.Client{Timeout: 2 * time.Second}
+		resp, err := client.Get(healthURL)
+		if err != nil {
+			healthErr = err.Error()
+		} else {
+			healthOK = resp.StatusCode >= 200 && resp.StatusCode < 400
+			_ = resp.Body.Close()
+		}
 	}
 	return &AppStatus{App: app, Service: status, HealthOK: healthOK, HealthError: healthErr}, nil
 }
@@ -470,7 +473,7 @@ func (s *AppService) Logs(id uint, lines int) (string, string, error) {
 	return stdout, stderr, nil
 }
 
-func (s *AppService) UpdateRuntimeSettings(ctx context.Context, id uint, processManager string, workers int, workerClass, maxMemory string, timeout int, execMode, restartPolicy string, port int, runtimeVersion, applyAction string, actor *uint, ip string) error {
+func (s *AppService) UpdateRuntimeSettings(ctx context.Context, id uint, processManager string, workers int, workerClass, maxMemory string, timeout int, execMode, restartPolicy, healthPath string, port int, runtimeVersion, applyAction string, actor *uint, ip string) error {
 	app, err := s.repo.Find(id)
 	if err != nil {
 		return err
@@ -502,6 +505,7 @@ func (s *AppService) UpdateRuntimeSettings(ctx context.Context, id uint, process
 	if restartPolicy != "" {
 		app.RestartPolicy = restartPolicy
 	}
+	app.HealthPath = normalizeOptionalHealthPath(healthPath)
 	envMap := make(map[string]string)
 	for _, ev := range app.EnvVars {
 		envMap[ev.Key] = ev.Value
@@ -1163,9 +1167,6 @@ func (s *AppService) validate(in AppInput) error {
 	if in.Port < 1 || in.Port > 65535 {
 		return fmt.Errorf("invalid port")
 	}
-	if in.HealthPath == "" {
-		in.HealthPath = "/health"
-	}
 	if in.RestartPolicy == "" {
 		in.RestartPolicy = "on-failure"
 	}
@@ -1539,12 +1540,24 @@ func normalizeAppInput(in AppInput) AppInput {
 	}
 	in.ProcessManager = normalizeProcessManager(in.ProcessManager)
 	in.EntryPoint = normalizePythonProcessManagerEntryPoint(in.Runtime, in.ProcessManager, in.EntryPoint)
+	in.HealthPath = normalizeOptionalHealthPath(in.HealthPath)
 	if maxMemory, err := normalizeAppMaxMemory(in.MaxMemory); err == nil {
 		in.MaxMemory = maxMemory
 	} else {
 		in.MaxMemory = strings.TrimSpace(in.MaxMemory)
 	}
 	return in
+}
+
+func normalizeOptionalHealthPath(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return ""
+	}
+	if !strings.HasPrefix(path, "/") {
+		return "/" + path
+	}
+	return path
 }
 
 func normalizeAppMaxMemory(value string) (string, error) {

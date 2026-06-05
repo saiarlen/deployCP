@@ -1412,7 +1412,7 @@ func (h *WebsiteHandler) ManageUpdatePlatformRuntime(c *fiber.Ctx) error {
 		}
 	}
 	if linkedApp != nil {
-		if err := h.appService.UpdateRuntimeSettings(c.Context(), linkedApp.ID, linkedApp.ProcessManager, linkedApp.Workers, linkedApp.WorkerClass, linkedApp.MaxMemory, linkedApp.Timeout, linkedApp.ExecMode, linkedApp.RestartPolicy, linkedApp.Port, version, "reconfigure", currentUserID(c), c.IP()); err != nil {
+		if err := h.appService.UpdateRuntimeSettings(c.Context(), linkedApp.ID, linkedApp.ProcessManager, linkedApp.Workers, linkedApp.WorkerClass, linkedApp.MaxMemory, linkedApp.Timeout, linkedApp.ExecMode, linkedApp.RestartPolicy, linkedApp.HealthPath, linkedApp.Port, version, "reconfigure", currentUserID(c), c.IP()); err != nil {
 			h.base.Sessions.SetFlash(c, err.Error())
 			return c.Redirect(platformURLWithTab("website", id, "settings"))
 		}
@@ -2140,7 +2140,7 @@ func (h *WebsiteHandler) ManageCreateLinkedApp(c *fiber.Ctx) error {
 		Host:             "127.0.0.1",
 		Port:             port,
 		StartArgs:        startArgs,
-		HealthPath:       "/health",
+		HealthPath:       strings.TrimSpace(c.FormValue("health_path")),
 		RestartPolicy:    strings.TrimSpace(c.FormValue("restart_policy")),
 		Workers:          workers,
 		WorkerClass:      strings.TrimSpace(c.FormValue("worker_class")),

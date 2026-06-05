@@ -226,6 +226,11 @@
           <span class="text-xs opacity-50 mt-1">Updates bind/proxy port and reloads runtime config.</span>
         </label>
 
+        <label class="block text-sm font-medium">Health Path
+          <input class="field mt-2" type="text" name="health_path" value="{{ Status.App.HealthPath }}" placeholder="Optional, e.g. /health">
+          <span class="text-xs opacity-50 mt-1">Leave blank when the app has no dedicated health endpoint.</span>
+        </label>
+
         <label class="block text-sm font-medium">Runtime Version
           {{ if Status.App.Runtime == "node" }}
           <select class="field mt-2" name="runtime_version">
@@ -846,61 +851,67 @@
 
   {{ if IsAdmin }}
   <div class="surface p-5 mb-5">
-    <h3 class="text-sm font-semibold mb-4">Git Deploy</h3>
-    <div class="mb-4 rounded-md border border-[var(--border)] p-3 text-sm text-[var(--text-muted)]">
-      Use an SSH repository URL like <span class="font-mono text-xs">git@github.com:org/repo.git</span> when using deploy keys. HTTPS URLs need GitHub credentials or a token and will not use the generated deploy key. First deploy clones into the Work Directory only when it is empty.
+    <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <h3 class="text-sm font-semibold">Git Deploy</h3>
+        <p class="mt-1 text-sm opacity-70">SSH repo URLs use the deploy key. Save & Deploy always saves current values first.</p>
+      </div>
+      {{ if Ops.DeployConfig }}{{ if Ops.DeployConfig.LastDeployAt }}
+      <div class="flex items-center gap-2 text-xs opacity-70">
+        <span class="badge {{ if Ops.DeployConfig.LastDeployStatus == "success" }}badge-ok{{ else }}badge-danger{{ end }}">{{ Ops.DeployConfig.LastDeployStatus }}</span>
+        <span>{{ formatTimePtr(Ops.DeployConfig.LastDeployAt) }}</span>
+      </div>
+      {{ end }}{{ end }}
     </div>
     <form action="{{ OpsActionBase }}/deploy-config" method="post" class="space-y-4" data-runtime-loading>
       <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
-      <div class="grid gap-4 md:grid-cols-2">
+      <div class="grid gap-4 md:grid-cols-[minmax(0,1fr)_140px]">
         <label class="block text-sm font-medium">Repository URL
           <input class="field mt-2" name="repo_url" value="{{ if Ops.DeployConfig }}{{ Ops.DeployConfig.RepoURL }}{{ end }}" placeholder="git@github.com:org/repo.git">
         </label>
         <label class="block text-sm font-medium">Branch
           <input class="field mt-2" name="branch" value="{{ if Ops.DeployConfig }}{{ Ops.DeployConfig.Branch }}{{ else }}main{{ end }}">
         </label>
-        <label class="block text-sm font-medium md:col-span-2">Work Directory
-          <input class="field mt-2 font-mono text-xs" name="work_dir" value="{{ if Ops.DeployConfig }}{{ Ops.DeployConfig.WorkDir }}{{ else }}{{ AppWorkingDir }}{{ end }}">
-        </label>
       </div>
+      <label class="block text-sm font-medium">Work Directory
+        <input class="field mt-2 font-mono text-xs" name="work_dir" value="{{ if Ops.DeployConfig }}{{ Ops.DeployConfig.WorkDir }}{{ else }}{{ AppWorkingDir }}{{ end }}">
+      </label>
       <label class="block text-sm font-medium">Deploy Command
-        <textarea class="field mt-2 font-mono text-xs" name="deploy_command" rows="3" placeholder="npm ci && npm run build">{{ if Ops.DeployConfig }}{{ Ops.DeployConfig.DeployCommand }}{{ end }}</textarea>
+        <textarea class="field mt-2 font-mono text-xs" name="deploy_command" rows="5" placeholder="npm ci && npm run build">{{ if Ops.DeployConfig }}{{ Ops.DeployConfig.DeployCommand }}{{ end }}</textarea>
       </label>
-      <label class="block text-sm font-medium">Private Deploy Key
-        <textarea class="field mt-2 font-mono text-xs" name="deploy_key_private" rows="4" placeholder="Paste a replacement private key only when rotating it"></textarea>
-        <span class="text-xs opacity-60 mt-1 block">Paste an existing private key, or generate a new deploy key below and add its public key to GitHub.</span>
-      </label>
-      {{ if Ops.DeployConfig }}{{ if Ops.DeployConfig.DeployKeyPublic }}
-      <label class="block text-sm font-medium">Public Deploy Key for GitHub
-        <textarea class="field mt-2 font-mono text-xs" rows="2" readonly>{{ Ops.DeployConfig.DeployKeyPublic }}</textarea>
-      </label>
-      {{ end }}{{ end }}
-      <label class="inline-flex items-center gap-2 text-sm"><input type="checkbox" name="restart_after_deploy" {{ if !Ops.DeployConfig || Ops.DeployConfig.RestartAfterDeploy }}checked{{ end }}> Restart runtime after deploy</label>
-      <div class="flex flex-wrap justify-between gap-2">
-        <div class="flex flex-wrap gap-2">
-          <button class="btn btn-primary" type="submit">Save Deploy Config</button>
-          <button class="btn btn-primary" type="submit" name="deploy_config_action" value="save_deploy" data-loading-label="Saving & deploying...">Save & Deploy Now</button>
-          <button class="btn" type="submit" name="deploy_key_action" value="generate">Generate Deploy Key</button>
+      <div class="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border)] pt-4">
+        <div class="text-sm">
+          <span class="font-medium">Deploy Key</span>
+          {{ if Ops.DeployConfig }}{{ if Ops.DeployConfig.DeployKeyPublic }}<span class="badge badge-ok ml-2">configured</span>{{ else }}<span class="badge badge-neutral ml-2">not set</span>{{ end }}{{ else }}<span class="badge badge-neutral ml-2">not set</span>{{ end }}
         </div>
         <div class="flex flex-wrap gap-2">
-          {{ if Ops.DeployConfig }}{{ if Ops.DeployConfig.DeployKeyPublic }}<button class="btn platform-copy-action" type="button" data-copy-value="{{ Ops.DeployConfig.DeployKeyPublic }}" data-copy-success="Public deploy key copied">Copy Public Key</button>{{ end }}{{ end }}
-          <button class="btn platform-copy-action" type="button" data-copy-value="{{ Ops.DeployCommand }}" data-copy-success="Deploy command copied">Copy Hook Command</button>
+          <button class="btn" type="submit" name="deploy_key_action" value="generate"><i data-lucide="key-round"></i> Generate Key</button>
+          {{ if Ops.DeployConfig }}{{ if Ops.DeployConfig.DeployKeyPublic }}<button class="btn platform-copy-action" type="button" data-copy-value="{{ Ops.DeployConfig.DeployKeyPublic }}" data-copy-success="Public deploy key copied"><i data-lucide="copy"></i> Copy Public Key</button>{{ end }}{{ end }}
         </div>
       </div>
-    </form>
-    <form action="{{ OpsActionBase }}/deploy" method="post" class="mt-4 flex flex-wrap items-end gap-2" data-runtime-loading>
-      <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
-      <label class="block text-sm font-medium">Branch Override
-        <input class="field mt-2" name="branch" placeholder="{{ if Ops.DeployConfig }}{{ Ops.DeployConfig.Branch }}{{ else }}main{{ end }}">
-      </label>
-      <button class="btn btn-primary" type="submit" data-loading-label="Deploying..."><i data-lucide="git-pull-request-arrow"></i> Deploy Saved Config</button>
-      <button class="btn" formaction="{{ OpsActionBase }}/runtime-restart" type="submit" data-loading-label="Restarting..."><i data-lucide="refresh-cw"></i> Restart Runtime</button>
+      {{ if Ops.DeployConfig }}{{ if Ops.DeployConfig.DeployKeyPublic }}
+      <textarea class="field font-mono text-xs" rows="2" readonly>{{ Ops.DeployConfig.DeployKeyPublic }}</textarea>
+      {{ end }}{{ end }}
+      <details class="text-sm">
+        <summary class="cursor-pointer font-medium opacity-80">Rotate private key</summary>
+        <textarea class="field mt-2 font-mono text-xs" name="deploy_key_private" rows="4" placeholder="Paste a replacement private key only when rotating"></textarea>
+      </details>
+      <div class="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border)] pt-4">
+        <label class="inline-flex items-center gap-2 text-sm"><input type="checkbox" name="restart_after_deploy" {{ if !Ops.DeployConfig || Ops.DeployConfig.RestartAfterDeploy }}checked{{ end }}> Restart runtime after deploy</label>
+        <div class="flex flex-wrap gap-2">
+          <button class="btn" formaction="{{ OpsActionBase }}/runtime-restart" type="submit" data-loading-label="Restarting..."><i data-lucide="refresh-cw"></i> Restart Runtime</button>
+          <button class="btn" type="submit" data-loading-label="Saving..."><i data-lucide="save"></i> Save Config</button>
+          <button class="btn btn-primary" type="submit" name="deploy_config_action" value="save_deploy" data-loading-label="Saving & deploying..."><i data-lucide="git-pull-request-arrow"></i> Save & Deploy</button>
+        </div>
+      </div>
     </form>
     {{ if Ops.DeployConfig }}{{ if Ops.DeployConfig.LastDeployAt }}
-    <div class="mt-4 rounded-md border border-[var(--border)] p-3 text-sm">Last deploy: <span class="badge {{ if Ops.DeployConfig.LastDeployStatus == "success" }}badge-ok{{ else }}badge-danger{{ end }}">{{ Ops.DeployConfig.LastDeployStatus }}</span> {{ formatTimePtr(Ops.DeployConfig.LastDeployAt) }}</div>
     {{ if Ops.DeployConfig.LastDeployMessage }}
     <div class="mt-3 rounded-md border border-[var(--border)] p-3">
-      <div class="mb-2 text-xs font-semibold uppercase text-[var(--text-muted)]">Last Deploy Output</div>
+      <div class="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+        <span class="font-semibold uppercase text-[var(--text-muted)]">Last Deploy Output</span>
+        <span class="opacity-70"><span class="badge {{ if Ops.DeployConfig.LastDeployStatus == "success" }}badge-ok{{ else }}badge-danger{{ end }}">{{ Ops.DeployConfig.LastDeployStatus }}</span> {{ formatTimePtr(Ops.DeployConfig.LastDeployAt) }}</span>
+      </div>
       <pre class="max-h-72 overflow-auto whitespace-pre-wrap break-words font-mono text-xs">{{ Ops.DeployConfig.LastDeployMessage }}</pre>
     </div>
     {{ end }}
@@ -1221,20 +1232,20 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
       </div>
       <input type="hidden" name="root_path" value="{{ Item.RootPath }}">
       <div class="platform-structure-builder">
-        <div class="platform-structure-step">
-          <span class="platform-structure-kicker">Base</span>
-          <code>{{ RootPathBase }}/</code>
+        <div class="platform-structure-paths">
+          <div class="platform-structure-path-field">
+            <span class="platform-structure-kicker">Platform base</span>
+            <code tabindex="0">{{ RootPathBase }}/</code>
+          </div>
+          <div class="platform-structure-path-field">
+            <span class="platform-structure-kicker">Public root</span>
+            <code tabindex="0">{{ Item.RootPath }}</code>
+          </div>
         </div>
-        <div class="platform-structure-join" aria-hidden="true">+</div>
-        <label class="platform-structure-step platform-structure-step--input">
+        <label class="platform-structure-subfolder">
           <span class="platform-structure-kicker">Served subfolder</span>
           <input class="field font-mono text-sm" name="root_subpath" value="{{ RootPathSuffix }}" placeholder="htdocs default">
         </label>
-        <div class="platform-structure-join" aria-hidden="true">=</div>
-        <div class="platform-structure-step">
-          <span class="platform-structure-kicker">Public root</span>
-          <code>{{ Item.RootPath }}</code>
-        </div>
       </div>
       <div class="platform-structure-foot">Leave the subfolder blank to serve directly from <span class="font-mono">htdocs</span>.</div>
       <div class="mt-4 flex justify-end">
@@ -1637,6 +1648,11 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
           <span class="text-xs opacity-50 mt-1">Updates bind/proxy port and reloads runtime config.</span>
         </label>
 
+        <label class="block text-sm font-medium">Health Path
+          <input class="field mt-2" type="text" name="health_path" value="{{ LinkedApp.HealthPath }}" placeholder="Optional, e.g. /health">
+          <span class="text-xs opacity-50 mt-1">Leave blank when the app has no dedicated health endpoint.</span>
+        </label>
+
 	        <input type="hidden" name="runtime_version" value="{{ LinkedRuntimeVersion }}">
 
         <label class="block text-sm font-medium">Max Memory
@@ -1779,6 +1795,11 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
           <span class="text-xs opacity-50 mt-1">The managed process will bind to this local port.</span>
         </label>
 
+        <label class="block text-sm font-medium">Health Path
+          <input class="field mt-2" type="text" name="health_path" placeholder="Optional, e.g. /health">
+          <span class="text-xs opacity-50 mt-1">Leave blank when the app has no dedicated health endpoint.</span>
+        </label>
+
         <label class="block text-sm font-medium ca-pm-field ca-pm-pm2 ca-pm-gunicorn ca-pm-uwsgi" style="display:none">Workers
           <input class="field mt-2" type="number" name="workers" min="0" value="0" placeholder="0 = auto/default">
           <span class="text-xs opacity-50 mt-1">0 = use process manager default</span>
@@ -1894,61 +1915,67 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
 
   {{ if IsAdmin }}
   <div class="surface p-5 mb-5">
-    <h3 class="text-sm font-semibold mb-4">Git Deploy</h3>
-    <div class="mb-4 rounded-md border border-[var(--border)] p-3 text-sm text-[var(--text-muted)]">
-      Use an SSH repository URL like <span class="font-mono text-xs">git@github.com:org/repo.git</span> when using deploy keys. HTTPS URLs need GitHub credentials or a token and will not use the generated deploy key. First deploy clones into the Work Directory only when it is empty.
+    <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <h3 class="text-sm font-semibold">Git Deploy</h3>
+        <p class="mt-1 text-sm opacity-70">SSH repo URLs use the deploy key. Save & Deploy always saves current values first.</p>
+      </div>
+      {{ if Ops.DeployConfig }}{{ if Ops.DeployConfig.LastDeployAt }}
+      <div class="flex items-center gap-2 text-xs opacity-70">
+        <span class="badge {{ if Ops.DeployConfig.LastDeployStatus == "success" }}badge-ok{{ else }}badge-danger{{ end }}">{{ Ops.DeployConfig.LastDeployStatus }}</span>
+        <span>{{ formatTimePtr(Ops.DeployConfig.LastDeployAt) }}</span>
+      </div>
+      {{ end }}{{ end }}
     </div>
     <form action="{{ OpsActionBase }}/deploy-config" method="post" class="space-y-4" data-runtime-loading>
       <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
-      <div class="grid gap-4 md:grid-cols-2">
+      <div class="grid gap-4 md:grid-cols-[minmax(0,1fr)_140px]">
         <label class="block text-sm font-medium">Repository URL
           <input class="field mt-2" name="repo_url" value="{{ if Ops.DeployConfig }}{{ Ops.DeployConfig.RepoURL }}{{ end }}" placeholder="git@github.com:org/repo.git">
         </label>
         <label class="block text-sm font-medium">Branch
           <input class="field mt-2" name="branch" value="{{ if Ops.DeployConfig }}{{ Ops.DeployConfig.Branch }}{{ else }}main{{ end }}">
         </label>
-        <label class="block text-sm font-medium md:col-span-2">Work Directory
-          <input class="field mt-2 font-mono text-xs" name="work_dir" value="{{ if Ops.DeployConfig }}{{ Ops.DeployConfig.WorkDir }}{{ else }}{{ DefaultHomeDir }}/htdocs{{ end }}">
-        </label>
       </div>
+      <label class="block text-sm font-medium">Work Directory
+        <input class="field mt-2 font-mono text-xs" name="work_dir" value="{{ if Ops.DeployConfig }}{{ Ops.DeployConfig.WorkDir }}{{ else }}{{ DefaultHomeDir }}/htdocs{{ end }}">
+      </label>
       <label class="block text-sm font-medium">Deploy Command
-        <textarea class="field mt-2 font-mono text-xs" name="deploy_command" rows="3" placeholder="npm ci && npm run build">{{ if Ops.DeployConfig }}{{ Ops.DeployConfig.DeployCommand }}{{ end }}</textarea>
+        <textarea class="field mt-2 font-mono text-xs" name="deploy_command" rows="5" placeholder="npm ci && npm run build">{{ if Ops.DeployConfig }}{{ Ops.DeployConfig.DeployCommand }}{{ end }}</textarea>
       </label>
-      <label class="block text-sm font-medium">Private Deploy Key
-        <textarea class="field mt-2 font-mono text-xs" name="deploy_key_private" rows="4" placeholder="Paste a replacement private key only when rotating it"></textarea>
-        <span class="text-xs opacity-60 mt-1 block">Paste an existing private key, or generate a new deploy key below and add its public key to GitHub.</span>
-      </label>
-      {{ if Ops.DeployConfig }}{{ if Ops.DeployConfig.DeployKeyPublic }}
-      <label class="block text-sm font-medium">Public Deploy Key for GitHub
-        <textarea class="field mt-2 font-mono text-xs" rows="2" readonly>{{ Ops.DeployConfig.DeployKeyPublic }}</textarea>
-      </label>
-      {{ end }}{{ end }}
-      <label class="inline-flex items-center gap-2 text-sm"><input type="checkbox" name="restart_after_deploy" {{ if !Ops.DeployConfig || Ops.DeployConfig.RestartAfterDeploy }}checked{{ end }}> Restart runtime after deploy</label>
-      <div class="flex flex-wrap justify-between gap-2">
-        <div class="flex flex-wrap gap-2">
-          <button class="btn btn-primary" type="submit">Save Deploy Config</button>
-          <button class="btn btn-primary" type="submit" name="deploy_config_action" value="save_deploy" data-loading-label="Saving & deploying...">Save & Deploy Now</button>
-          <button class="btn" type="submit" name="deploy_key_action" value="generate">Generate Deploy Key</button>
+      <div class="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border)] pt-4">
+        <div class="text-sm">
+          <span class="font-medium">Deploy Key</span>
+          {{ if Ops.DeployConfig }}{{ if Ops.DeployConfig.DeployKeyPublic }}<span class="badge badge-ok ml-2">configured</span>{{ else }}<span class="badge badge-neutral ml-2">not set</span>{{ end }}{{ else }}<span class="badge badge-neutral ml-2">not set</span>{{ end }}
         </div>
         <div class="flex flex-wrap gap-2">
-          {{ if Ops.DeployConfig }}{{ if Ops.DeployConfig.DeployKeyPublic }}<button class="btn platform-copy-action" type="button" data-copy-value="{{ Ops.DeployConfig.DeployKeyPublic }}" data-copy-success="Public deploy key copied">Copy Public Key</button>{{ end }}{{ end }}
-          <button class="btn platform-copy-action" type="button" data-copy-value="{{ Ops.DeployCommand }}" data-copy-success="Deploy command copied">Copy Hook Command</button>
+          <button class="btn" type="submit" name="deploy_key_action" value="generate"><i data-lucide="key-round"></i> Generate Key</button>
+          {{ if Ops.DeployConfig }}{{ if Ops.DeployConfig.DeployKeyPublic }}<button class="btn platform-copy-action" type="button" data-copy-value="{{ Ops.DeployConfig.DeployKeyPublic }}" data-copy-success="Public deploy key copied"><i data-lucide="copy"></i> Copy Public Key</button>{{ end }}{{ end }}
         </div>
       </div>
-    </form>
-    <form action="{{ OpsActionBase }}/deploy" method="post" class="mt-4 flex flex-wrap items-end gap-2" data-runtime-loading>
-      <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
-      <label class="block text-sm font-medium">Branch Override
-        <input class="field mt-2" name="branch" placeholder="{{ if Ops.DeployConfig }}{{ Ops.DeployConfig.Branch }}{{ else }}main{{ end }}">
-      </label>
-      <button class="btn btn-primary" type="submit" data-loading-label="Deploying..."><i data-lucide="git-pull-request-arrow"></i> Deploy Saved Config</button>
-      <button class="btn" formaction="{{ OpsActionBase }}/runtime-restart" type="submit" data-loading-label="Restarting..."><i data-lucide="refresh-cw"></i> Restart Runtime</button>
+      {{ if Ops.DeployConfig }}{{ if Ops.DeployConfig.DeployKeyPublic }}
+      <textarea class="field font-mono text-xs" rows="2" readonly>{{ Ops.DeployConfig.DeployKeyPublic }}</textarea>
+      {{ end }}{{ end }}
+      <details class="text-sm">
+        <summary class="cursor-pointer font-medium opacity-80">Rotate private key</summary>
+        <textarea class="field mt-2 font-mono text-xs" name="deploy_key_private" rows="4" placeholder="Paste a replacement private key only when rotating"></textarea>
+      </details>
+      <div class="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border)] pt-4">
+        <label class="inline-flex items-center gap-2 text-sm"><input type="checkbox" name="restart_after_deploy" {{ if !Ops.DeployConfig || Ops.DeployConfig.RestartAfterDeploy }}checked{{ end }}> Restart runtime after deploy</label>
+        <div class="flex flex-wrap gap-2">
+          <button class="btn" formaction="{{ OpsActionBase }}/runtime-restart" type="submit" data-loading-label="Restarting..."><i data-lucide="refresh-cw"></i> Restart Runtime</button>
+          <button class="btn" type="submit" data-loading-label="Saving..."><i data-lucide="save"></i> Save Config</button>
+          <button class="btn btn-primary" type="submit" name="deploy_config_action" value="save_deploy" data-loading-label="Saving & deploying..."><i data-lucide="git-pull-request-arrow"></i> Save & Deploy</button>
+        </div>
+      </div>
     </form>
     {{ if Ops.DeployConfig }}{{ if Ops.DeployConfig.LastDeployAt }}
-    <div class="mt-4 rounded-md border border-[var(--border)] p-3 text-sm">Last deploy: <span class="badge {{ if Ops.DeployConfig.LastDeployStatus == "success" }}badge-ok{{ else }}badge-danger{{ end }}">{{ Ops.DeployConfig.LastDeployStatus }}</span> {{ formatTimePtr(Ops.DeployConfig.LastDeployAt) }}</div>
     {{ if Ops.DeployConfig.LastDeployMessage }}
     <div class="mt-3 rounded-md border border-[var(--border)] p-3">
-      <div class="mb-2 text-xs font-semibold uppercase text-[var(--text-muted)]">Last Deploy Output</div>
+      <div class="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+        <span class="font-semibold uppercase text-[var(--text-muted)]">Last Deploy Output</span>
+        <span class="opacity-70"><span class="badge {{ if Ops.DeployConfig.LastDeployStatus == "success" }}badge-ok{{ else }}badge-danger{{ end }}">{{ Ops.DeployConfig.LastDeployStatus }}</span> {{ formatTimePtr(Ops.DeployConfig.LastDeployAt) }}</span>
+      </div>
       <pre class="max-h-72 overflow-auto whitespace-pre-wrap break-words font-mono text-xs">{{ Ops.DeployConfig.LastDeployMessage }}</pre>
     </div>
     {{ end }}

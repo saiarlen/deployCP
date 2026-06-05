@@ -1807,9 +1807,18 @@ body.light-theme .settings-tab-active { color: var(--primary-dark); }
 
 .platform-structure-builder {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(180px, 0.85fr) auto minmax(0, 1fr);
-  gap: var(--space-2);
-  align-items: stretch;
+  grid-template-columns: 1fr;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+}
+
+.platform-structure-paths {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
 }
 
 .platform-structure-step {
@@ -1824,7 +1833,16 @@ body.light-theme .settings-tab-active { color: var(--primary-dark); }
   background: var(--bg-elevated);
 }
 
-.platform-structure-step--input {
+.platform-structure-path-field,
+.platform-structure-subfolder {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.platform-structure-step--input,
+.platform-structure-path-row--input {
   background: color-mix(in srgb, var(--primary-soft) 36%, var(--bg-elevated));
   border-color: color-mix(in srgb, var(--primary) 26%, var(--border));
 }
@@ -1840,7 +1858,35 @@ body.light-theme .settings-tab-active { color: var(--primary-dark); }
   color: var(--text);
 }
 
+.platform-structure-path-field code {
+  min-width: 0;
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+  text-overflow: clip;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--text);
+  padding: 0.72rem 0.82rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  scrollbar-width: thin;
+}
+
+.platform-structure-path-field code:focus {
+  outline: 2px solid color-mix(in srgb, var(--primary) 42%, transparent);
+  outline-offset: 2px;
+}
+
 .platform-structure-step .field {
+  margin: 0;
+  width: 100%;
+}
+
+.platform-structure-subfolder .field {
   margin: 0;
   width: 100%;
 }
@@ -1894,6 +1940,10 @@ body.light-theme .settings-tab-active { color: var(--primary-dark); }
   }
 
   .platform-structure-builder {
+    grid-template-columns: 1fr;
+  }
+
+  .platform-structure-paths {
     grid-template-columns: 1fr;
   }
 
