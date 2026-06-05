@@ -1575,6 +1575,165 @@ body.light-theme .settings-tab-active { color: var(--primary-dark); }
   padding: var(--space-4);
 }
 
+.ops-health-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.ops-health-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.ops-health-latest {
+  display: grid;
+  grid-template-columns: minmax(170px, 1.15fr) repeat(4, minmax(120px, 0.75fr));
+  gap: var(--space-3);
+}
+
+.ops-health-status-card,
+.ops-health-metric,
+.ops-health-message,
+.ops-health-empty,
+.ops-health-history {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+}
+
+.ops-health-status-card,
+.ops-health-metric {
+  min-width: 0;
+  padding: var(--space-3);
+}
+
+.ops-health-status-card > span,
+.ops-health-metric > span,
+.ops-health-history-row div:not(:nth-child(2)) > span {
+  display: block;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.ops-health-status-card strong,
+.ops-health-metric strong,
+.ops-health-history-row strong {
+  display: block;
+  margin-top: var(--space-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.875rem;
+  color: var(--text);
+}
+
+.ops-health-status-card small {
+  display: block;
+  margin-top: var(--space-2);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.ops-health-message,
+.ops-health-empty {
+  padding: var(--space-3);
+  font-size: 0.875rem;
+  color: var(--text-sec);
+}
+
+.ops-health-history {
+  overflow: hidden;
+}
+
+.ops-health-history summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  cursor: pointer;
+  padding: var(--space-3);
+  list-style: none;
+}
+
+.ops-health-history summary::-webkit-details-marker {
+  display: none;
+}
+
+.ops-health-history summary strong {
+  display: block;
+  font-size: 0.875rem;
+  color: var(--text);
+}
+
+.ops-health-history summary small {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.ops-health-history summary [data-lucide],
+.ops-health-history summary .lucide {
+  width: 1rem;
+  height: 1rem;
+  color: var(--text-muted);
+  transition: transform 0.16s ease;
+}
+
+.ops-health-history[open] summary [data-lucide],
+.ops-health-history[open] summary .lucide {
+  transform: rotate(180deg);
+}
+
+.ops-health-history-list {
+  border-top: 1px solid var(--border);
+}
+
+.ops-health-history-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(90px, 0.55fr) repeat(4, minmax(90px, 0.7fr));
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-3);
+  border-bottom: 1px dashed var(--border);
+}
+
+.ops-health-history-row:last-child {
+  border-bottom: none;
+}
+
+.ops-health-history-time {
+  font-size: 0.8125rem;
+  color: var(--text-sec);
+}
+
+@media (max-width: 1180px) {
+  .ops-health-latest {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .ops-health-history-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .ops-health-head form,
+  .ops-health-head .btn {
+    width: 100%;
+  }
+  .ops-health-latest,
+  .ops-health-history-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 .runtime-venv-command {
   display: grid;
   gap: var(--space-3);
@@ -3818,6 +3977,278 @@ body.light-theme .sa-card-action:hover .sa-card-action-icon {
 .service-filter-chip:hover { color: var(--text); border-color: var(--border-strong); background: var(--bg-hover); }
 .service-filter-chip-active { color: var(--primary); border-color: var(--primary); background: var(--primary-soft); }
 .service-help-note { margin-top: var(--space-2); font-size: 0.8125rem; color: var(--text-muted); font-style: italic; }
+
+/* ═══════════════════════════════════════════
+   Port Info (settings page)
+   ═══════════════════════════════════════════ */
+.port-info-hero {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+}
+@media (min-width: 1024px) {
+  .port-info-hero { grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr); align-items: stretch; }
+}
+.port-info-check,
+.port-info-summary-card {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+}
+.port-info-check {
+  padding: var(--space-5);
+}
+.port-info-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.port-info-section-head h2 {
+  margin: 2px 0 0;
+  font-size: 1.125rem;
+  font-weight: 650;
+  color: var(--text);
+}
+.port-info-section-head p {
+  margin: 4px 0 0;
+  max-width: 46rem;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+.port-info-kicker {
+  margin: 0;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--primary);
+}
+.port-info-check-form {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+@media (min-width: 640px) {
+  .port-info-check-form { grid-template-columns: minmax(220px, 320px) auto; align-items: end; }
+}
+.port-info-port-field {
+  display: grid;
+  gap: var(--space-2);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-sec);
+}
+.port-info-result,
+.port-info-note {
+  margin-top: var(--space-4);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3) var(--space-4);
+  font-size: 0.875rem;
+}
+.port-info-result {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: 1px solid var(--border);
+}
+.port-info-result [data-lucide],
+.port-info-result .lucide {
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 auto;
+}
+.port-info-result-ok { color: var(--success); background: var(--success-soft); border-color: transparent; }
+.port-info-result-bad { color: var(--danger); background: var(--danger-soft); border-color: transparent; }
+.port-info-note {
+  border: 1px dashed var(--border);
+  color: var(--text-muted);
+  background: var(--bg-subtle);
+}
+.port-info-summary-grid {
+  display: grid;
+  gap: var(--space-3);
+}
+.port-info-summary-card {
+  padding: var(--space-4);
+}
+.port-info-summary-card span {
+  display: block;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.port-info-summary-card strong {
+  display: block;
+  margin-top: var(--space-1);
+  font-size: 1.5rem;
+  line-height: 1.1;
+  color: var(--text);
+}
+.port-info-summary-card small {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+.port-info-list-panel {
+  overflow: hidden;
+}
+.port-info-list-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+.port-info-search {
+  max-width: 320px;
+}
+.port-info-list {
+  display: grid;
+  gap: var(--space-2);
+}
+.port-info-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.25fr) minmax(120px, 0.7fr) minmax(150px, 0.75fr) minmax(180px, 1fr) minmax(230px, 1.1fr);
+  gap: var(--space-3);
+  align-items: center;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-card);
+  transition: border-color 0.12s, background 0.12s;
+}
+.port-info-row:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-elevated);
+}
+.port-info-runtime-main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.port-info-status-dot {
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 999px;
+  flex: 0 0 auto;
+  background: var(--text-muted);
+}
+.port-info-status-dot.is-running { background: var(--success); box-shadow: 0 0 0 3px var(--success-soft); }
+.port-info-status-dot.is-stopped { background: var(--danger); box-shadow: 0 0 0 3px var(--danger-soft); }
+.port-info-runtime-title {
+  min-width: 0;
+}
+.port-info-runtime-title strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9375rem;
+  color: var(--text);
+}
+.port-info-runtime-title span,
+.port-info-runtime-service,
+.port-info-runtime-port {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+.port-info-runtime-port,
+.port-info-runtime-service {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+}
+.port-info-runtime-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.port-info-runtime-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+.port-info-runtime-metrics div {
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  padding: var(--space-2);
+  background: var(--bg-subtle);
+}
+.port-info-runtime-metrics span {
+  display: block;
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.port-info-runtime-metrics strong {
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8125rem;
+  color: var(--text);
+}
+.port-info-empty {
+  border-radius: var(--radius-lg);
+  border: 1px dashed var(--border);
+  padding: var(--space-5);
+  color: var(--text-muted);
+  background: var(--bg-subtle);
+}
+.port-info-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+  font-size: 0.875rem;
+}
+@media (max-width: 1180px) {
+  .port-info-row {
+    grid-template-columns: minmax(180px, 1fr) minmax(120px, 0.7fr) minmax(150px, 0.8fr);
+  }
+  .port-info-runtime-service,
+  .port-info-runtime-metrics {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 640px) {
+  .port-info-check,
+  .port-info-summary-card {
+    padding: var(--space-4);
+  }
+  .port-info-search {
+    max-width: none;
+    width: 100%;
+  }
+  .port-info-row {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+  .port-info-runtime-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+  }
+  .port-info-pagination > div {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
 
 /* ═══════════════════════════════════════════
    Auth pages

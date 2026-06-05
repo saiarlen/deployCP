@@ -810,68 +810,96 @@
   </div>
 
   <div id="panel-ports" class="settings-panel {{ if ActiveTab == "ports" }}settings-panel-active{{ end }}">
-    <section class="surface p-5 sm:p-6 mb-5">
-      <div class="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 class="text-lg font-semibold">Port Info</h2>
-          <p class="text-sm opacity-70 mt-1">Managed platform runtime ports only. System services such as nginx, SSH, database, and mail ports are intentionally excluded.</p>
+    <section class="port-info-hero">
+      <div class="port-info-check">
+        <div class="port-info-section-head">
+          <div>
+            <p class="port-info-kicker">Runtime port check</p>
+            <h2>Port Info</h2>
+            <p>Check a new platform port against managed runtime assignments and live loopback availability.</p>
+          </div>
+          <span class="badge badge-neutral">Admin only</span>
         </div>
-        <span class="badge badge-neutral">{{ len(PortInfo.Rows) }} platform ports</span>
-      </div>
-      <form action="/settings" method="get" class="mt-4 flex flex-wrap items-end gap-3">
-        <input type="hidden" name="tab" value="ports">
-        <label class="block min-w-[220px] text-sm font-medium">Check Port Availability
-          <input class="field mt-2" type="number" name="port" min="1" max="65535" value="{{ PortInfo.Check.Query }}" placeholder="3000">
-        </label>
-        <button class="btn btn-primary" type="submit"><i data-lucide="search"></i> Check</button>
+        <form action="/settings" method="get" class="port-info-check-form">
+          <input type="hidden" name="tab" value="ports">
+          <label class="port-info-port-field">TCP port
+            <input class="field" type="number" name="port" min="1" max="65535" value="{{ PortInfo.Check.Query }}" placeholder="3000">
+          </label>
+          <button class="btn btn-primary" type="submit"><i data-lucide="search"></i> Check</button>
+        </form>
         {{ if PortInfo.Check.Checked }}
-        <span class="badge {{ if PortInfo.Check.Available }}badge-ok{{ else }}badge-danger{{ end }}">{{ PortInfo.Check.Message }}</span>
+        <div class="port-info-result {{ if PortInfo.Check.Available }}port-info-result-ok{{ else }}port-info-result-bad{{ end }}">
+          <i data-lucide="{{ if PortInfo.Check.Available }}check-circle-2{{ else }}circle-alert{{ end }}"></i>
+          <span>{{ PortInfo.Check.Message }}</span>
+        </div>
+        {{ else }}
+        <div class="port-info-note">System services such as nginx, SSH, database, and mail ports are intentionally excluded from the runtime list.</div>
         {{ end }}
-      </form>
+      </div>
+
+      <div class="port-info-summary-grid">
+        <div class="port-info-summary-card">
+          <span>Total</span>
+          <strong>{{ len(PortInfo.Rows) }}</strong>
+          <small>managed runtime ports</small>
+        </div>
+        <div class="port-info-summary-card">
+          <span>Running</span>
+          <strong>{{ PortInfo.RunningCount }}</strong>
+          <small>active service units</small>
+        </div>
+        <div class="port-info-summary-card">
+          <span>Stopped</span>
+          <strong>{{ PortInfo.StoppedCount }}</strong>
+          <small>inactive or unknown</small>
+        </div>
+      </div>
     </section>
 
-    <section class="surface p-5 sm:p-6">
-      <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+    <section class="surface p-5 sm:p-6 port-info-list-panel">
+      <div class="port-info-list-head">
         <div>
-          <h2 class="text-lg font-semibold">Platform Runtime Usage</h2>
+          <h2 class="text-lg font-semibold">Runtime Usage</h2>
           <p class="text-sm opacity-70 mt-1">CPU is averaged since service start. RAM is read from the service process tree. Disk is the runtime working directory size.</p>
         </div>
-        <input class="field" id="port-info-search" placeholder="Search platform, runtime, port" style="max-width:320px">
+        <input class="field port-info-search" id="port-info-search" placeholder="Search platform, runtime, port">
       </div>
-      <div class="overflow-x-auto">
-        <table class="w-full text-sm text-left" id="port-info-table">
-          <thead>
-            <tr class="text-xs uppercase tracking-wide opacity-70">
-              <th class="py-2 pr-4">Platform</th>
-              <th class="py-2 pr-4">Port</th>
-              <th class="py-2 pr-4">Runtime</th>
-              <th class="py-2 pr-4">Service</th>
-              <th class="py-2 pr-4">CPU avg</th>
-              <th class="py-2 pr-4">RAM</th>
-              <th class="py-2 pr-4">Disk</th>
-              <th class="py-2">Workdir</th>
-            </tr>
-          </thead>
-          <tbody>
-            {{ range _, row := PortInfo.Rows }}
-            <tr class="border-b port-info-row" data-port-info="{{ row.Name }} {{ row.Runtime }} {{ row.ProcessManager }} {{ row.Host }} {{ row.Port }} {{ row.ServiceName }} {{ row.Status }} {{ row.WorkingDir }}">
-              <td class="py-2 pr-4">
-                <div class="font-medium">{{ row.Name }}</div>
-                <div class="text-xs opacity-70">{{ row.Status }}{{ if row.PID }} · pid {{ row.PID }}{{ end }}</div>
-              </td>
-              <td class="py-2 pr-4 font-mono text-xs">{{ row.Host }}:{{ row.Port }}</td>
-              <td class="py-2 pr-4"><span class="badge badge-neutral">{{ row.Runtime }}</span> <span class="badge badge-neutral">{{ row.ProcessManager }}</span></td>
-              <td class="py-2 pr-4 font-mono text-xs">{{ row.ServiceName }}</td>
-              <td class="py-2 pr-4">{{ row.CPU }}</td>
-              <td class="py-2 pr-4">{{ row.Memory }}</td>
-              <td class="py-2 pr-4">{{ row.Disk }}</td>
-              <td class="py-2 font-mono text-xs break-all">{{ row.WorkingDir }}</td>
-            </tr>
-            {{ else }}
-            <tr><td colspan="8" class="py-4 text-sm opacity-70">No managed platform runtimes are configured.</td></tr>
-            {{ end }}
-          </tbody>
-        </table>
+      <div class="port-info-list" id="port-info-list">
+        {{ range _, row := PortInfo.Rows }}
+        <article class="port-info-row" data-port-info="{{ row.Name }} {{ row.Runtime }} {{ row.ProcessManager }} {{ row.Host }} {{ row.Port }} {{ row.ServiceName }} {{ row.Status }}">
+          <div class="port-info-runtime-main">
+            <span class="port-info-status-dot {{ if row.Running }}is-running{{ else }}is-stopped{{ end }}"></span>
+            <div class="port-info-runtime-title">
+              <strong>{{ row.Name }}</strong>
+              <span>{{ row.Status }}{{ if row.PID }} · pid {{ row.PID }}{{ end }}</span>
+            </div>
+          </div>
+          <div class="port-info-runtime-port">
+            <span>{{ row.Host }}:{{ row.Port }}</span>
+          </div>
+          <div class="port-info-runtime-badges">
+            <span class="badge badge-neutral">{{ row.Runtime }}</span>
+            <span class="badge badge-neutral">{{ row.ProcessManager }}</span>
+          </div>
+          <div class="port-info-runtime-service">{{ row.ServiceName }}</div>
+          <div class="port-info-runtime-metrics">
+            <div><span>CPU avg</span><strong>{{ row.CPU }}</strong></div>
+            <div><span>RAM</span><strong>{{ row.Memory }}</strong></div>
+            <div><span>Disk</span><strong>{{ row.Disk }}</strong></div>
+          </div>
+        </article>
+        {{ else }}
+        <div class="port-info-empty">No managed platform runtimes are configured.</div>
+        {{ end }}
+        <div id="port-info-empty-filter" class="port-info-empty hidden">No platform runtimes match this search.</div>
+      </div>
+      <div class="port-info-pagination" id="port-info-pagination">
+        <span class="opacity-70" id="port-info-page-summary">Showing platform runtimes</span>
+        <div class="flex items-center gap-2">
+          <button type="button" class="btn" id="port-info-prev">Previous</button>
+          <span class="badge badge-neutral" id="port-info-page-count">Page 1</span>
+          <button type="button" class="btn" id="port-info-next">Next</button>
+        </div>
       </div>
     </section>
   </div>
@@ -1097,13 +1125,44 @@ $(function () {
     });
   });
 
-  $('#port-info-search').on('input', function () {
-    var term = ($(this).val() || '').toLowerCase().trim();
-    $('.port-info-row').each(function () {
+  var portInfoPage = 1;
+  var portInfoPageSize = 10;
+  function updatePortInfoTable() {
+    var $rows = $('.port-info-row');
+    var term = ($('#port-info-search').val() || '').toLowerCase().trim();
+    var $matches = $rows.filter(function () {
       var hay = String($(this).data('portInfo') || '').toLowerCase();
-      $(this).toggle(!term || hay.indexOf(term) >= 0);
+      return !term || hay.indexOf(term) >= 0;
     });
+    var total = $matches.length;
+    var totalPages = Math.max(1, Math.ceil(total / portInfoPageSize));
+    if (portInfoPage > totalPages) portInfoPage = totalPages;
+    if (portInfoPage < 1) portInfoPage = 1;
+    var start = (portInfoPage - 1) * portInfoPageSize;
+    var end = start + portInfoPageSize;
+
+    $rows.addClass('hidden');
+    $matches.slice(start, end).removeClass('hidden');
+    $('#port-info-empty-filter').toggle($rows.length > 0 && total === 0);
+    $('#port-info-pagination').toggle($rows.length > portInfoPageSize || term !== '');
+    $('#port-info-page-summary').text(total > 0 ? 'Showing ' + (start + 1) + '-' + Math.min(end, total) + ' of ' + total + ' platform runtimes' : 'No platform runtimes to show');
+    $('#port-info-page-count').text('Page ' + portInfoPage + ' of ' + totalPages);
+    $('#port-info-prev').prop('disabled', portInfoPage <= 1);
+    $('#port-info-next').prop('disabled', portInfoPage >= totalPages);
+  }
+  $('#port-info-search').on('input', function () {
+    portInfoPage = 1;
+    updatePortInfoTable();
   });
+  $('#port-info-prev').on('click', function () {
+    portInfoPage -= 1;
+    updatePortInfoTable();
+  });
+  $('#port-info-next').on('click', function () {
+    portInfoPage += 1;
+    updatePortInfoTable();
+  });
+  updatePortInfoTable();
 
   function settingsLabel($field) {
     var fallback = ($field.attr('name') || 'This field').replace(/_/g, ' ');

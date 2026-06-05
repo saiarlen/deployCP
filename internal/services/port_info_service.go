@@ -30,8 +30,10 @@ type PortInfoService struct {
 }
 
 type PortInfoView struct {
-	Rows  []PortInfoRow
-	Check PortAvailability
+	Rows         []PortInfoRow
+	Check        PortAvailability
+	RunningCount int
+	StoppedCount int
 }
 
 type PortInfoRow struct {
@@ -74,12 +76,19 @@ func (s *PortInfoService) View(ctx context.Context, portQuery string) PortInfoVi
 		return apps[i].Port < apps[j].Port
 	})
 	rows := make([]PortInfoRow, 0, len(apps))
+	runningCount := 0
 	for _, app := range apps {
-		rows = append(rows, s.row(ctx, app))
+		row := s.row(ctx, app)
+		if row.Running {
+			runningCount++
+		}
+		rows = append(rows, row)
 	}
 	return PortInfoView{
-		Rows:  rows,
-		Check: s.checkPort(ctx, portQuery, apps),
+		Rows:         rows,
+		Check:        s.checkPort(ctx, portQuery, apps),
+		RunningCount: runningCount,
+		StoppedCount: len(rows) - runningCount,
 	}
 }
 

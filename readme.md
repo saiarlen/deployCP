@@ -67,7 +67,7 @@ After install, open `http://your-server-ip:2024` to create your admin account an
 | **Varnish** | Per-site VCL fragments, aggregate include, validate, reload |
 | **Logs** | Real filesystem log paths surfaced in the panel |
 | **Operations** | Per-platform health history, Git deploy hooks, deploy keys, backups/restores, alert events, and repair |
-| **Port Info** | Admin-only managed runtime port availability plus per-service CPU, RAM, disk, and working-directory visibility |
+| **Port Info** | Admin-only managed runtime port availability plus per-service CPU, RAM, and disk visibility |
 | **Host Hardening** | Automatic firewall bootstrap, fail2ban, logrotate, backup cron, SSH-safe install flow |
 
 Runtime behavior on live Linux:

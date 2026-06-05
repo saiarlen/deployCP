@@ -798,11 +798,11 @@
 
 <!-- ═══════════ Operations ═══════════ -->
 <div class="manage-panel" data-panel="operations">
-  <div class="surface p-5 mb-5">
-    <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
+  <div class="surface p-5 mb-5 ops-health-panel">
+    <div class="ops-health-head">
       <div>
-        <h3 class="text-sm font-semibold">Health Checks</h3>
-        <p class="text-sm opacity-70">Last platform status, service state, HTTP probe, SSL expiry state, and disk usage.</p>
+        <h3 class="settings-section-title">Health Checks</h3>
+        <p class="settings-section-copy">Last platform status, service state, HTTP probe, SSL expiry state, and disk usage.</p>
       </div>
       <form action="{{ OpsActionBase }}/health" method="post" data-runtime-loading>
         <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
@@ -810,35 +810,43 @@
       </form>
     </div>
     {{ if Ops.HealthLatest }}
-    <div class="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-5 mb-4">
-      <div class="rounded-md border border-[var(--border)] p-3"><p class="text-xs uppercase opacity-60">Status</p><p class="mt-1"><span class="badge {{ if Ops.HealthLatest.Status == "ok" }}badge-ok{{ else if Ops.HealthLatest.Status == "critical" }}badge-danger{{ else }}badge-warn{{ end }}">{{ Ops.HealthLatest.Status }}</span></p></div>
-      <div class="rounded-md border border-[var(--border)] p-3"><p class="text-xs uppercase opacity-60">Service</p><p class="mt-1">{{ Ops.HealthLatest.ServiceStatus }}</p></div>
-      <div class="rounded-md border border-[var(--border)] p-3"><p class="text-xs uppercase opacity-60">HTTP</p><p class="mt-1">{{ Ops.HealthLatest.HTTPStatusCode }}</p></div>
-      <div class="rounded-md border border-[var(--border)] p-3"><p class="text-xs uppercase opacity-60">SSL</p><p class="mt-1">{{ Ops.HealthLatest.SSLStatus }}</p></div>
-      <div class="rounded-md border border-[var(--border)] p-3"><p class="text-xs uppercase opacity-60">Disk</p><p class="mt-1">{{ formatPct(Ops.HealthLatest.DiskUsedPct) }}</p></div>
+    <div class="ops-health-latest">
+      <div class="ops-health-status-card">
+        <span>Status</span>
+        <strong><span class="badge {{ if Ops.HealthLatest.Status == "ok" }}badge-ok{{ else if Ops.HealthLatest.Status == "critical" }}badge-danger{{ else }}badge-warn{{ end }}">{{ Ops.HealthLatest.Status }}</span></strong>
+        <small>{{ formatTime(Ops.HealthLatest.CheckedAt) }}</small>
+      </div>
+      <div class="ops-health-metric"><span>Service</span><strong>{{ Ops.HealthLatest.ServiceStatus }}</strong></div>
+      <div class="ops-health-metric"><span>HTTP</span><strong>{{ Ops.HealthLatest.HTTPStatusCode }}</strong></div>
+      <div class="ops-health-metric"><span>SSL</span><strong>{{ Ops.HealthLatest.SSLStatus }}</strong></div>
+      <div class="ops-health-metric"><span>Disk</span><strong>{{ formatPct(Ops.HealthLatest.DiskUsedPct) }}</strong></div>
     </div>
-    <div class="rounded-md border border-[var(--border)] p-3 text-sm">{{ Ops.HealthLatest.Message }}<div class="mt-1 text-xs opacity-60">{{ formatTime(Ops.HealthLatest.CheckedAt) }}</div></div>
+    <div class="ops-health-message">{{ Ops.HealthLatest.Message }}</div>
     {{ else }}
-    <p class="text-sm opacity-70">No health checks have been recorded yet.</p>
+    <div class="ops-health-empty">No health checks have been recorded yet.</div>
     {{ end }}
     {{ if Ops.HealthHistory }}
-    <div class="mt-4 table-shell">
-      <table>
-        <thead><tr><th>Checked</th><th>Status</th><th>Service</th><th>HTTP</th><th>SSL</th><th>Disk</th></tr></thead>
-        <tbody>
+    <details class="ops-health-history">
+      <summary>
+        <span>
+          <strong>Recent health history</strong>
+          <small>{{ len(Ops.HealthHistory) }} latest checks</small>
+        </span>
+        <i data-lucide="chevron-down"></i>
+      </summary>
+      <div class="ops-health-history-list">
         {{ range _, check := Ops.HealthHistory }}
-          <tr>
-            <td>{{ formatTime(check.CheckedAt) }}</td>
-            <td><span class="badge {{ if check.Status == "ok" }}badge-ok{{ else if check.Status == "critical" }}badge-danger{{ else }}badge-warn{{ end }}">{{ check.Status }}</span></td>
-            <td>{{ check.ServiceStatus }}</td>
-            <td>{{ check.HTTPStatusCode }}</td>
-            <td>{{ check.SSLStatus }}</td>
-            <td>{{ formatPct(check.DiskUsedPct) }}</td>
-          </tr>
+        <div class="ops-health-history-row">
+          <div class="ops-health-history-time">{{ formatTime(check.CheckedAt) }}</div>
+          <div><span class="badge {{ if check.Status == "ok" }}badge-ok{{ else if check.Status == "critical" }}badge-danger{{ else }}badge-warn{{ end }}">{{ check.Status }}</span></div>
+          <div><span>Service</span><strong>{{ check.ServiceStatus }}</strong></div>
+          <div><span>HTTP</span><strong>{{ check.HTTPStatusCode }}</strong></div>
+          <div><span>SSL</span><strong>{{ check.SSLStatus }}</strong></div>
+          <div><span>Disk</span><strong>{{ formatPct(check.DiskUsedPct) }}</strong></div>
+        </div>
         {{ end }}
-        </tbody>
-      </table>
-    </div>
+      </div>
+    </details>
     {{ end }}
     {{ if Ops.OpenAlerts }}
     <div class="mt-4 space-y-2">
@@ -1862,11 +1870,11 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
 
 <!-- ═══════════ Operations ═══════════ -->
 <div class="manage-panel" data-panel="operations">
-  <div class="surface p-5 mb-5">
-    <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
+  <div class="surface p-5 mb-5 ops-health-panel">
+    <div class="ops-health-head">
       <div>
-        <h3 class="text-sm font-semibold">Health Checks</h3>
-        <p class="text-sm opacity-70">Last platform status, service state, HTTP probe, SSL expiry state, and disk usage.</p>
+        <h3 class="settings-section-title">Health Checks</h3>
+        <p class="settings-section-copy">Last platform status, service state, HTTP probe, SSL expiry state, and disk usage.</p>
       </div>
       <form action="{{ OpsActionBase }}/health" method="post" data-runtime-loading>
         <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
@@ -1874,35 +1882,43 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
       </form>
     </div>
     {{ if Ops.HealthLatest }}
-    <div class="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-5 mb-4">
-      <div class="rounded-md border border-[var(--border)] p-3"><p class="text-xs uppercase opacity-60">Status</p><p class="mt-1"><span class="badge {{ if Ops.HealthLatest.Status == "ok" }}badge-ok{{ else if Ops.HealthLatest.Status == "critical" }}badge-danger{{ else }}badge-warn{{ end }}">{{ Ops.HealthLatest.Status }}</span></p></div>
-      <div class="rounded-md border border-[var(--border)] p-3"><p class="text-xs uppercase opacity-60">Service</p><p class="mt-1">{{ Ops.HealthLatest.ServiceStatus }}</p></div>
-      <div class="rounded-md border border-[var(--border)] p-3"><p class="text-xs uppercase opacity-60">HTTP</p><p class="mt-1">{{ Ops.HealthLatest.HTTPStatusCode }}</p></div>
-      <div class="rounded-md border border-[var(--border)] p-3"><p class="text-xs uppercase opacity-60">SSL</p><p class="mt-1">{{ Ops.HealthLatest.SSLStatus }}</p></div>
-      <div class="rounded-md border border-[var(--border)] p-3"><p class="text-xs uppercase opacity-60">Disk</p><p class="mt-1">{{ formatPct(Ops.HealthLatest.DiskUsedPct) }}</p></div>
+    <div class="ops-health-latest">
+      <div class="ops-health-status-card">
+        <span>Status</span>
+        <strong><span class="badge {{ if Ops.HealthLatest.Status == "ok" }}badge-ok{{ else if Ops.HealthLatest.Status == "critical" }}badge-danger{{ else }}badge-warn{{ end }}">{{ Ops.HealthLatest.Status }}</span></strong>
+        <small>{{ formatTime(Ops.HealthLatest.CheckedAt) }}</small>
+      </div>
+      <div class="ops-health-metric"><span>Service</span><strong>{{ Ops.HealthLatest.ServiceStatus }}</strong></div>
+      <div class="ops-health-metric"><span>HTTP</span><strong>{{ Ops.HealthLatest.HTTPStatusCode }}</strong></div>
+      <div class="ops-health-metric"><span>SSL</span><strong>{{ Ops.HealthLatest.SSLStatus }}</strong></div>
+      <div class="ops-health-metric"><span>Disk</span><strong>{{ formatPct(Ops.HealthLatest.DiskUsedPct) }}</strong></div>
     </div>
-    <div class="rounded-md border border-[var(--border)] p-3 text-sm">{{ Ops.HealthLatest.Message }}<div class="mt-1 text-xs opacity-60">{{ formatTime(Ops.HealthLatest.CheckedAt) }}</div></div>
+    <div class="ops-health-message">{{ Ops.HealthLatest.Message }}</div>
     {{ else }}
-    <p class="text-sm opacity-70">No health checks have been recorded yet.</p>
+    <div class="ops-health-empty">No health checks have been recorded yet.</div>
     {{ end }}
     {{ if Ops.HealthHistory }}
-    <div class="mt-4 table-shell">
-      <table>
-        <thead><tr><th>Checked</th><th>Status</th><th>Service</th><th>HTTP</th><th>SSL</th><th>Disk</th></tr></thead>
-        <tbody>
+    <details class="ops-health-history">
+      <summary>
+        <span>
+          <strong>Recent health history</strong>
+          <small>{{ len(Ops.HealthHistory) }} latest checks</small>
+        </span>
+        <i data-lucide="chevron-down"></i>
+      </summary>
+      <div class="ops-health-history-list">
         {{ range _, check := Ops.HealthHistory }}
-          <tr>
-            <td>{{ formatTime(check.CheckedAt) }}</td>
-            <td><span class="badge {{ if check.Status == "ok" }}badge-ok{{ else if check.Status == "critical" }}badge-danger{{ else }}badge-warn{{ end }}">{{ check.Status }}</span></td>
-            <td>{{ check.ServiceStatus }}</td>
-            <td>{{ check.HTTPStatusCode }}</td>
-            <td>{{ check.SSLStatus }}</td>
-            <td>{{ formatPct(check.DiskUsedPct) }}</td>
-          </tr>
+        <div class="ops-health-history-row">
+          <div class="ops-health-history-time">{{ formatTime(check.CheckedAt) }}</div>
+          <div><span class="badge {{ if check.Status == "ok" }}badge-ok{{ else if check.Status == "critical" }}badge-danger{{ else }}badge-warn{{ end }}">{{ check.Status }}</span></div>
+          <div><span>Service</span><strong>{{ check.ServiceStatus }}</strong></div>
+          <div><span>HTTP</span><strong>{{ check.HTTPStatusCode }}</strong></div>
+          <div><span>SSL</span><strong>{{ check.SSLStatus }}</strong></div>
+          <div><span>Disk</span><strong>{{ formatPct(check.DiskUsedPct) }}</strong></div>
+        </div>
         {{ end }}
-        </tbody>
-      </table>
-    </div>
+      </div>
+    </details>
     {{ end }}
     {{ if Ops.OpenAlerts }}
     <div class="mt-4 space-y-2">
