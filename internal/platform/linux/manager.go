@@ -267,6 +267,8 @@ type userManager struct {
 	runner *system.Runner
 }
 
+const sshdPrivilegeSeparationDir = "/run/sshd"
+
 func (u *userManager) EnsureRestrictedShell(ctx context.Context, shellPath string) error {
 	script := `#!/bin/bash
 original_home="$HOME"
@@ -420,6 +422,9 @@ UsePAM yes
 
 	sshdBinary := sshdBinaryPath()
 	if sshdBinary != "" {
+		if err := ensureSSHDPrivilegeSeparationDir(sshdPrivilegeSeparationDir); err != nil {
+			return err
+		}
 		if _, err := u.runner.Run(ctx, system.CommandRequest{
 			Binary:      sshdBinary,
 			Args:        []string{"-t"},
@@ -449,6 +454,25 @@ UsePAM yes
 		}); err == nil {
 			return nil
 		}
+	}
+	return nil
+}
+
+func ensureSSHDPrivilegeSeparationDir(path string) error {
+	clean := filepath.Clean(strings.TrimSpace(path))
+	if clean == "." || !filepath.IsAbs(clean) {
+		return fmt.Errorf("invalid sshd privilege separation directory: %s", path)
+	}
+	if err := os.MkdirAll(clean, 0o755); err != nil {
+		return fmt.Errorf("prepare sshd privilege separation directory %s: %w", clean, err)
+	}
+	if os.Geteuid() == 0 {
+		if err := os.Chown(clean, 0, 0); err != nil {
+			return fmt.Errorf("set sshd privilege separation directory owner %s: %w", clean, err)
+		}
+	}
+	if err := os.Chmod(clean, 0o755); err != nil {
+		return fmt.Errorf("set sshd privilege separation directory mode %s: %w", clean, err)
 	}
 	return nil
 }

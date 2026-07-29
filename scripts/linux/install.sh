@@ -740,9 +740,16 @@ ensure_service_enabled() {
   fi
 }
 
+ensure_sshd_runtime_dir() {
+  mkdir -p /run/sshd
+  chown root:root /run/sshd
+  chmod 0755 /run/sshd
+}
+
 detect_ssh_port() {
   local port=""
   if command -v sshd >/dev/null 2>&1; then
+    ensure_sshd_runtime_dir
     port="$(sshd -T 2>/dev/null | awk '$1 == "port" { print $2; exit }')"
   fi
   if [[ -z "$port" ]]; then

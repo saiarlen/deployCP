@@ -897,11 +897,7 @@ func (h *SettingsHandler) FirewallUpdate(c *fiber.Ctx) error {
 		return c.Redirect("/settings?tab=firewall")
 	}
 	if h.firewallService != nil {
-		if err := h.firewallService.DeleteRule(c.Context(), existing, currentUserID(c), c.IP()); err != nil {
-			h.base.Sessions.SetFlash(c, err.Error())
-			return c.Redirect("/settings?tab=firewall")
-		}
-		if err := h.firewallService.ApplyRule(c.Context(), rule, currentUserID(c), c.IP()); err != nil {
+		if err := h.firewallService.ReplaceRule(c.Context(), existing, rule, currentUserID(c), c.IP()); err != nil {
 			h.base.Sessions.SetFlash(c, err.Error())
 			return c.Redirect("/settings?tab=firewall")
 		}

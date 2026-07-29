@@ -5,8 +5,11 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -37,6 +40,9 @@ func (s *FirewallService) ApplyRule(ctx context.Context, rule *models.PanelFirew
 	if !rule.Enabled {
 		return nil
 	}
+	if s.ruleDeniesActiveSSH(ctx, rule, ip) {
+		return fmt.Errorf("refusing to add firewall rule that blocks the active SSH port")
+	}
 	switch backend := s.detectBackend(); backend {
 	case "ufw":
 		return s.applyUFW(ctx, rule, actor, ip)
@@ -53,6 +59,9 @@ func (s *FirewallService) DeleteRule(ctx context.Context, rule *models.PanelFire
 	if rule == nil {
 		return fmt.Errorf("firewall rule is required")
 	}
+	if s.ruleAllowsActiveSSH(ctx, rule, ip) {
+		return fmt.Errorf("refusing to delete firewall rule that allows the active SSH port")
+	}
 	switch backend := s.detectBackend(); backend {
 	case "ufw":
 		return s.deleteUFW(ctx, rule, actor, ip)
@@ -63,6 +72,37 @@ func (s *FirewallService) DeleteRule(ctx context.Context, rule *models.PanelFire
 	default:
 		return nil
 	}
+}
+
+func (s *FirewallService) ReplaceRule(ctx context.Context, existing, next *models.PanelFirewallRule, actor *uint, ip string) error {
+	if existing == nil {
+		return s.ApplyRule(ctx, next, actor, ip)
+	}
+	if next == nil {
+		return fmt.Errorf("firewall rule is required")
+	}
+	if err := validateFirewallRule(next); err != nil {
+		return err
+	}
+	if s.ruleAllowsActiveSSH(ctx, existing, ip) {
+		if !sameFirewallHostEffect(existing, next) {
+			if !s.ruleAllowsActiveSSHFromIP(ctx, next, ip) {
+				return fmt.Errorf("refusing to modify firewall rule that allows the active SSH port")
+			}
+			if err := s.ApplyRule(ctx, next, actor, ip); err != nil {
+				return err
+			}
+			return s.deleteRuleUnchecked(ctx, existing, actor, ip)
+		}
+		return nil
+	}
+	if s.ruleDeniesActiveSSH(ctx, next, ip) {
+		return fmt.Errorf("refusing to add firewall rule that blocks the active SSH port")
+	}
+	if err := s.DeleteRule(ctx, existing, actor, ip); err != nil {
+		return err
+	}
+	return s.ApplyRule(ctx, next, actor, ip)
 }
 
 func (s *FirewallService) detectBackend() string {
@@ -79,6 +119,137 @@ func (s *FirewallService) detectBackend() string {
 		return "iptables"
 	}
 	return ""
+}
+
+func (s *FirewallService) ruleAllowsActiveSSH(ctx context.Context, rule *models.PanelFirewallRule, ip string) bool {
+	if !s.sshProtectionEnabled() {
+		return false
+	}
+	return ruleUsesActiveSSHPort(rule, s.activeSSHPorts(ctx)) &&
+		sourceAllowsIP(rule.Source, ip) &&
+		strings.EqualFold(rule.Action, "allow")
+}
+
+func (s *FirewallService) ruleDeniesActiveSSH(ctx context.Context, rule *models.PanelFirewallRule, ip string) bool {
+	if !s.sshProtectionEnabled() {
+		return false
+	}
+	return ruleUsesActiveSSHPort(rule, s.activeSSHPorts(ctx)) &&
+		sourceAllowsIP(rule.Source, ip) &&
+		strings.EqualFold(rule.Action, "deny")
+}
+
+func (s *FirewallService) ruleAllowsActiveSSHFromIP(ctx context.Context, rule *models.PanelFirewallRule, ip string) bool {
+	if rule == nil || !s.sshProtectionEnabled() || !strings.EqualFold(strings.TrimSpace(rule.Action), "allow") {
+		return false
+	}
+	return ruleUsesActiveSSHPort(rule, s.activeSSHPorts(ctx)) && sourceAllowsIP(rule.Source, ip)
+}
+
+func (s *FirewallService) sshProtectionEnabled() bool {
+	return s != nil && (s.cfg == nil || s.cfg.Features.PlatformMode != "dryrun")
+}
+
+func ruleCoversActiveSSHPort(rule *models.PanelFirewallRule, sshPorts map[string]struct{}) bool {
+	if !ruleUsesActiveSSHPort(rule, sshPorts) {
+		return false
+	}
+	source := normalizedRuleSource(rule.Source)
+	return source == "0.0.0.0/0" || source == "::/0"
+}
+
+func ruleUsesActiveSSHPort(rule *models.PanelFirewallRule, sshPorts map[string]struct{}) bool {
+	if rule == nil || !rule.Enabled {
+		return false
+	}
+	protocol := normalizedRuleProtocol(rule.Protocol)
+	if protocol != "tcp" && protocol != "any" {
+		return false
+	}
+	for port := range sshPorts {
+		if portSpecIncludes(strings.TrimSpace(rule.Port), port) {
+			return true
+		}
+	}
+	return false
+}
+
+func sourceAllowsIP(source, requester string) bool {
+	source = normalizedRuleSource(source)
+	if source == "0.0.0.0/0" || source == "::/0" {
+		return true
+	}
+	ip := parseRequestIP(requester)
+	if ip == nil {
+		return false
+	}
+	if _, cidr, err := net.ParseCIDR(source); err == nil {
+		return cidr.Contains(ip)
+	}
+	sourceIP := net.ParseIP(source)
+	return sourceIP != nil && sourceIP.Equal(ip)
+}
+
+func parseRequestIP(value string) net.IP {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	if strings.Contains(value, ",") {
+		value = strings.TrimSpace(strings.Split(value, ",")[0])
+	}
+	if host, _, err := net.SplitHostPort(value); err == nil {
+		value = host
+	}
+	return net.ParseIP(value)
+}
+
+func sameFirewallHostEffect(a, b *models.PanelFirewallRule) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	return a.Enabled == b.Enabled &&
+		normalizedRuleProtocol(a.Protocol) == normalizedRuleProtocol(b.Protocol) &&
+		normalizedRuleSource(a.Source) == normalizedRuleSource(b.Source) &&
+		normalizedPortSpec(a.Port) == normalizedPortSpec(b.Port) &&
+		strings.EqualFold(strings.TrimSpace(a.Action), strings.TrimSpace(b.Action))
+}
+
+func (s *FirewallService) activeSSHPorts(ctx context.Context) map[string]struct{} {
+	ports := map[string]struct{}{}
+	if binary := sshdBinaryPath(); binary != "" {
+		_ = ensureRuntimeDir("/run/sshd", 0o755)
+		if s.runner != nil {
+			res, err := s.runner.Run(ctx, system.CommandRequest{
+				Binary:  binary,
+				Args:    []string{"-T"},
+				Timeout: 8 * time.Second,
+			})
+			if err == nil {
+				addSSHDPorts(ports, res.Stdout)
+			}
+		}
+	}
+	if len(ports) == 0 {
+		addSSHConfigPorts(ports)
+	}
+	if len(ports) == 0 {
+		ports["22"] = struct{}{}
+	}
+	return ports
+}
+
+func (s *FirewallService) deleteRuleUnchecked(ctx context.Context, rule *models.PanelFirewallRule, actor *uint, ip string) error {
+	switch backend := s.detectBackend(); backend {
+	case "ufw":
+		return s.deleteUFW(ctx, rule, actor, ip)
+	case "firewalld":
+		return s.deleteFirewalld(ctx, rule, actor, ip)
+	case "iptables":
+		return s.deleteIPTables(ctx, rule, actor, ip)
+	default:
+		return nil
+	}
 }
 
 func (s *FirewallService) HostStatus(ctx context.Context) (string, bool, []models.PanelFirewallRule, error) {
@@ -500,4 +671,115 @@ func normalizedRuleSource(value string) string {
 		return "0.0.0.0/0"
 	}
 	return v
+}
+
+func normalizedPortSpec(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func portSpecIncludes(spec, target string) bool {
+	spec = normalizedPortSpec(spec)
+	target = strings.TrimSpace(target)
+	if spec == "" || spec == "any" {
+		return true
+	}
+	if spec == target {
+		return true
+	}
+	targetPort, err := strconv.Atoi(target)
+	if err != nil {
+		return false
+	}
+	for _, sep := range []string{":", "-"} {
+		if !strings.Contains(spec, sep) {
+			continue
+		}
+		parts := strings.SplitN(spec, sep, 2)
+		if len(parts) != 2 {
+			continue
+		}
+		start, startErr := strconv.Atoi(strings.TrimSpace(parts[0]))
+		end, endErr := strconv.Atoi(strings.TrimSpace(parts[1]))
+		if startErr != nil || endErr != nil {
+			continue
+		}
+		if start > end {
+			start, end = end, start
+		}
+		return targetPort >= start && targetPort <= end
+	}
+	return false
+}
+
+func sshdBinaryPath() string {
+	for _, candidate := range []string{"/usr/sbin/sshd", "/usr/local/sbin/sshd", "sshd"} {
+		if filepath.IsAbs(candidate) {
+			if st, err := os.Stat(candidate); err == nil && !st.IsDir() && st.Mode()&0o111 != 0 {
+				return candidate
+			}
+			continue
+		}
+		if resolved, err := exec.LookPath(candidate); err == nil {
+			return resolved
+		}
+	}
+	return ""
+}
+
+func ensureRuntimeDir(path string, mode os.FileMode) error {
+	clean := filepath.Clean(strings.TrimSpace(path))
+	if clean == "." || !filepath.IsAbs(clean) {
+		return fmt.Errorf("invalid runtime directory: %s", path)
+	}
+	if err := os.MkdirAll(clean, mode); err != nil {
+		return err
+	}
+	if os.Geteuid() == 0 {
+		if err := os.Chown(clean, 0, 0); err != nil {
+			return err
+		}
+	}
+	return os.Chmod(clean, mode)
+}
+
+func addSSHDPorts(ports map[string]struct{}, output string) {
+	scanner := bufio.NewScanner(strings.NewReader(output))
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) >= 2 && strings.EqualFold(fields[0], "port") {
+			addPort(ports, fields[1])
+		}
+	}
+}
+
+func addSSHConfigPorts(ports map[string]struct{}) {
+	files := []string{"/etc/ssh/sshd_config"}
+	if matches, err := filepath.Glob("/etc/ssh/sshd_config.d/*.conf"); err == nil {
+		files = append(files, matches...)
+	}
+	for _, file := range files {
+		content, err := os.ReadFile(file)
+		if err != nil {
+			continue
+		}
+		scanner := bufio.NewScanner(strings.NewReader(string(content)))
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			fields := strings.Fields(line)
+			if len(fields) >= 2 && strings.EqualFold(fields[0], "Port") {
+				addPort(ports, fields[1])
+			}
+		}
+	}
+}
+
+func addPort(ports map[string]struct{}, value string) {
+	port, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || port < 1 || port > 65535 {
+		return
+	}
+	ports[strconv.Itoa(port)] = struct{}{}
 }

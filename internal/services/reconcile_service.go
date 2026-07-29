@@ -68,11 +68,11 @@ func (s *ReconcileService) Run(ctx context.Context, actor *uint, ip string) (*Re
 			return result, err
 		}
 		for i := range rules {
-			_ = s.firewall.DeleteRule(ctx, &rules[i], actor, ip)
 			if !rules[i].Enabled {
+				_ = s.firewall.DeleteRule(ctx, &rules[i], actor, ip)
 				continue
 			}
-			if err := s.firewall.ApplyRule(ctx, &rules[i], actor, ip); err != nil {
+			if err := s.firewall.ReplaceRule(ctx, &rules[i], &rules[i], actor, ip); err != nil {
 				return result, err
 			}
 		}
