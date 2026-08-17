@@ -26,6 +26,8 @@ func TestBubblewrapShellOnlyMountsPlatformHomeWritable(t *testing.T) {
 	args := buildBubblewrapArgs(&user.User{Username: "siteuser"}, 2001, 2001, home, runtimeRoot)
 	joined := strings.Join(args, " ")
 	for _, want := range []string{
+		"--dir /etc",
+		"--dir " + filepath.Dir(home),
 		"--bind " + home + " " + home,
 		"--ro-bind " + runtimeRoot + " " + runtimeRoot,
 		"/usr/bin/setpriv --reuid=2001 --regid=2001 --init-groups",
@@ -35,6 +37,12 @@ func TestBubblewrapShellOnlyMountsPlatformHomeWritable(t *testing.T) {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("sandbox arguments do not contain %q:\n%s", want, joined)
 		}
+	}
+	if strings.Index(joined, "--dir "+filepath.Dir(home)) > strings.Index(joined, "--bind "+home+" "+home) {
+		t.Fatalf("sandbox home parent must be created before the home bind:\n%s", joined)
+	}
+	if strings.Index(joined, "--dir /etc") > strings.Index(joined, "--ro-bind /etc/passwd /etc/passwd") {
+		t.Fatalf("sandbox /etc must be created before individual account-file binds:\n%s", joined)
 	}
 	if strings.Contains(joined, "--bind / /") || strings.Contains(joined, "--ro-bind / /") {
 		t.Fatalf("sandbox must not expose the host root: %s", joined)

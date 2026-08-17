@@ -182,6 +182,12 @@ func buildBubblewrapArgs(account *user.User, uid, gid int, home, runtimeRoot str
 		"--proc", "/proc",
 		"--dev", "/dev",
 		"--tmpfs", "/tmp",
+		// Create shared namespace parents explicitly before mounting private
+		// files or directories below them. Bubblewrap derives automatically
+		// created parent permissions from the mounted source; a 0640 passwd
+		// file or 2770 platform home can therefore produce a root-only 0750
+		// parent that the site account cannot traverse after setpriv runs.
+		"--dir", "/etc",
 		"--dir", "/run",
 		"--dir", "/var",
 		"--symlink", "../run", "/var/run",
@@ -200,7 +206,7 @@ func buildBubblewrapArgs(account *user.User, uid, gid int, home, runtimeRoot str
 		}
 	}
 	for _, source := range []string{
-		"/etc/passwd", "/etc/group", "/etc/shadow", "/etc/gshadow", "/etc/login.defs",
+		"/etc/passwd", "/etc/group", "/etc/shadow", "/etc/gshadow", "/etc/login.defs", "/etc/bash.bashrc",
 		"/etc/nsswitch.conf", "/etc/resolv.conf", "/etc/hosts",
 		"/etc/ssl", "/etc/pki", "/etc/ca-certificates", "/etc/localtime", "/etc/ld.so.cache",
 		"/etc/gitconfig", "/etc/machine-id", "/etc/sudo.conf", "/etc/sudoers", "/etc/sudoers.d",
@@ -214,6 +220,7 @@ func buildBubblewrapArgs(account *user.User, uid, gid int, home, runtimeRoot str
 		args = append(args, "--ro-bind", runtimeRoot, runtimeRoot)
 	}
 	args = append(args,
+		"--dir", filepath.Dir(home),
 		"--bind", home, home,
 		"--chdir", home,
 		// setpriv uses these two capabilities only long enough to assume the
