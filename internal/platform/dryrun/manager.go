@@ -149,8 +149,6 @@ func (u *userManager) Create(_ context.Context, spec platform.SiteUserSpec) (int
 	if err := os.MkdirAll(spec.HomeDir, 0o750); err != nil {
 		return 0, 0, err
 	}
-	allowed := filepath.Join(spec.HomeDir, ".deploycp_allowed_root")
-	_ = os.WriteFile(allowed, []byte(spec.AllowedRoot+"\n"), 0o600)
 	drylog("user", "created %s (uid=%d gid=%d home=%s)", spec.Username, uid, gid, spec.HomeDir)
 	return uid, gid, nil
 }
@@ -159,8 +157,8 @@ func (u *userManager) SyncHome(_ context.Context, username, homeDir, allowedRoot
 	if err := os.MkdirAll(homeDir, 0o755); err != nil {
 		return err
 	}
-	allowed := filepath.Join(homeDir, ".deploycp_allowed_root")
-	_ = os.WriteFile(allowed, []byte(allowedRoot+"\n"), 0o600)
+	_ = allowedRoot
+	_ = os.Remove(filepath.Join(homeDir, ".deploycp_allowed_root"))
 	drylog("user", "sync home for %s -> %s (allowed=%s shell=%s)", username, homeDir, allowedRoot, shellPath)
 	return nil
 }
@@ -171,6 +169,11 @@ func (u *userManager) SetPassword(_ context.Context, username, password string) 
 		masked = password[:2] + "***"
 	}
 	drylog("user", "set password for %s (%s)", username, masked)
+	return nil
+}
+
+func (u *userManager) Enable(_ context.Context, username string) error {
+	drylog("user", "enable %s", username)
 	return nil
 }
 

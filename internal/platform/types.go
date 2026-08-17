@@ -48,6 +48,7 @@ type UserManager interface {
 	Create(ctx context.Context, spec SiteUserSpec) (uid int, gid int, err error)
 	SyncHome(ctx context.Context, username, homeDir, allowedRoot, shellPath string) error
 	SetPassword(ctx context.Context, username, password string) error
+	Enable(ctx context.Context, username string) error
 	Disable(ctx context.Context, username string) error
 	Delete(ctx context.Context, username string) error
 	ChownRecursive(ctx context.Context, username, path string) error

@@ -41,6 +41,33 @@ func (s *SiteUserService) List() ([]models.SiteUser, error) {
 	return s.repo.List()
 }
 
+func (s *SiteUserService) ReconcileSystemAccess(ctx context.Context) error {
+	items, err := s.repo.List()
+	if err != nil {
+		return err
+	}
+	for i := range items {
+		item := &items[i]
+		if err := s.adapter.Users().SyncHome(ctx, item.Username, item.HomeDirectory, item.AllowedRoot, s.cfg.Paths.RestrictedShellPath); err != nil {
+			return fmt.Errorf("reconcile SSH user %s: %w", item.Username, err)
+		}
+		if item.IsActive {
+			if err := s.adapter.Users().Enable(ctx, item.Username); err != nil {
+				return fmt.Errorf("enable SSH user %s: %w", item.Username, err)
+			}
+		} else if err := s.adapter.Users().Disable(ctx, item.Username); err != nil {
+			return fmt.Errorf("disable SSH user %s: %w", item.Username, err)
+		}
+		if item.Shell != s.cfg.Paths.RestrictedShellPath {
+			item.Shell = s.cfg.Paths.RestrictedShellPath
+			if err := s.repo.Update(item); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func (s *SiteUserService) Find(id uint) (*models.SiteUser, error) {
 	return s.repo.Find(id)
 }
@@ -118,6 +145,13 @@ func (s *SiteUserService) ResetPassword(ctx context.Context, id uint, password s
 	if err := s.adapter.Users().SetPassword(ctx, user.Username, password); err != nil {
 		return "", err
 	}
+	// chpasswd replaces a locked password hash on Linux. Preserve the panel's
+	// disabled state instead of accidentally re-enabling SSH during a reset.
+	if !user.IsActive {
+		if err := s.adapter.Users().Disable(ctx, user.Username); err != nil {
+			return "", err
+		}
+	}
 	now := time.Now()
 	user.LastPasswordReset = &now
 	if err := s.repo.Update(user); err != nil {
@@ -132,7 +166,11 @@ func (s *SiteUserService) ToggleEnabled(ctx context.Context, id uint, enabled bo
 	if err != nil {
 		return err
 	}
-	if !enabled {
+	if enabled {
+		if err := s.adapter.Users().Enable(ctx, user.Username); err != nil {
+			return err
+		}
+	} else {
 		if err := s.adapter.Users().Disable(ctx, user.Username); err != nil {
 			return err
 		}

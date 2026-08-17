@@ -78,6 +78,11 @@ stage_release_binary() {
       cp "$candidate" "$tmp_target"
       chmod 0755 "$tmp_target"
       chown "${APP_USER}:${APP_USER}" "$tmp_target"
+      if ! "$tmp_target" --self-test >/dev/null 2>&1; then
+        rm -f "$tmp_target"
+        echo "release binary self-test failed" >&2
+        return 1
+      fi
       mv -f "$tmp_target" "$target"
       return 0
     fi
@@ -246,19 +251,19 @@ install_packages() {
   case "$manager" in
     apt)
       apt_get_install update -y
-      apt_get_install install -y nginx certbot curl tar sqlite3 ca-certificates openssl procps cron redis-server proftpd-basic varnish mariadb-server postgresql ufw fail2ban logrotate acl
+      apt_get_install install -y nginx certbot curl tar sqlite3 ca-certificates openssl procps cron sudo bubblewrap util-linux redis-server proftpd-basic varnish mariadb-server postgresql ufw fail2ban logrotate acl
       ;;
     dnf)
-      dnf install -y nginx certbot curl tar sqlite sqlite-libs ca-certificates openssl procps-ng cronie redis proftpd varnish mariadb-server postgresql-server firewalld fail2ban logrotate acl
+      dnf install -y nginx certbot curl tar sqlite sqlite-libs ca-certificates openssl procps-ng cronie sudo bubblewrap util-linux redis proftpd varnish mariadb-server postgresql-server firewalld fail2ban logrotate acl
       ;;
     yum)
-      yum install -y nginx certbot curl tar sqlite ca-certificates openssl procps-ng cronie redis proftpd varnish mariadb-server postgresql-server firewalld fail2ban logrotate acl
+      yum install -y nginx certbot curl tar sqlite ca-certificates openssl procps-ng cronie sudo bubblewrap util-linux redis proftpd varnish mariadb-server postgresql-server firewalld fail2ban logrotate acl
       ;;
     zypper)
-      zypper --non-interactive install nginx certbot curl tar sqlite3 ca-certificates openssl procps cron redis proftpd varnish mariadb postgresql-server firewalld fail2ban logrotate acl
+      zypper --non-interactive install nginx certbot curl tar sqlite3 ca-certificates openssl procps cron sudo bubblewrap util-linux redis proftpd varnish mariadb postgresql-server firewalld fail2ban logrotate acl
       ;;
     pacman)
-      pacman -Sy --noconfirm nginx certbot curl tar sqlite ca-certificates openssl procps-ng cronie redis mariadb postgresql varnish ufw fail2ban logrotate acl
+      pacman -Sy --noconfirm nginx certbot curl tar sqlite ca-certificates openssl procps-ng cronie sudo bubblewrap util-linux redis mariadb postgresql varnish ufw fail2ban logrotate acl
       ;;
     *)
       echo "unsupported package manager" >&2
@@ -1084,7 +1089,20 @@ if [[ -x "${CORE_DIR}/bin/${BIN_NAME}" ]]; then
   run_deploycp_cli_quiet bootstrap-host
   run_deploycp_cli_quiet reconcile-managed
   systemctl start "${SERVICE_NAME}"
-  run_deploycp_cli_quiet verify-host || true
+  systemctl is-active --quiet "${SERVICE_NAME}"
+  panel_ready=0
+  for _ in {1..20}; do
+    if curl -fsS --max-time 3 "http://127.0.0.1:${APP_PORT}/robots.txt" >/dev/null 2>&1; then
+      panel_ready=1
+      break
+    fi
+    sleep 1
+  done
+  if [[ "$panel_ready" -ne 1 ]]; then
+    echo "DeployCP HTTP readiness check failed on 127.0.0.1:${APP_PORT}" >&2
+    exit 1
+  fi
+  run_deploycp_cli_quiet verify-host
 
   # Resolve display values for the post-install message.
   DISPLAY_PORT="$(read_env_value "${CORE_DIR}/.env" "APP_PORT")"

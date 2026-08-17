@@ -9,9 +9,27 @@ import (
 	"strings"
 
 	"deploycp/internal/bootstrap"
+	"deploycp/internal/config"
+	"deploycp/internal/restrictedtransfer"
+	"deploycp/internal/views"
 )
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--self-test" {
+		if err := runSelfTest(); err != nil {
+			fmt.Fprintln(os.Stderr, "deploycp self-test failed:", err)
+			os.Exit(1)
+		}
+		fmt.Println("deploycp self-test ok")
+		return
+	}
+	if handled, err := restrictedtransfer.Run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr); handled {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	app, err := bootstrap.Build()
 	if err != nil {
 		log.Fatalf("failed to initialize app: %v", err)
@@ -148,4 +166,29 @@ func main() {
 	if err := app.Fiber.Listen(addr); err != nil {
 		log.Fatalf("server stopped: %v", err)
 	}
+}
+
+func runSelfTest() error {
+	engine := views.NewEngine(&config.Config{})
+	if err := engine.Load(); err != nil {
+		return fmt.Errorf("load release templates: %w", err)
+	}
+	tmpDir, err := os.MkdirTemp("", "deploycp-self-test-")
+	if err != nil {
+		return fmt.Errorf("create temporary database directory: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+	cfg := &config.Config{Database: config.DatabaseConfig{SQLitePath: tmpDir + "/deploycp.sqlite"}}
+	db, err := bootstrap.NewDB(cfg)
+	if err != nil {
+		return fmt.Errorf("initialize temporary database: %w", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fmt.Errorf("open temporary database handle: %w", err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		return fmt.Errorf("close temporary database: %w", err)
+	}
+	return nil
 }

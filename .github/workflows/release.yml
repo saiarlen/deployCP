@@ -45,6 +45,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ${{ matrix.apt_packages }}
 
+      - name: Verify release source
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test ./...
+          go vet ./...
+          bash -n scripts/linux/*.sh
+
       - name: Build
         shell: bash
         run: |
@@ -67,13 +75,14 @@ jobs:
             out="${out}v${{ matrix.goarm }}"
           fi
 
-          mkdir -p "$out/scripts/linux" "$out/docs" "$out/frontend"
+          mkdir -p "$out/scripts/linux" "$out/assets" "$out/docs" "$out/frontend"
 
           go build -o "$out/deploycp" ./main.go
 
           cp .env.example "$out/"
           cp readme.md "$out/"
           cp scripts/linux/*.sh "$out/scripts/linux/"
+          cp -R assets/. "$out/assets/"
           cp -R docs/. "$out/docs/"
           cp -R frontend/. "$out/frontend/"
 

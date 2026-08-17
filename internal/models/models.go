@@ -87,6 +87,7 @@ type WebsiteDomain struct {
 	WebsiteID uint   `gorm:"index;not null"`
 	Domain    string `gorm:"size:190;index;not null"`
 	Primary   bool   `gorm:"not null;default:false"`
+	SSLReady  bool   `gorm:"-" json:"-"`
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }

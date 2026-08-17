@@ -68,10 +68,10 @@
               <span class="sa-domain-icon-wrap" aria-hidden="true"><i data-lucide="globe" class="sa-domain-icon"></i></span>
               <span class="sa-domain-links">
                 {{ range _, d := w.Domains }}{{ if d.Primary }}
-                <a class="sa-domain-link" href="https://{{ d.Domain }}/" target="_blank" rel="noopener noreferrer">{{ d.Domain }}</a>
+                <a class="sa-domain-link" href="{{ if d.SSLReady }}https{{ else }}http{{ end }}://{{ d.Domain }}/" target="_blank" rel="noopener noreferrer">{{ d.Domain }}</a>
                 {{ end }}{{ end }}
                 {{ range _, d := w.Domains }}{{ if !d.Primary }}
-                <a class="sa-domain-link" href="https://{{ d.Domain }}/" target="_blank" rel="noopener noreferrer">{{ d.Domain }}</a>
+                <a class="sa-domain-link" href="{{ if d.SSLReady }}https{{ else }}http{{ end }}://{{ d.Domain }}/" target="_blank" rel="noopener noreferrer">{{ d.Domain }}</a>
                 {{ end }}{{ end }}
               </span>
               {{ end }}
@@ -119,10 +119,10 @@
               <span class="sa-domain-icon-wrap" aria-hidden="true"><i data-lucide="globe" class="sa-domain-icon"></i></span>
               <span class="sa-domain-links">
                 {{ range _, d := a.Website.Domains }}{{ if d.Primary }}
-                <a class="sa-domain-link" href="https://{{ d.Domain }}/" target="_blank" rel="noopener noreferrer">{{ d.Domain }}</a>
+                <a class="sa-domain-link" href="{{ if d.SSLReady }}https{{ else }}http{{ end }}://{{ d.Domain }}/" target="_blank" rel="noopener noreferrer">{{ d.Domain }}</a>
                 {{ end }}{{ end }}
                 {{ range _, d := a.Website.Domains }}{{ if !d.Primary }}
-                <a class="sa-domain-link" href="https://{{ d.Domain }}/" target="_blank" rel="noopener noreferrer">{{ d.Domain }}</a>
+                <a class="sa-domain-link" href="{{ if d.SSLReady }}https{{ else }}http{{ end }}://{{ d.Domain }}/" target="_blank" rel="noopener noreferrer">{{ d.Domain }}</a>
                 {{ end }}{{ end }}
               </span>
               {{ else }}

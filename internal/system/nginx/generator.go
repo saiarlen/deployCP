@@ -46,7 +46,7 @@ var cloudflareIPs = []string{
 }
 
 type WebsiteConfigOptions struct {
-	Certificate       *models.SSLCertificate
+	Certificates      map[string]*models.SSLCertificate
 	BasicAuth         *models.BasicAuth
 	BasicAuthPath     string
 	IPBlocks          []models.IPBlock
@@ -62,44 +62,45 @@ func BuildWebsiteConfig(cfg *config.Config, site *models.Website, opts WebsiteCo
 	if len(domains) == 0 {
 		domains = []string{"_"}
 	}
-	serverNames := strings.Join(domains, " ")
-
-	httpServer := strings.Builder{}
-	httpServer.WriteString("# Managed by DeployCP. Do not edit.\n")
-	httpServer.WriteString("server {\n")
-	httpServer.WriteString("    listen 80;\n")
-	httpServer.WriteString(fmt.Sprintf("    server_name %s;\n", serverNames))
-	httpServer.WriteString(fmt.Sprintf("    access_log %s;\n", site.AccessLogPath))
-	httpServer.WriteString(fmt.Sprintf("    error_log %s warn;\n", site.ErrorLogPath))
-	httpServer.WriteString("    location ^~ /.well-known/acme-challenge/ {\n")
-	httpServer.WriteString(fmt.Sprintf("        root %s;\n", site.RootPath))
-	httpServer.WriteString("        allow all;\n")
-	httpServer.WriteString("    }\n")
-	if opts.Certificate != nil && strings.TrimSpace(opts.Certificate.CertPath) != "" && strings.TrimSpace(opts.Certificate.KeyPath) != "" {
-		httpServer.WriteString("    location / {\n")
-		httpServer.WriteString("        return 301 https://$host$request_uri;\n")
-		httpServer.WriteString("    }\n")
-		httpServer.WriteString("}\n\n")
-	}
-
 	body := strings.Builder{}
-	if opts.Certificate == nil || strings.TrimSpace(opts.Certificate.CertPath) == "" || strings.TrimSpace(opts.Certificate.KeyPath) == "" {
-		body.WriteString(httpServer.String())
-		renderServerContent(&body, site, opts)
-		body.WriteString("}\n")
-	} else {
-		body.WriteString(httpServer.String())
+	body.WriteString("# Managed by DeployCP. Do not edit.\n")
+	for index, domain := range domains {
+		if index > 0 {
+			body.WriteString("\n")
+		}
+		cert := opts.Certificates[strings.ToLower(strings.TrimSpace(domain))]
+		hasCert := usableCertificate(cert)
 		body.WriteString("server {\n")
-		body.WriteString("    listen 443 ssl http2;\n")
-		body.WriteString(fmt.Sprintf("    server_name %s;\n", serverNames))
+		body.WriteString("    listen 80;\n")
+		body.WriteString(fmt.Sprintf("    server_name %s;\n", domain))
 		body.WriteString(fmt.Sprintf("    access_log %s;\n", site.AccessLogPath))
 		body.WriteString(fmt.Sprintf("    error_log %s warn;\n", site.ErrorLogPath))
-		body.WriteString(fmt.Sprintf("    ssl_certificate %s;\n", opts.Certificate.CertPath))
-		body.WriteString(fmt.Sprintf("    ssl_certificate_key %s;\n", opts.Certificate.KeyPath))
-		body.WriteString("    ssl_session_cache shared:deploycp_ssl:10m;\n")
-		body.WriteString("    ssl_session_timeout 10m;\n")
-		renderServerContent(&body, site, opts)
+		body.WriteString("    location ^~ /.well-known/acme-challenge/ {\n")
+		body.WriteString(fmt.Sprintf("        root %s;\n", site.RootPath))
+		body.WriteString("        allow all;\n")
+		body.WriteString("    }\n")
+		if hasCert {
+			body.WriteString("    location / {\n")
+			body.WriteString("        return 301 https://$host$request_uri;\n")
+			body.WriteString("    }\n")
+		} else {
+			renderServerContent(&body, site, opts)
+		}
 		body.WriteString("}\n")
+
+		if hasCert {
+			body.WriteString("\nserver {\n")
+			body.WriteString("    listen 443 ssl http2;\n")
+			body.WriteString(fmt.Sprintf("    server_name %s;\n", domain))
+			body.WriteString(fmt.Sprintf("    access_log %s;\n", site.AccessLogPath))
+			body.WriteString(fmt.Sprintf("    error_log %s warn;\n", site.ErrorLogPath))
+			body.WriteString(fmt.Sprintf("    ssl_certificate %s;\n", cert.CertPath))
+			body.WriteString(fmt.Sprintf("    ssl_certificate_key %s;\n", cert.KeyPath))
+			body.WriteString("    ssl_session_cache shared:deploycp_ssl:10m;\n")
+			body.WriteString("    ssl_session_timeout 10m;\n")
+			renderServerContent(&body, site, opts)
+			body.WriteString("}\n")
+		}
 	}
 
 	configPath := filepath.Join(cfg.Paths.NginxAvailableDir, site.Name+".conf")
@@ -107,6 +108,11 @@ func BuildWebsiteConfig(cfg *config.Config, site *models.Website, opts WebsiteCo
 	checksum := fmt.Sprintf("%x", sha256.Sum256([]byte(body.String())))
 
 	return GeneratedConfig{Content: body.String(), ConfigPath: configPath, EnabledPath: enabledPath, Checksum: checksum}
+}
+
+func usableCertificate(cert *models.SSLCertificate) bool {
+	return cert != nil && strings.EqualFold(strings.TrimSpace(cert.Status), "active") &&
+		strings.TrimSpace(cert.CertPath) != "" && strings.TrimSpace(cert.KeyPath) != ""
 }
 
 func renderServerContent(body *strings.Builder, site *models.Website, opts WebsiteConfigOptions) {

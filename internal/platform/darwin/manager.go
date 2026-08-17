@@ -170,12 +170,6 @@ type userManager struct {
 func (u *userManager) EnsureRestrictedShell(ctx context.Context, shellPath string) error {
 	script := `#!/bin/bash
 allowed="$HOME"
-if [ -f "$HOME/.deploycp_allowed_root" ]; then
-  read -r allowed < "$HOME/.deploycp_allowed_root" 2>/dev/null || true
-fi
-if [ ! -d "$allowed" ]; then
-  allowed="$HOME"
-fi
 export PATH=/usr/bin:/bin:/usr/sbin:/sbin
 runtime_env="$allowed/.deploycp/runtime.env"
 if [ -f "$runtime_env" ]; then
@@ -215,10 +209,6 @@ func (u *userManager) Create(ctx context.Context, spec platform.SiteUserSpec) (i
 		return 0, 0, err
 	}
 	_, _ = u.runner.Run(ctx, system.CommandRequest{Binary: "/usr/sbin/createhomedir", Args: []string{"-c", "-u", spec.Username}, Timeout: 20 * time.Second})
-	allowed := filepath.Join(spec.HomeDir, ".deploycp_allowed_root")
-	if err := utils.WriteFileAtomic(allowed, []byte(spec.AllowedRoot+"\n"), 0o600); err != nil {
-		return 0, 0, err
-	}
 	if err := u.ChownRecursive(ctx, spec.Username, spec.HomeDir); err != nil {
 		return 0, 0, err
 	}
@@ -237,14 +227,16 @@ func (u *userManager) SyncHome(ctx context.Context, username, homeDir, allowedRo
 			return err
 		}
 	}
-	allowed := filepath.Join(homeDir, ".deploycp_allowed_root")
-	if err := utils.WriteFileAtomic(allowed, []byte(strings.TrimSpace(allowedRoot)+"\n"), 0o600); err != nil {
-		return err
-	}
+	_ = allowedRoot
+	_ = os.Remove(filepath.Join(homeDir, ".deploycp_allowed_root"))
 	return u.ChownRecursive(ctx, username, homeDir)
 }
 func (u *userManager) SetPassword(ctx context.Context, username, password string) error {
 	_, err := u.runner.Run(ctx, system.CommandRequest{Binary: "/usr/sbin/sysadminctl", Args: []string{"-resetPasswordFor", username, "-newPassword", password}, Timeout: 20 * time.Second, AuditAction: "site_user.password.reset"})
+	return err
+}
+func (u *userManager) Enable(ctx context.Context, username string) error {
+	_, err := u.runner.Run(ctx, system.CommandRequest{Binary: "/usr/bin/dscl", Args: []string{".", "-create", "/Users/" + username, "UserShell", u.cfg.Paths.RestrictedShellPath}, Timeout: 10 * time.Second, AuditAction: "site_user.enable"})
 	return err
 }
 func (u *userManager) Disable(ctx context.Context, username string) error {

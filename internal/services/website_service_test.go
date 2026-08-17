@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,11 +10,50 @@ import (
 
 	"deploycp/internal/config"
 	"deploycp/internal/models"
+	"deploycp/internal/platform"
 	"deploycp/internal/platform/dryrun"
 	"deploycp/internal/repositories"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
+
+type rejectingNginxManager struct{}
+
+func (rejectingNginxManager) Validate(context.Context, string) error {
+	return errors.New("invalid staged config")
+}
+func (rejectingNginxManager) Reload(context.Context, string) error { return nil }
+
+type nginxOnlyAdapter struct {
+	platform.Adapter
+	manager platform.NginxManager
+}
+
+func (a nginxOnlyAdapter) Nginx() platform.NginxManager { return a.manager }
+
+func TestNginxTransactionRestoresPreviousConfigOnValidationFailure(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "site.conf")
+	if err := os.WriteFile(configPath, []byte("old config\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	svc := &WebsiteService{
+		cfg:     &config.Config{Paths: config.PathsConfig{NginxBinary: "/usr/sbin/nginx"}},
+		adapter: nginxOnlyAdapter{manager: rejectingNginxManager{}},
+	}
+	err := svc.applyNginxTransaction(context.Background(), []string{configPath}, func() error {
+		return os.WriteFile(configPath, []byte("broken config\n"), 0o644)
+	})
+	if err == nil {
+		t.Fatal("expected staged nginx validation to fail")
+	}
+	content, readErr := os.ReadFile(configPath)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if string(content) != "old config\n" {
+		t.Fatalf("nginx rollback content = %q", content)
+	}
+}
 
 func TestUpdatePhpSettingsRewritesNginxSocket(t *testing.T) {
 	tmp := t.TempDir()
@@ -81,6 +121,16 @@ func TestUpdatePhpSettingsRewritesNginxSocket(t *testing.T) {
 	}
 	if !strings.Contains(string(before), "8.3-fpm.sock") {
 		t.Fatalf("initial config does not contain php8.3 socket:\n%s", before)
+	}
+	catchall, err := os.ReadFile(filepath.Join(cfg.Paths.NginxAvailableDir, "00-deploycp-catchall.conf"))
+	if err != nil {
+		t.Fatalf("read unknown-host catchall: %v", err)
+	}
+	catchallText := string(catchall)
+	if !strings.Contains(catchallText, "listen 443 ssl default_server;") ||
+		(!strings.Contains(catchallText, "ssl_reject_handshake on;") &&
+			(!strings.Contains(catchallText, "ssl_certificate ") || !strings.Contains(catchallText, "return 444;"))) {
+		t.Fatalf("catchall does not reject unknown TLS hosts:\n%s", catchall)
 	}
 
 	if err := svc.UpdatePhpSettings(context.Background(), site.ID, "8.4", PhpSettingsData{

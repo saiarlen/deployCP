@@ -251,10 +251,7 @@ func (s *PlatformOpsService) CheckHealth(ctx context.Context, websiteID uint, ac
 	if !probedHTTP {
 		if domain := primaryDomainForHealth(site); domain != "" {
 			probedHTTP = true
-			scheme := "http"
-			if site.SSLReady {
-				scheme = "https"
-			}
+			scheme := s.websiteDomainScheme(site, domain)
 			code, err := probeHTTP(ctx, scheme+"://"+domain+"/")
 			httpStatus = code
 			if err != nil {
@@ -313,6 +310,21 @@ func (s *PlatformOpsService) CheckHealth(ctx context.Context, websiteID uint, ac
 	s.syncAlerts(site.ID, serviceStatus, sslStatus, diskPct, check.Message, now)
 	s.audit.Record(actor, "platform.health.check", "website", strconv.FormatUint(uint64(site.ID), 10), ip, map[string]any{"status": status})
 	return check, nil
+}
+
+func (s *PlatformOpsService) websiteDomainScheme(site *models.Website, domain string) string {
+	if s.repos.SSL == nil || site == nil {
+		return "http"
+	}
+	items, err := s.repos.SSL.List()
+	if err != nil {
+		return "http"
+	}
+	certs := activeWebsiteCertificates(site, items)
+	if certs[strings.ToLower(strings.TrimSpace(domain))] != nil {
+		return "https"
+	}
+	return "http"
 }
 
 func (s *PlatformOpsService) CreateBackup(ctx context.Context, websiteID uint, kind string, actor *uint, ip string) (*models.PlatformBackup, error) {

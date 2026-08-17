@@ -31,6 +31,17 @@ package_available() {
   esac
 }
 
+package_installed() {
+  local manager="$1"
+  local pkg="$2"
+  case "$manager" in
+    apt) dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q 'install ok installed' ;;
+    dnf|yum|zypper) rpm -q "$pkg" >/dev/null 2>&1 ;;
+    pacman) pacman -Q "$pkg" >/dev/null 2>&1 ;;
+    *) return 1 ;;
+  esac
+}
+
 apt_get_install() {
   DEBIAN_FRONTEND=noninteractive PYTHONWARNINGS=ignore::SyntaxWarning apt-get "$@"
 }
@@ -55,7 +66,7 @@ install_optional_packages() {
   shift
   local pkg available=()
   for pkg in "$@"; do
-    if package_available "$manager" "$pkg"; then
+    if package_available "$manager" "$pkg" && ! package_installed "$manager" "$pkg"; then
       available+=("$pkg")
     fi
   done
@@ -67,6 +78,11 @@ install_first_available_package() {
   local manager="$1"
   shift
   local pkg
+  for pkg in "$@"; do
+    if package_installed "$manager" "$pkg"; then
+      return 0
+    fi
+  done
   for pkg in "$@"; do
     if package_available "$manager" "$pkg"; then
       install_named_packages "$manager" "$pkg"
@@ -170,11 +186,188 @@ stage_release_binary() {
       cp "$candidate" "$tmp_target"
       chmod 0755 "$tmp_target"
       chown "${APP_USER}:${APP_USER}" "$tmp_target"
-      mv -f "$tmp_target" "$target"
+      if ! "$tmp_target" --self-test >/dev/null 2>&1; then
+        rm -f "$tmp_target"
+        echo "release binary self-test failed" >&2
+        return 1
+      fi
       return 0
     fi
   done
   return 1
+}
+
+read_env_value() {
+  local file="$1"
+  local key="$2"
+  if [[ ! -f "$file" ]]; then
+    return
+  fi
+  awk -F= -v key="$key" '$1 == key { print substr($0, index($0, "=") + 1); exit }' "$file"
+}
+
+ROLLBACK_DIR=""
+ROLLBACK_DATABASE=""
+ROLLBACK_DATABASE_OWNER=""
+ROLLBACK_DATABASE_MODE=""
+PANEL_WAS_ACTIVE=0
+UPDATE_COMMITTED=0
+ROLLBACK_READY=0
+ROLLBACK_SYSTEM_PATHS=(
+  /etc/ssh/sshd_config
+  /etc/ssh/sshd_config.d/99-deploycp.conf
+  /etc/shells
+  /etc/sudoers.d/deploycp-transfer
+  /etc/deploycp/restricted-shell.json
+  /usr/local/bin/deploycp-rshell
+  /usr/local/bin/deploycp
+  /usr/local/libexec/deploycp-transfer
+  /usr/local/libexec/deploycp-shell.rc
+  /etc/fail2ban/jail.d/deploycp.local
+  /etc/logrotate.d/deploycp
+  /etc/cron.d/deploycp-backup
+)
+ROLLBACK_TREE_PATHS=()
+
+prepare_rollback_tree_paths() {
+  local nginx_available nginx_enabled core_root
+  nginx_available="$(read_env_value "${CORE_DIR}/.env" "NGINX_AVAILABLE_DIR")"
+  nginx_enabled="$(read_env_value "${CORE_DIR}/.env" "NGINX_ENABLED_DIR")"
+  nginx_available="${nginx_available%\"}"
+  nginx_available="${nginx_available#\"}"
+  nginx_enabled="${nginx_enabled%\"}"
+  nginx_enabled="${nginx_enabled#\"}"
+  [[ -n "$nginx_available" ]] || nginx_available="/etc/nginx/sites-available"
+  [[ -n "$nginx_enabled" ]] || nginx_enabled="/etc/nginx/sites-enabled"
+  core_root="$(realpath -m -- "$CORE_DIR")"
+  nginx_available="$(realpath -m -- "$nginx_available")"
+  nginx_enabled="$(realpath -m -- "$nginx_enabled")"
+  ROLLBACK_TREE_PATHS=(
+    "${core_root}/frontend"
+    "${core_root}/docs"
+    "${core_root}/assets"
+    "${core_root}/scripts"
+    "${core_root}/.env"
+    "$nginx_available"
+    "$nginx_enabled"
+  )
+}
+
+safe_rollback_tree_path() {
+  local tree_path="$1"
+  local core_root normalized
+  core_root="$(realpath -m -- "$CORE_DIR")"
+  normalized="$(realpath -m -- "$tree_path")"
+  [[ "$tree_path" == "$normalized" && "$normalized" == /* && "$normalized" != "/" && "$normalized" != "/etc" && "$normalized" != "$core_root" ]]
+}
+
+prepare_update_rollback() {
+  local target="${CORE_DIR}/bin/${BIN_NAME}"
+  local configured_db=""
+  ROLLBACK_DIR="$(mktemp -d /tmp/deploycp-update.XXXXXX)"
+  if [[ -f "$target" ]]; then
+    cp -p "$target" "${ROLLBACK_DIR}/${BIN_NAME}"
+  fi
+  mkdir -p "${ROLLBACK_DIR}/system"
+  local system_path=""
+  for system_path in "${ROLLBACK_SYSTEM_PATHS[@]}"; do
+    if [[ -e "$system_path" || -L "$system_path" ]]; then
+      mkdir -p "${ROLLBACK_DIR}/system$(dirname "$system_path")"
+      cp -a "$system_path" "${ROLLBACK_DIR}/system${system_path}"
+    fi
+  done
+  prepare_rollback_tree_paths
+  mkdir -p "${ROLLBACK_DIR}/trees"
+  local tree_path tree_index=0
+  for tree_path in "${ROLLBACK_TREE_PATHS[@]}"; do
+    if ! safe_rollback_tree_path "$tree_path"; then
+      echo "refusing unsafe rollback path: $tree_path" >&2
+      return 1
+    fi
+    if [[ -e "$tree_path" || -L "$tree_path" ]]; then
+      mkdir -p "${ROLLBACK_DIR}/trees/${tree_index}"
+      cp -a "$tree_path" "${ROLLBACK_DIR}/trees/${tree_index}/item"
+    fi
+    tree_index=$((tree_index + 1))
+  done
+  configured_db="$(read_env_value "${CORE_DIR}/.env" "SQLITE_PATH")"
+  configured_db="${configured_db%\"}"
+  configured_db="${configured_db#\"}"
+  if [[ -z "$configured_db" ]]; then
+    configured_db="${CORE_DIR}/storage/db/deploycp.sqlite"
+  elif [[ "$configured_db" != /* ]]; then
+    configured_db="${CORE_DIR}/${configured_db#./}"
+  fi
+  if [[ -f "$configured_db" && "$configured_db" != *"'"* ]]; then
+    ROLLBACK_DATABASE="$configured_db"
+    ROLLBACK_DATABASE_OWNER="$(stat -c '%u:%g' "$configured_db")"
+    ROLLBACK_DATABASE_MODE="$(stat -c '%a' "$configured_db")"
+    sqlite3 "$configured_db" ".backup '${ROLLBACK_DIR}/deploycp.sqlite'"
+  fi
+  if systemctl is-active --quiet "${SERVICE_NAME}"; then
+    PANEL_WAS_ACTIVE=1
+  fi
+  ROLLBACK_READY=1
+}
+
+finish_update() {
+  local status=$?
+  trap - EXIT
+  if [[ "$UPDATE_COMMITTED" -ne 1 && "$ROLLBACK_READY" -eq 1 ]]; then
+    echo "update failed; restoring previous DeployCP release" >&2
+    systemctl stop "${SERVICE_NAME}" >/dev/null 2>&1 || true
+    if [[ -n "$ROLLBACK_DIR" && -f "${ROLLBACK_DIR}/${BIN_NAME}" ]]; then
+      cp -p "${ROLLBACK_DIR}/${BIN_NAME}" "${CORE_DIR}/bin/${BIN_NAME}"
+    fi
+    if [[ -n "$ROLLBACK_DATABASE" && -f "${ROLLBACK_DIR}/deploycp.sqlite" ]]; then
+      rm -f "${ROLLBACK_DATABASE}-wal" "${ROLLBACK_DATABASE}-shm"
+      cp -p "${ROLLBACK_DIR}/deploycp.sqlite" "$ROLLBACK_DATABASE"
+      if [[ -n "$ROLLBACK_DATABASE_OWNER" ]]; then
+        chown "$ROLLBACK_DATABASE_OWNER" "$ROLLBACK_DATABASE"
+      fi
+      if [[ -n "$ROLLBACK_DATABASE_MODE" ]]; then
+        chmod "$ROLLBACK_DATABASE_MODE" "$ROLLBACK_DATABASE"
+      fi
+    fi
+    local tree_path tree_index=0
+    for tree_path in "${ROLLBACK_TREE_PATHS[@]}"; do
+      if safe_rollback_tree_path "$tree_path"; then
+        rm -rf -- "$tree_path"
+        if [[ -e "${ROLLBACK_DIR}/trees/${tree_index}/item" || -L "${ROLLBACK_DIR}/trees/${tree_index}/item" ]]; then
+          mkdir -p "$(dirname "$tree_path")"
+          cp -a "${ROLLBACK_DIR}/trees/${tree_index}/item" "$tree_path"
+        fi
+      fi
+      tree_index=$((tree_index + 1))
+    done
+    local system_path=""
+    for system_path in "${ROLLBACK_SYSTEM_PATHS[@]}"; do
+      rm -f "$system_path"
+      if [[ -e "${ROLLBACK_DIR}/system${system_path}" || -L "${ROLLBACK_DIR}/system${system_path}" ]]; then
+        mkdir -p "$(dirname "$system_path")"
+        cp -a "${ROLLBACK_DIR}/system${system_path}" "$system_path"
+      fi
+    done
+    local nginx_binary
+    nginx_binary="$(read_env_value "${CORE_DIR}/.env" "NGINX_BINARY")"
+    nginx_binary="${nginx_binary%\"}"
+    nginx_binary="${nginx_binary#\"}"
+    [[ -n "$nginx_binary" ]] || nginx_binary="/usr/sbin/nginx"
+    if [[ -x "$nginx_binary" ]] && "$nginx_binary" -t >/dev/null 2>&1; then
+      systemctl reload nginx >/dev/null 2>&1 || true
+    fi
+    systemctl reload ssh >/dev/null 2>&1 || systemctl reload sshd >/dev/null 2>&1 || true
+    systemctl daemon-reload >/dev/null 2>&1 || true
+    if [[ "$PANEL_WAS_ACTIVE" -eq 1 ]]; then
+      if ! systemctl start "${SERVICE_NAME}" >/dev/null 2>&1; then
+        echo "rollback warning: previous ${SERVICE_NAME} service could not be restarted" >&2
+      fi
+    fi
+  fi
+  case "$ROLLBACK_DIR" in
+    /tmp/deploycp-update.*) rm -rf -- "$ROLLBACK_DIR" ;;
+  esac
+  exit "$status"
 }
 
 ensure_cli_wrapper() {
@@ -203,40 +396,44 @@ stage_release_assets() {
 
   for candidate in "${PACKAGE_ROOT}/frontend" "$(pwd)/frontend"; do
     if [[ -d "$candidate" && "$candidate" != "${CORE_DIR}/frontend" ]]; then
-      mkdir -p "${CORE_DIR}/frontend"
-      cp -R "${candidate}/." "${CORE_DIR}/frontend/"
-      chown -R "${APP_USER}:${APP_USER}" "${CORE_DIR}/frontend"
+      replace_release_directory "$candidate" "${CORE_DIR}/frontend"
       break
     fi
   done
 
   for candidate in "${PACKAGE_ROOT}/docs" "$(pwd)/docs"; do
     if [[ -d "$candidate" && "$candidate" != "${CORE_DIR}/docs" ]]; then
-      mkdir -p "${CORE_DIR}/docs"
-      cp -R "${candidate}/." "${CORE_DIR}/docs/"
-      chown -R "${APP_USER}:${APP_USER}" "${CORE_DIR}/docs"
+      replace_release_directory "$candidate" "${CORE_DIR}/docs"
       break
     fi
   done
 
   for candidate in "${PACKAGE_ROOT}/assets" "$(pwd)/assets"; do
     if [[ -d "$candidate" && "$candidate" != "${CORE_DIR}/assets" ]]; then
-      mkdir -p "${CORE_DIR}/assets"
-      cp -R "${candidate}/." "${CORE_DIR}/assets/"
-      chown -R "${APP_USER}:${APP_USER}" "${CORE_DIR}/assets"
+      replace_release_directory "$candidate" "${CORE_DIR}/assets"
       break
     fi
   done
 
   for candidate in "${PACKAGE_ROOT}/scripts/linux" "$(pwd)/scripts/linux"; do
     if [[ -d "$candidate" && "$candidate" != "${CORE_DIR}/scripts/linux" ]]; then
-      mkdir -p "${CORE_DIR}/scripts/linux"
-      cp -R "${candidate}/." "${CORE_DIR}/scripts/linux/"
+      replace_release_directory "$candidate" "${CORE_DIR}/scripts/linux"
       find "${CORE_DIR}/scripts/linux" -type f -name '*.sh' -exec chmod 0755 {} +
-      chown -R "${APP_USER}:${APP_USER}" "${CORE_DIR}/scripts"
       break
     fi
   done
+}
+
+replace_release_directory() {
+  local source="$1"
+  local target="$2"
+  local staged="${target}.new"
+  rm -rf -- "$staged"
+  mkdir -p "$staged"
+  cp -R "${source}/." "$staged/"
+  chown -R "${APP_USER}:${APP_USER}" "$staged"
+  rm -rf -- "$target"
+  mv "$staged" "$target"
 }
 
 ensure_bundled_adminer() {
@@ -271,17 +468,44 @@ reset_adminer_helper() {
     "${CORE_DIR}/storage/generated/adminer-helper/adminer-source.txt"
 }
 
+verify_panel_http() {
+  local app_port
+  app_port="$(read_env_value "${CORE_DIR}/.env" "APP_PORT")"
+  app_port="${app_port%\"}"
+  app_port="${app_port#\"}"
+  [[ "$app_port" =~ ^[0-9]+$ ]] || app_port=2024
+  local attempt
+  for attempt in {1..20}; do
+    if curl -fsS --max-time 3 "http://127.0.0.1:${app_port}/robots.txt" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  echo "DeployCP HTTP readiness check failed on 127.0.0.1:${app_port}" >&2
+  return 1
+}
+
 if [[ "$(id -u)" -ne 0 ]]; then
   echo "run as root" >&2
   exit 1
 fi
 
-systemctl stop "${SERVICE_NAME}" || true
-
 if ! stage_release_binary; then
   echo "release binary not found in update package" >&2
   exit 1
 fi
+
+pkg_manager="$(detect_pkg_manager)"
+install_optional_packages "$pkg_manager" sudo bubblewrap util-linux
+install_db_ui_helper_packages "$pkg_manager"
+install_backup_tool_packages "$pkg_manager"
+
+trap finish_update EXIT
+prepare_update_rollback
+if [[ "$PANEL_WAS_ACTIVE" -eq 1 ]]; then
+  systemctl stop "${SERVICE_NAME}"
+fi
+mv -f "${CORE_DIR}/bin/${BIN_NAME}.new" "${CORE_DIR}/bin/${BIN_NAME}"
 stage_release_assets
 ensure_bundled_adminer
 reset_adminer_helper
@@ -292,10 +516,15 @@ if [[ ! -x "${CORE_DIR}/bin/${BIN_NAME}" ]]; then
 fi
 ensure_cli_wrapper
 
-pkg_manager="$(detect_pkg_manager)"
-install_db_ui_helper_packages "$pkg_manager"
-install_backup_tool_packages "$pkg_manager"
-chown -R "${APP_USER}:${APP_USER}" "${CORE_DIR}"
+chown "${APP_USER}:${APP_USER}" "${CORE_DIR}/bin/${BIN_NAME}"
+for release_path in frontend docs assets scripts; do
+  if [[ -e "${CORE_DIR}/${release_path}" ]]; then
+    chown -R "${APP_USER}:${APP_USER}" "${CORE_DIR}/${release_path}"
+  fi
+done
+if [[ -f "${CORE_DIR}/.env" ]]; then
+  chown "${APP_USER}:${APP_USER}" "${CORE_DIR}/.env"
+fi
 set_env_value "${CORE_DIR}/.env" "APP_VERSION" "$(resolved_release_version)"
 set_env_value "${CORE_DIR}/.env" "DEPLOYCP_REPO" "${DEPLOYCP_REPO:-saiarlen/deployCP}"
 set_env_value "${CORE_DIR}/.env" "ADMINER_URL" "http://127.0.0.1:8081"
@@ -311,6 +540,8 @@ systemctl daemon-reload
   DEPLOYCP_ENV_FILE="${CORE_DIR}/.env" "${CORE_DIR}/bin/${BIN_NAME}" bootstrap-host
 )
 systemctl start "${SERVICE_NAME}"
+systemctl is-active --quiet "${SERVICE_NAME}"
+verify_panel_http
 (
   cd "${CORE_DIR}"
   DEPLOYCP_ENV_FILE="${CORE_DIR}/.env" "${CORE_DIR}/bin/${BIN_NAME}" reconcile-managed
@@ -318,5 +549,8 @@ systemctl start "${SERVICE_NAME}"
 (
   cd "${CORE_DIR}"
   DEPLOYCP_ENV_FILE="${CORE_DIR}/.env" "${CORE_DIR}/bin/${BIN_NAME}" verify-host
-) || true
-systemctl status "${SERVICE_NAME}" --no-pager || true
+)
+systemctl is-active --quiet "${SERVICE_NAME}"
+verify_panel_http
+systemctl status "${SERVICE_NAME}" --no-pager
+UPDATE_COMMITTED=1

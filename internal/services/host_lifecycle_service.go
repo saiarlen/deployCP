@@ -65,6 +65,12 @@ func (s *HostLifecycleService) Bootstrap(ctx context.Context, actor *uint, ip st
 		}
 		add("restricted shell prepared")
 	}
+	if s.siteUsers != nil {
+		if err := s.siteUsers.ReconcileSystemAccess(ctx); err != nil {
+			return result, err
+		}
+		add("site SSH users reconciled")
+	}
 	if s.ftp != nil {
 		if err := s.ftp.ReconcileConfig(ctx, actor, ip); err != nil {
 			return result, err
@@ -72,13 +78,7 @@ func (s *HostLifecycleService) Bootstrap(ctx context.Context, actor *uint, ip st
 		add("ftp server config reconciled")
 	}
 	if s.websites != nil && s.platform != nil && s.cfg.Features.EnableNginxManage {
-		if err := s.websites.EnsureNginxUnknownHostReject(); err != nil {
-			return result, err
-		}
-		if err := s.platform.Nginx().Validate(ctx, s.cfg.Paths.NginxBinary); err != nil {
-			return result, err
-		}
-		if err := s.platform.Nginx().Reload(ctx, s.cfg.Paths.NginxBinary); err != nil {
+		if err := s.websites.EnsureNginxUnknownHostReject(ctx); err != nil {
 			return result, err
 		}
 		add("nginx default site disabled and unknown hosts set to reject")

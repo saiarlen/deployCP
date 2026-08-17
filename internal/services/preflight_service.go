@@ -1,12 +1,17 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
+
+	"github.com/pkg/sftp"
 
 	"deploycp/internal/config"
 	"deploycp/internal/platform"
@@ -42,7 +47,10 @@ func NewPreflightService(cfg *config.Config, repos *repositories.Repositories, p
 	return &PreflightService{cfg: cfg, repos: repos, platform: platform}
 }
 
-func (s *PreflightService) Run(_ context.Context) PreflightReport {
+func (s *PreflightService) Run(ctx context.Context) PreflightReport {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	report := PreflightReport{}
 	add := func(name, status, detail string) {
 		report.Checks = append(report.Checks, PreflightCheck{Name: name, Status: status, Detail: detail})
@@ -70,6 +78,11 @@ func (s *PreflightService) Run(_ context.Context) PreflightReport {
 		{"nginx", s.cfg.Paths.NginxBinary, true},
 		{"systemctl", s.cfg.Paths.SystemctlBinary, true},
 		{"runuser", s.cfg.Paths.RunuserBinary, true},
+		{"sudo", "sudo", true},
+		{"visudo", "visudo", true},
+		{"bubblewrap", "bwrap", true},
+		{"setpriv", "setpriv", true},
+		{"sshd", "sshd", true},
 		{"certbot", s.cfg.Paths.CertbotBinary, false},
 		{"redis-server", s.cfg.Managed.RedisServerBinary, false},
 		{"varnishd", s.cfg.Managed.VarnishdBinary, false},
@@ -84,6 +97,34 @@ func (s *PreflightService) Run(_ context.Context) PreflightReport {
 			continue
 		}
 		add("binary:"+item.name, "ok", item.path)
+	}
+	if s.cfg.Features.PlatformMode != "dryrun" && runtime.GOOS == "linux" {
+		if s.platform != nil && s.cfg.Features.EnableNginxManage {
+			if err := s.platform.Nginx().Validate(ctx, s.cfg.Paths.NginxBinary); err != nil {
+				add("nginx_config", "fail", err.Error())
+			} else {
+				add("nginx_config", "ok", "nginx configuration is valid")
+			}
+		}
+		if sshd := firstExecutable("sshd", "/usr/sbin/sshd", "/usr/local/sbin/sshd"); sshd == "" {
+			add("sshd_config", "fail", "sshd binary not found")
+		} else {
+			checkCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			output, err := exec.CommandContext(checkCtx, sshd, "-t").CombinedOutput()
+			cancel()
+			if err != nil {
+				add("sshd_config", "fail", commandFailureDetail(err, output))
+			} else {
+				add("sshd_config", "ok", "sshd configuration is valid")
+			}
+		}
+		if detail, err := s.restrictedShellSmokeTest(ctx); err != nil {
+			add("restricted_ssh", "fail", err.Error())
+		} else if detail != "" {
+			add("restricted_ssh", "ok", detail)
+		} else {
+			add("restricted_ssh", "warn", "no active SSH-enabled site user is available for a sandbox smoke test")
+		}
 	}
 
 	firewallAvailable := false
@@ -217,6 +258,143 @@ func (s *PreflightService) Run(_ context.Context) PreflightReport {
 	}
 
 	return report
+}
+
+func firstExecutable(candidates ...string) string {
+	for _, candidate := range candidates {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			continue
+		}
+		if strings.ContainsRune(candidate, filepath.Separator) {
+			if info, err := os.Stat(candidate); err == nil && !info.IsDir() && info.Mode().Perm()&0o111 != 0 {
+				return candidate
+			}
+			continue
+		}
+		if resolved, err := exec.LookPath(candidate); err == nil {
+			return resolved
+		}
+	}
+	return ""
+}
+
+func commandFailureDetail(err error, output []byte) string {
+	detail := strings.TrimSpace(string(output))
+	if detail == "" {
+		return err.Error()
+	}
+	if len(detail) > 600 {
+		detail = detail[:600] + "..."
+	}
+	return fmt.Sprintf("%v: %s", err, detail)
+}
+
+func (s *PreflightService) restrictedShellSmokeTest(ctx context.Context) (string, error) {
+	if s.repos == nil || s.repos.SiteUsers == nil {
+		return "", nil
+	}
+	users, err := s.repos.SiteUsers.List()
+	if err != nil {
+		return "", fmt.Errorf("list SSH users: %w", err)
+	}
+	username := ""
+	homeDirectory := ""
+	for i := range users {
+		if users[i].IsActive && users[i].SSHEnabled && strings.TrimSpace(users[i].Username) != "" {
+			username = strings.TrimSpace(users[i].Username)
+			homeDirectory = filepath.Clean(strings.TrimSpace(users[i].HomeDirectory))
+			break
+		}
+	}
+	if username == "" {
+		return "", nil
+	}
+	sudo := firstExecutable("sudo", "/usr/bin/sudo", "/bin/sudo")
+	if sudo == "" {
+		return "", fmt.Errorf("sudo is unavailable for SSH sandbox smoke test")
+	}
+	shellPath := filepath.Clean(strings.TrimSpace(s.cfg.Paths.RestrictedShellPath))
+	if shellPath == "." || !filepath.IsAbs(shellPath) {
+		return "", fmt.Errorf("restricted shell path is invalid")
+	}
+	testCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	cmd := restrictedShellTestCommand(testCtx, sudo, username, shellPath, "")
+	cmd.Stdin = strings.NewReader("exit\n")
+	output, err := cmd.CombinedOutput()
+	cancel()
+	if testCtx.Err() == context.DeadlineExceeded {
+		return "", fmt.Errorf("restricted SSH sandbox timed out for %s", username)
+	}
+	if err != nil {
+		return "", fmt.Errorf("restricted SSH sandbox failed for %s: %s", username, commandFailureDetail(err, output))
+	}
+
+	sftpCtx, cancelSFTP := context.WithTimeout(ctx, 20*time.Second)
+	sftpCmd := restrictedShellTestCommand(sftpCtx, sudo, username, shellPath, "internal-sftp")
+	sftpStdout, err := sftpCmd.StdoutPipe()
+	if err != nil {
+		cancelSFTP()
+		return "", fmt.Errorf("prepare SFTP smoke test for %s: %w", username, err)
+	}
+	sftpStdin, err := sftpCmd.StdinPipe()
+	if err != nil {
+		cancelSFTP()
+		return "", fmt.Errorf("prepare SFTP input for %s: %w", username, err)
+	}
+	var sftpStderr bytes.Buffer
+	sftpCmd.Stderr = &sftpStderr
+	if err := sftpCmd.Start(); err != nil {
+		cancelSFTP()
+		return "", fmt.Errorf("start SFTP smoke test for %s: %w", username, err)
+	}
+	sftpClient, err := sftp.NewClientPipe(sftpStdout, sftpStdin)
+	if err == nil {
+		_, err = sftpClient.ReadDir(".")
+		_ = sftpClient.Close()
+	}
+	waitErr := sftpCmd.Wait()
+	timedOut := sftpCtx.Err() == context.DeadlineExceeded
+	cancelSFTP()
+	if timedOut {
+		return "", fmt.Errorf("SFTP smoke test timed out for %s", username)
+	}
+	if err != nil {
+		return "", fmt.Errorf("SFTP smoke test failed for %s: %w: %s", username, err, strings.TrimSpace(sftpStderr.String()))
+	}
+	if waitErr != nil {
+		return "", fmt.Errorf("SFTP helper failed for %s: %s", username, commandFailureDetail(waitErr, sftpStderr.Bytes()))
+	}
+
+	if homeDirectory == "." || !filepath.IsAbs(homeDirectory) {
+		return "", fmt.Errorf("SSH home directory is invalid for %s", username)
+	}
+	smokeName := fmt.Sprintf(".deploycp-scp-smoke-%d", time.Now().UnixNano())
+	smokePath := filepath.Join(homeDirectory, smokeName)
+	defer os.Remove(smokePath)
+	scpCtx, cancelSCP := context.WithTimeout(ctx, 20*time.Second)
+	scpCmd := restrictedShellTestCommand(scpCtx, sudo, username, shellPath, "scp -t .")
+	scpCmd.Stdin = bytes.NewReader(append([]byte(fmt.Sprintf("C0600 0 %s\n", smokeName)), 0))
+	scpOutput, scpErr := scpCmd.CombinedOutput()
+	scpTimedOut := scpCtx.Err() == context.DeadlineExceeded
+	cancelSCP()
+	if scpTimedOut {
+		return "", fmt.Errorf("legacy SCP smoke test timed out for %s", username)
+	}
+	if scpErr != nil {
+		return "", fmt.Errorf("legacy SCP smoke test failed for %s: %s", username, commandFailureDetail(scpErr, scpOutput))
+	}
+	if info, err := os.Stat(smokePath); err != nil || info.Size() != 0 {
+		if err == nil {
+			err = fmt.Errorf("unexpected smoke file size %d", info.Size())
+		}
+		return "", fmt.Errorf("legacy SCP did not write inside %s home: %w", username, err)
+	}
+	return "interactive SSH, SFTP, and legacy SCP launched successfully for " + username, nil
+}
+
+func restrictedShellTestCommand(ctx context.Context, sudo, username, shellPath, originalCommand string) *exec.Cmd {
+	return exec.CommandContext(ctx, sudo, "-n", "-u", username, "-H", "/usr/bin/env", "TERM=xterm-256color", "SSH_ORIGINAL_COMMAND="+originalCommand, shellPath)
 }
 
 func serviceUnitState(name string) string {

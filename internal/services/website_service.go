@@ -2,8 +2,16 @@ package services
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/pem"
+	"errors"
 	"fmt"
+	"math/big"
 	"net"
 	"os"
 	"os/exec"
@@ -396,16 +404,10 @@ func (s *WebsiteService) Delete(ctx context.Context, id uint, actor *uint, ip st
 		return err
 	}
 	if s.cfg.Features.EnableNginxManage {
-		if err := s.EnsureNginxUnknownHostReject(); err != nil {
+		if err := s.EnsureNginxUnknownHostReject(ctx); err != nil {
 			return err
 		}
 		if err := s.cleanupDanglingNginxConfigEntries(); err != nil {
-			return err
-		}
-		if err := s.adapter.Nginx().Validate(ctx, s.cfg.Paths.NginxBinary); err != nil {
-			return err
-		}
-		if err := s.adapter.Nginx().Reload(ctx, s.cfg.Paths.NginxBinary); err != nil {
 			return err
 		}
 	}
@@ -881,10 +883,10 @@ func (s *WebsiteService) writeNginxConfig(ctx context.Context, site *models.Webs
 	if !s.cfg.Features.EnableNginxManage {
 		return nil
 	}
-	var cert *models.SSLCertificate
+	certs := map[string]*models.SSLCertificate{}
 	if s.sslRepo != nil {
 		if items, err := s.sslRepo.List(); err == nil {
-			cert = firstWebsiteCert(site, items)
+			certs = activeWebsiteCertificates(site, items)
 		}
 	}
 	var basicAuth *models.BasicAuth
@@ -914,7 +916,7 @@ func (s *WebsiteService) writeNginxConfig(ctx context.Context, site *models.Webs
 		}
 	}
 	cfg := nginx.BuildWebsiteConfig(s.cfg, site, nginx.WebsiteConfigOptions{
-		Certificate:       cert,
+		Certificates:      certs,
 		BasicAuth:         basicAuth,
 		BasicAuthPath:     basicAuthPath,
 		IPBlocks:          ipBlocks,
@@ -924,50 +926,267 @@ func (s *WebsiteService) writeNginxConfig(ctx context.Context, site *models.Webs
 	if err := s.cleanupDanglingNginxConfigEntries(); err != nil {
 		return err
 	}
-	if err := s.removeStaleNginxDomainConfigs(site, cfg); err != nil {
+	stalePaths, err := s.staleNginxDomainConfigPaths(site, cfg)
+	if err != nil {
 		return err
 	}
-	if err := utils.WriteFileAtomic(cfg.ConfigPath, []byte(cfg.Content), 0o644); err != nil {
+	catchallContent, err := s.nginxUnknownHostRejectContent()
+	if err != nil {
 		return err
 	}
-	if err := s.enableConfig(cfg.ConfigPath, cfg.EnabledPath); err != nil {
-		return err
-	}
-	if err := s.EnsureNginxUnknownHostReject(); err != nil {
+	catchallAvailable := filepath.Join(s.cfg.Paths.NginxAvailableDir, "00-deploycp-catchall.conf")
+	catchallEnabled := filepath.Join(s.cfg.Paths.NginxEnabledDir, "00-deploycp-catchall.conf")
+	transactionPaths := append([]string{cfg.ConfigPath, cfg.EnabledPath, catchallAvailable, catchallEnabled}, stalePaths...)
+	if err := s.applyNginxTransaction(ctx, transactionPaths, func() error {
+		for _, stalePath := range stalePaths {
+			if removeErr := os.Remove(stalePath); removeErr != nil && !os.IsNotExist(removeErr) {
+				return removeErr
+			}
+		}
+		if writeErr := utils.WriteFileAtomic(cfg.ConfigPath, []byte(cfg.Content), 0o644); writeErr != nil {
+			return writeErr
+		}
+		if linkErr := s.enableConfig(cfg.ConfigPath, cfg.EnabledPath); linkErr != nil {
+			return linkErr
+		}
+		if writeErr := utils.WriteFileAtomic(catchallAvailable, []byte(catchallContent), 0o644); writeErr != nil {
+			return writeErr
+		}
+		return s.enableConfig(catchallAvailable, catchallEnabled)
+	}); err != nil {
 		return err
 	}
 	now := time.Now()
 	_ = s.nginxRepo.Upsert(&models.NginxSiteConfig{WebsiteID: site.ID, ConfigPath: cfg.ConfigPath, EnabledPath: cfg.EnabledPath, Checksum: cfg.Checksum, Enabled: true, LastValidatedAt: &now})
-	if err := s.adapter.Nginx().Validate(ctx, s.cfg.Paths.NginxBinary); err != nil {
-		return err
-	}
-	return s.adapter.Nginx().Reload(ctx, s.cfg.Paths.NginxBinary)
+	return nil
 }
 
-func (s *WebsiteService) EnsureNginxUnknownHostReject() error {
+func (s *WebsiteService) EnsureNginxUnknownHostReject(ctx context.Context) error {
 	if !s.cfg.Features.EnableNginxManage {
 		return nil
-	}
-	if err := s.cleanupDanglingNginxConfigEntries(); err != nil {
-		return err
-	}
-	if err := s.disableStockNginxDefaultSite(); err != nil {
-		return err
 	}
 	name := "00-deploycp-catchall.conf"
 	available := filepath.Join(s.cfg.Paths.NginxAvailableDir, name)
 	enabled := filepath.Join(s.cfg.Paths.NginxEnabledDir, name)
-	content := strings.TrimSpace(`# Managed by DeployCP. Do not edit.
+	stockDefault := filepath.Join(s.cfg.Paths.NginxEnabledDir, "default")
+	content, err := s.nginxUnknownHostRejectContent()
+	if err != nil {
+		return err
+	}
+	if err := s.applyNginxTransaction(ctx, []string{available, enabled, stockDefault}, func() error {
+		if disableErr := s.disableStockNginxDefaultSite(); disableErr != nil {
+			return disableErr
+		}
+		if writeErr := utils.WriteFileAtomic(available, []byte(content), 0o644); writeErr != nil {
+			return writeErr
+		}
+		return s.enableConfig(available, enabled)
+	}); err != nil {
+		return err
+	}
+	return s.cleanupDanglingNginxConfigEntries()
+}
+
+func (s *WebsiteService) nginxUnknownHostRejectContent() (string, error) {
+	tlsBlock := `    ssl_reject_handshake on;`
+	if !nginxSupportsSSLRejectHandshake(s.cfg.Paths.NginxBinary) {
+		certPath, keyPath, err := s.ensureNginxCatchallCertificate()
+		if err != nil {
+			return "", err
+		}
+		tlsBlock = fmt.Sprintf("    ssl_certificate %s;\n    ssl_certificate_key %s;\n    return 444;", certPath, keyPath)
+	}
+	return strings.TrimSpace(fmt.Sprintf(`# Managed by DeployCP. Do not edit.
 server {
     listen 80 default_server;
     listen [::]:80 default_server;
     server_name _;
     return 444;
-}`) + "\n"
-	if err := utils.WriteFileAtomic(available, []byte(content), 0o644); err != nil {
+}
+server {
+    listen 443 ssl default_server;
+    listen [::]:443 ssl default_server;
+%s
+}`, tlsBlock)) + "\n", nil
+}
+
+var nginxVersionPattern = regexp.MustCompile(`nginx/(\d+)\.(\d+)\.(\d+)`)
+
+func nginxSupportsSSLRejectHandshake(binary string) bool {
+	binary = strings.TrimSpace(binary)
+	if binary == "" {
+		return false
+	}
+	out, err := exec.Command(binary, "-v").CombinedOutput()
+	if err != nil && len(out) == 0 {
+		return false
+	}
+	parts := nginxVersionPattern.FindStringSubmatch(string(out))
+	if len(parts) != 4 {
+		return false
+	}
+	major, _ := strconv.Atoi(parts[1])
+	minor, _ := strconv.Atoi(parts[2])
+	patch, _ := strconv.Atoi(parts[3])
+	return major > 1 || (major == 1 && (minor > 19 || (minor == 19 && patch >= 4)))
+}
+
+func (s *WebsiteService) ensureNginxCatchallCertificate() (string, string, error) {
+	root := strings.TrimSpace(s.cfg.Paths.StorageRoot)
+	if root == "" || root == "." {
+		root = filepath.Join(s.cfg.Paths.NginxAvailableDir, ".deploycp-tls")
+	} else {
+		root = filepath.Join(root, "ssl", "_deploycp-catchall")
+	}
+	root, err := filepath.Abs(root)
+	if err != nil {
+		return "", "", err
+	}
+	certPath := filepath.Join(root, "cert.pem")
+	keyPath := filepath.Join(root, "privkey.pem")
+	if _, err := tls.LoadX509KeyPair(certPath, keyPath); err == nil {
+		return certPath, keyPath, nil
+	}
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		return "", "", err
+	}
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return "", "", err
+	}
+	serialLimit := new(big.Int).Lsh(big.NewInt(1), 128)
+	serial, err := rand.Int(rand.Reader, serialLimit)
+	if err != nil {
+		return "", "", err
+	}
+	now := time.Now()
+	template := &x509.Certificate{
+		SerialNumber: serial,
+		Subject:      pkix.Name{CommonName: "invalid.deploycp.local"},
+		DNSNames:     []string{"invalid.deploycp.local"},
+		NotBefore:    now.Add(-time.Hour),
+		NotAfter:     now.AddDate(10, 0, 0),
+		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &privateKey.PublicKey, privateKey)
+	if err != nil {
+		return "", "", err
+	}
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(privateKey)})
+	if err := utils.WriteFileAtomic(certPath, certPEM, 0o644); err != nil {
+		return "", "", err
+	}
+	if err := utils.WriteFileAtomic(keyPath, keyPEM, 0o600); err != nil {
+		return "", "", err
+	}
+	return certPath, keyPath, nil
+}
+
+type nginxPathSnapshot struct {
+	path       string
+	exists     bool
+	mode       os.FileMode
+	content    []byte
+	symlink    bool
+	linkTarget string
+}
+
+func captureNginxPaths(paths []string) ([]nginxPathSnapshot, error) {
+	seen := map[string]struct{}{}
+	snapshots := make([]nginxPathSnapshot, 0, len(paths))
+	for _, itemPath := range paths {
+		itemPath = filepath.Clean(strings.TrimSpace(itemPath))
+		if itemPath == "" || itemPath == "." {
+			continue
+		}
+		if _, exists := seen[itemPath]; exists {
+			continue
+		}
+		seen[itemPath] = struct{}{}
+		snapshot := nginxPathSnapshot{path: itemPath}
+		info, err := os.Lstat(itemPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				snapshots = append(snapshots, snapshot)
+				continue
+			}
+			return nil, err
+		}
+		snapshot.exists = true
+		snapshot.mode = info.Mode()
+		if info.Mode()&os.ModeSymlink != 0 {
+			snapshot.symlink = true
+			snapshot.linkTarget, err = os.Readlink(itemPath)
+		} else {
+			snapshot.content, err = os.ReadFile(itemPath)
+		}
+		if err != nil {
+			return nil, err
+		}
+		snapshots = append(snapshots, snapshot)
+	}
+	return snapshots, nil
+}
+
+func restoreNginxPaths(snapshots []nginxPathSnapshot) error {
+	var restoreErrors []error
+	for i := len(snapshots) - 1; i >= 0; i-- {
+		snapshot := snapshots[i]
+		if err := os.Remove(snapshot.path); err != nil && !os.IsNotExist(err) {
+			restoreErrors = append(restoreErrors, err)
+			continue
+		}
+		if !snapshot.exists {
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(snapshot.path), 0o755); err != nil {
+			restoreErrors = append(restoreErrors, err)
+			continue
+		}
+		if snapshot.symlink {
+			if err := os.Symlink(snapshot.linkTarget, snapshot.path); err != nil {
+				restoreErrors = append(restoreErrors, err)
+			}
+			continue
+		}
+		if err := utils.WriteFileAtomic(snapshot.path, snapshot.content, snapshot.mode.Perm()); err != nil {
+			restoreErrors = append(restoreErrors, err)
+		}
+	}
+	return errors.Join(restoreErrors...)
+}
+
+func (s *WebsiteService) applyNginxTransaction(ctx context.Context, paths []string, mutate func() error) error {
+	snapshots, err := captureNginxPaths(paths)
+	if err != nil {
 		return err
 	}
-	return s.enableConfig(available, enabled)
+	rollback := func(reload bool) error {
+		var rollbackErrors []error
+		if err := restoreNginxPaths(snapshots); err != nil {
+			rollbackErrors = append(rollbackErrors, err)
+		}
+		if reload {
+			if err := s.adapter.Nginx().Validate(ctx, s.cfg.Paths.NginxBinary); err != nil {
+				rollbackErrors = append(rollbackErrors, err)
+			} else if err := s.adapter.Nginx().Reload(ctx, s.cfg.Paths.NginxBinary); err != nil {
+				rollbackErrors = append(rollbackErrors, err)
+			}
+		}
+		return errors.Join(rollbackErrors...)
+	}
+	if err := mutate(); err != nil {
+		return errors.Join(err, rollback(false))
+	}
+	if err := s.adapter.Nginx().Validate(ctx, s.cfg.Paths.NginxBinary); err != nil {
+		return fmt.Errorf("validate staged nginx configuration: %w", errors.Join(err, rollback(false)))
+	}
+	if err := s.adapter.Nginx().Reload(ctx, s.cfg.Paths.NginxBinary); err != nil {
+		return fmt.Errorf("activate staged nginx configuration: %w", errors.Join(err, rollback(true)))
+	}
+	return nil
 }
 
 func (s *WebsiteService) disableStockNginxDefaultSite() error {
@@ -992,14 +1211,15 @@ func (s *WebsiteService) disableStockNginxDefaultSite() error {
 	return nil
 }
 
-func (s *WebsiteService) removeStaleNginxDomainConfigs(site *models.Website, current nginx.GeneratedConfig) error {
+func (s *WebsiteService) staleNginxDomainConfigPaths(site *models.Website, current nginx.GeneratedConfig) ([]string, error) {
 	if site == nil {
-		return nil
+		return nil, nil
 	}
 	domains := domainsFromModel(site.Domains)
 	if len(domains) == 0 {
-		return nil
+		return nil, nil
 	}
+	var stalePaths []string
 	excluded := map[string]struct{}{}
 	for _, path := range []string{current.ConfigPath, current.EnabledPath} {
 		if cleaned := filepath.Clean(strings.TrimSpace(path)); cleaned != "." && cleaned != "" {
@@ -1035,15 +1255,13 @@ func (s *WebsiteService) removeStaleNginxDomainConfigs(site *models.Website, cur
 			if !nginxConfigHasAnyServerName(string(content), domains) {
 				return nil
 			}
-			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-				return err
-			}
+			stalePaths = append(stalePaths, path)
 			return nil
 		}); err != nil && !os.IsNotExist(err) {
-			return err
+			return nil, err
 		}
 	}
-	return nil
+	return stalePaths, nil
 }
 
 func (s *WebsiteService) cleanupDanglingNginxConfigEntries() error {
@@ -2227,24 +2445,29 @@ func runDebugCommand(binary string, args ...string) string {
 	return string(out)
 }
 
-func firstWebsiteCert(site *models.Website, items []models.SSLCertificate) *models.SSLCertificate {
+func activeWebsiteCertificates(site *models.Website, items []models.SSLCertificate) map[string]*models.SSLCertificate {
+	result := map[string]*models.SSLCertificate{}
 	if site == nil {
-		return nil
+		return result
 	}
 	domainSet := make(map[string]struct{}, len(site.Domains))
 	for _, item := range site.Domains {
 		domainSet[strings.ToLower(strings.TrimSpace(item.Domain))] = struct{}{}
 	}
 	for i := range items {
-		if _, ok := domainSet[strings.ToLower(strings.TrimSpace(items[i].Domain))]; !ok {
+		domain := strings.ToLower(strings.TrimSpace(items[i].Domain))
+		if _, ok := domainSet[domain]; !ok {
 			continue
 		}
-		if strings.TrimSpace(items[i].CertPath) == "" || strings.TrimSpace(items[i].KeyPath) == "" {
+		if !strings.EqualFold(strings.TrimSpace(items[i].Status), "active") ||
+			strings.TrimSpace(items[i].CertPath) == "" || strings.TrimSpace(items[i].KeyPath) == "" {
 			continue
 		}
-		return &items[i]
+		if _, exists := result[domain]; !exists {
+			result[domain] = &items[i]
+		}
 	}
-	return nil
+	return result
 }
 
 func tailFile(path string, lines int) (string, error) {

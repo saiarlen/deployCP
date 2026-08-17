@@ -7,6 +7,13 @@ VERSION="${VERSION:-$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || e
 
 mkdir -p "$DIST_DIR"
 
+(
+  cd "$ROOT_DIR"
+  go test ./...
+  go vet ./...
+  bash -n scripts/linux/*.sh
+)
+
 target_cc() {
   local goos="$1"
   local goarch="$2"

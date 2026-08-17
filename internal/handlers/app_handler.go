@@ -72,6 +72,13 @@ func (h *AppHandler) SitesApps(c *fiber.Ctx) error {
 	if err != nil {
 		h.base.Sessions.SetFlash(c, "Failed to load apps: "+err.Error())
 	}
+	sslItems, sslErr := h.sslService.List()
+	if sslErr != nil {
+		h.base.Sessions.SetFlash(c, "Failed to load SSL status: "+sslErr.Error())
+	}
+	for i := range websitesAll {
+		applyWebsiteDomainSSLState(&websitesAll[i], sslItems)
+	}
 	if authUserRole(c) == "user" {
 		allowed := allowedPlatformIDSet(c)
 		filteredWebsites := make([]models.Website, 0, len(websitesAll))
@@ -341,6 +348,7 @@ func (h *AppHandler) ShowByID(c *fiber.Ctx, id uint) error {
 	}
 	stdout, stderr, _ := h.service.Logs(id, 100)
 	dbItems, _ := h.databases.List()
+	sslItems, _ := h.sslService.List()
 	scopedDB := appDBItems(status.App.ID, status.App.Name, dbItems)
 	redisItems, _ := h.databaseService.ListRedis()
 	scopedRedis := appRedisItems(status.App.ID, status.App.Name, redisItems)
@@ -357,9 +365,7 @@ func (h *AppHandler) ShowByID(c *fiber.Ctx, id uint) error {
 			ftpUsers, _ = h.ftpUsers.ListByWebsite(ws.ID)
 			defaultHomeDir = ws.RootPath
 			primaryDomain = primaryWebsiteDomain(ws.Domains)
-			if ws.SSLReady {
-				domainScheme = "https"
-			}
+			domainScheme = domainSchemeFor(primaryDomain, sslItems)
 			if ws.SiteUser != nil {
 				sshUsers = append(sshUsers, *ws.SiteUser)
 				primarySSHUserID = ws.SiteUser.ID

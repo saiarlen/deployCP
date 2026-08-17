@@ -2,6 +2,8 @@ package linux
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,6 +14,7 @@ import (
 
 	"deploycp/internal/config"
 	"deploycp/internal/platform"
+	"deploycp/internal/restrictedtransfer"
 	"deploycp/internal/system"
 	"deploycp/internal/utils"
 )
@@ -267,47 +270,34 @@ type userManager struct {
 	runner *system.Runner
 }
 
-const sshdPrivilegeSeparationDir = "/run/sshd"
+const (
+	sshdPrivilegeSeparationDir = "/run/sshd"
+	restrictedTransferHelper   = "/usr/local/libexec/deploycp-transfer"
+	restrictedTransferGroup    = "deploycp-site-users"
+	restrictedTransferSudoers  = "/etc/sudoers.d/deploycp-transfer"
+)
 
-func (u *userManager) EnsureRestrictedShell(ctx context.Context, shellPath string) error {
-	script := `#!/bin/bash
-original_home="$HOME"
-allowed="$original_home"
-if [ -f "$original_home/.deploycp_allowed_root" ]; then
-  read -r allowed < "$original_home/.deploycp_allowed_root" 2>/dev/null || true
-fi
-if [ ! -d "$allowed" ]; then
-  if [ "$(basename "$original_home")" = "htdocs" ] && [ -d "$(dirname "$original_home")" ]; then
-    allowed="$(dirname "$original_home")"
-  else
-    allowed="$original_home"
+const restrictedShellScript = `#!/bin/bash
+export PATH=/usr/local/bin:/usr/bin:/bin
+requested_command="${SSH_ORIGINAL_COMMAND:-}"
+if [ -z "$requested_command" ] && [ "${1:-}" = "-c" ] && [ -n "${2:-}" ]; then
+  current_shell_name="$(basename -- "$0")"
+  current_shell_name="${current_shell_name#-}"
+  forced_command_name="$(basename -- "$2")"
+  if [ "$forced_command_name" != "$current_shell_name" ]; then
+    requested_command="$2"
   fi
 fi
-export PATH=/usr/local/bin:/usr/bin:/bin
-umask 0002
-runtime_env="$allowed/.deploycp/runtime.env"
-if [ -f "$runtime_env" ]; then
-  . "$runtime_env"
-fi
-export HOME="$allowed"
-export DEPLOYCP_ALLOWED_ROOT="$allowed"
-requested_command="${SSH_ORIGINAL_COMMAND:-}"
-if [ "${1:-}" = "-c" ] && [ -n "${2:-}" ]; then
-  requested_command="$2"
-fi
 if [ -n "$requested_command" ]; then
+  set -f
   set -- $requested_command
   command_name="$(basename -- "${1:-}")"
   case "$command_name" in
-    sftp-server)
-      cd "$allowed" 2>/dev/null || cd "$HOME"
-      for server in /usr/lib/openssh/sftp-server /usr/libexec/sftp-server /usr/lib/ssh/sftp-server; do
-        if [ -x "$server" ]; then
-          exec "$server"
-        fi
-      done
-      printf 'SFTP subsystem unavailable\n' >&2
-      exit 127
+    sftp-server|internal-sftp)
+      exec /usr/bin/sudo -n /usr/local/libexec/deploycp-transfer restricted-sftp
+      ;;
+    scp)
+      exec /usr/bin/sudo -n /usr/local/libexec/deploycp-transfer restricted-scp "$requested_command"
       ;;
     *)
       printf 'Command access is restricted for this platform user.\n' >&2
@@ -315,11 +305,16 @@ if [ -n "$requested_command" ]; then
       ;;
   esac
 fi
-state_root="$allowed/.deploycp-user-state/$USER"
-if ! mkdir -p "$state_root/cache" "$state_root/data" "$state_root/config" >/dev/null 2>&1; then
-  state_root="/tmp/deploycp-user/$USER"
-  mkdir -p "$state_root/cache" "$state_root/data" "$state_root/config" >/dev/null 2>&1 || true
+exec /usr/bin/sudo -n /usr/local/libexec/deploycp-transfer restricted-shell
+`
+
+const restrictedShellRC = `umask 0002
+runtime_env="$HOME/.deploycp/runtime.env"
+if [ -f "$runtime_env" ]; then
+  . "$runtime_env"
 fi
+state_root="$HOME/.deploycp-user-state/$USER"
+mkdir -p "$state_root/cache" "$state_root/data" "$state_root/config" >/dev/null 2>&1 || true
 chmod 700 "$state_root" "$state_root/cache" "$state_root/data" "$state_root/config" >/dev/null 2>&1 || true
 export XDG_CACHE_HOME="$state_root/cache"
 export XDG_DATA_HOME="$state_root/data"
@@ -328,48 +323,15 @@ export GOCACHE="${GOCACHE:-$XDG_CACHE_HOME/go-build}"
 export GOPATH="${GOPATH:-$XDG_DATA_HOME/go}"
 mkdir -p "$GOCACHE" "$GOPATH/pkg/mod" >/dev/null 2>&1 || true
 export HISTFILE="$state_root/.bash_history"
-rcfile="$(mktemp /tmp/deploycp-shell.XXXXXX)"
-cat > "$rcfile" <<'EOF'
-umask 0002
-deploycp_resolve_path() {
-  local target="$1"
-  if [ -z "$target" ]; then
-    target="$HOME"
-  fi
-  readlink -m -- "$target"
-}
-deploycp_guarded_cd() {
-  local target="$1"
-  local resolved
-  resolved="$(deploycp_resolve_path "$target")" || return 1
-  case "$resolved" in
-    "$DEPLOYCP_ALLOWED_ROOT"|"$DEPLOYCP_ALLOWED_ROOT"/*)
-      builtin cd "$resolved"
-      ;;
-    *)
-      printf 'Access denied outside platform root: %s\n' "$DEPLOYCP_ALLOWED_ROOT"
-      return 1
-      ;;
-  esac
-}
-cd() {
-  deploycp_guarded_cd "$1"
-}
-pushd() {
-  deploycp_guarded_cd "${1:-$HOME}" >/dev/null || return 1
-  dirs -v
-}
-popd() {
-  builtin popd "$@"
-}
-PROMPT_COMMAND='pwd_now="$(pwd -P 2>/dev/null || pwd)"; case "$pwd_now" in "$DEPLOYCP_ALLOWED_ROOT"|"$DEPLOYCP_ALLOWED_ROOT"/*) ;; *) builtin cd "$DEPLOYCP_ALLOWED_ROOT" >/dev/null 2>&1 || true ;; esac'
 PS1='\u@\h:\w\$ '
-EOF
-chmod 600 "$rcfile"
-cd "$allowed" 2>/dev/null || cd "$HOME"
-exec /bin/bash --noprofile --rcfile "$rcfile"
+cd "$HOME"
 `
-	if err := utils.WriteFileAtomic(shellPath, []byte(script), 0o755); err != nil {
+
+func (u *userManager) EnsureRestrictedShell(ctx context.Context, shellPath string) error {
+	if err := u.ensureRestrictedTransferHelper(ctx); err != nil {
+		return err
+	}
+	if err := utils.WriteFileAtomic(shellPath, []byte(restrictedShellScript), 0o755); err != nil {
 		return err
 	}
 	if _, err := u.runner.Run(ctx, system.CommandRequest{Binary: "/bin/chmod", Args: []string{"755", shellPath}, Timeout: 5 * time.Second, AuditAction: "site_user.shell.ensure"}); err != nil {
@@ -382,6 +344,91 @@ exec /bin/bash --noprofile --rcfile "$rcfile"
 		return err
 	}
 	return nil
+}
+
+func (u *userManager) ensureRestrictedTransferHelper(ctx context.Context) error {
+	for _, binary := range []string{"bwrap", "setpriv", "sudo", "visudo"} {
+		if _, err := exec.LookPath(binary); err != nil {
+			return fmt.Errorf("%s is required for restricted SSH access", binary)
+		}
+	}
+	if _, err := u.runner.Run(ctx, system.CommandRequest{
+		Binary:      "/usr/sbin/groupadd",
+		Args:        []string{"-f", restrictedTransferGroup},
+		Timeout:     10 * time.Second,
+		AuditAction: "site_user.transfer_group.ensure",
+	}); err != nil {
+		return err
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("resolve transfer helper executable: %w", err)
+	}
+	executable, err = filepath.EvalSymlinks(executable)
+	if err != nil {
+		return fmt.Errorf("resolve transfer helper source: %w", err)
+	}
+	payload, err := os.ReadFile(executable)
+	if err != nil {
+		return fmt.Errorf("read transfer helper source: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(restrictedTransferHelper), 0o755); err != nil {
+		return err
+	}
+	if err := utils.WriteFileAtomic(restrictedTransferHelper, payload, 0o755); err != nil {
+		return err
+	}
+	if err := os.Chown(restrictedTransferHelper, 0, 0); err != nil {
+		return err
+	}
+	if err := os.Chmod(restrictedTransferHelper, 0o755); err != nil {
+		return err
+	}
+	runtimeRoot, err := filepath.Abs(filepath.Clean(u.cfg.Paths.RuntimeRoot))
+	if err != nil {
+		return fmt.Errorf("resolve restricted shell runtime root: %w", err)
+	}
+	sandboxConfig, err := json.Marshal(struct {
+		RuntimeRoot string `json:"runtime_root"`
+	}{RuntimeRoot: runtimeRoot})
+	if err != nil {
+		return err
+	}
+	if err := utils.WriteFileAtomic(restrictedtransfer.SandboxConfigPath, append(sandboxConfig, '\n'), 0o644); err != nil {
+		return err
+	}
+	if err := os.Chown(restrictedtransfer.SandboxConfigPath, 0, 0); err != nil {
+		return err
+	}
+	if err := utils.WriteFileAtomic(restrictedtransfer.ShellRCPath, []byte(restrictedShellRC), 0o644); err != nil {
+		return err
+	}
+	if err := os.Chown(restrictedtransfer.ShellRCPath, 0, 0); err != nil {
+		return err
+	}
+	sudoers := fmt.Sprintf("Cmnd_Alias DEPLOYCP_TRANSFER = %s restricted-sftp, %s restricted-scp *, %s restricted-shell\n%%%s ALL=(root) NOPASSWD: DEPLOYCP_TRANSFER\n", restrictedTransferHelper, restrictedTransferHelper, restrictedTransferHelper, restrictedTransferGroup)
+	candidate := restrictedTransferSudoers + ".new"
+	if err := utils.WriteFileAtomic(candidate, []byte(sudoers), 0o440); err != nil {
+		return err
+	}
+	if err := os.Chown(candidate, 0, 0); err != nil {
+		return err
+	}
+	if visudo, err := exec.LookPath("visudo"); err == nil {
+		if _, err := u.runner.Run(ctx, system.CommandRequest{
+			Binary:      visudo,
+			Args:        []string{"-cf", candidate},
+			Timeout:     8 * time.Second,
+			AuditAction: "site_user.transfer_sudoers.validate",
+		}); err != nil {
+			_ = os.Remove(candidate)
+			return err
+		}
+	} else {
+		_ = os.Remove(candidate)
+		return errors.New("visudo is required for restricted transfer setup")
+	}
+	return os.Rename(candidate, restrictedTransferSudoers)
 }
 
 func ensureShellListed(shellPath string) error {
@@ -405,36 +452,61 @@ func ensureShellListed(shellPath string) error {
 
 func (u *userManager) ensureSSHPasswordAccess(ctx context.Context) error {
 	const (
+		sshdMainConfig = "/etc/ssh/sshd_config"
 		sshdConfigDir  = "/etc/ssh/sshd_config.d"
 		managedSnippet = "/etc/ssh/sshd_config.d/99-deploycp.conf"
 	)
 	if err := os.MkdirAll(sshdConfigDir, 0o755); err != nil {
 		return err
 	}
-	snippet := strings.TrimSpace(`
-PasswordAuthentication yes
-KbdInteractiveAuthentication yes
-UsePAM yes
-`) + "\n"
+	snippet, err := managedSSHDConfig(u.cfg.Paths.RestrictedShellPath)
+	if err != nil {
+		return err
+	}
+	mainConfig, err := os.ReadFile(sshdMainConfig)
+	if err != nil {
+		return err
+	}
+	snapshots, err := captureManagedPaths(sshdMainConfig, managedSnippet)
+	if err != nil {
+		return err
+	}
+	rollback := func() {
+		_ = restoreManagedPaths(snapshots)
+	}
+	mainConfig = []byte(ensureManagedSSHDInclude(string(mainConfig), managedSnippet))
 	if err := utils.WriteFileAtomic(managedSnippet, []byte(snippet), 0o644); err != nil {
+		return err
+	}
+	mainMode := os.FileMode(0o600)
+	if len(snapshots) > 0 && snapshots[0].exists {
+		mainMode = snapshots[0].mode.Perm()
+	}
+	if err := utils.WriteFileAtomic(sshdMainConfig, mainConfig, mainMode); err != nil {
+		rollback()
 		return err
 	}
 
 	sshdBinary := sshdBinaryPath()
-	if sshdBinary != "" {
-		if err := ensureSSHDPrivilegeSeparationDir(sshdPrivilegeSeparationDir); err != nil {
-			return err
-		}
-		if _, err := u.runner.Run(ctx, system.CommandRequest{
-			Binary:      sshdBinary,
-			Args:        []string{"-t"},
-			Timeout:     8 * time.Second,
-			AuditAction: "ssh.validate",
-		}); err != nil {
-			return err
-		}
+	if sshdBinary == "" {
+		rollback()
+		return errors.New("sshd is required for restricted SSH access")
+	}
+	if err := ensureSSHDPrivilegeSeparationDir(sshdPrivilegeSeparationDir); err != nil {
+		rollback()
+		return err
+	}
+	if _, err := u.runner.Run(ctx, system.CommandRequest{
+		Binary:      sshdBinary,
+		Args:        []string{"-t"},
+		Timeout:     8 * time.Second,
+		AuditAction: "ssh.validate",
+	}); err != nil {
+		rollback()
+		return fmt.Errorf("validate managed SSH configuration: %w", err)
 	}
 
+	var reloadErrors []error
 	for _, serviceName := range []string{"ssh", "sshd"} {
 		if _, err := u.runner.Run(ctx, system.CommandRequest{
 			Binary:      u.cfg.Paths.SystemctlBinary,
@@ -443,19 +515,112 @@ UsePAM yes
 			AuditAction: "ssh.reload",
 		}); err == nil {
 			return nil
+		} else {
+			reloadErrors = append(reloadErrors, err)
 		}
 	}
+	rollback()
 	for _, serviceName := range []string{"ssh", "sshd"} {
 		if _, err := u.runner.Run(ctx, system.CommandRequest{
 			Binary:      u.cfg.Paths.SystemctlBinary,
-			Args:        []string{"restart", serviceName},
+			Args:        []string{"reload", serviceName},
 			Timeout:     10 * time.Second,
-			AuditAction: "ssh.restart",
+			AuditAction: "ssh.rollback_reload",
 		}); err == nil {
-			return nil
+			break
 		}
 	}
-	return nil
+	return fmt.Errorf("activate managed SSH configuration: %w", errors.Join(reloadErrors...))
+}
+
+func managedSSHDConfig(shellPath string) (string, error) {
+	cleanShellPath := strings.TrimSpace(shellPath)
+	if !filepath.IsAbs(cleanShellPath) || strings.ContainsAny(cleanShellPath, " \t\r\n") {
+		return "", fmt.Errorf("restricted shell path must be an absolute path without whitespace: %s", shellPath)
+	}
+	return fmt.Sprintf(`Match Group %s
+	PasswordAuthentication yes
+	KbdInteractiveAuthentication yes
+	AuthenticationMethods any
+	DisableForwarding yes
+    ForceCommand %s
+
+Match all
+`, restrictedTransferGroup, cleanShellPath), nil
+}
+
+func ensureManagedSSHDInclude(content, managedSnippet string) string {
+	directive := "Include " + managedSnippet
+	trimmed := strings.TrimLeft(content, "\r\n")
+	if strings.HasPrefix(trimmed, directive+"\n") || trimmed == directive {
+		return content
+	}
+	return directive + "\n" + content
+}
+
+type managedPathSnapshot struct {
+	path       string
+	exists     bool
+	mode       os.FileMode
+	content    []byte
+	symlink    bool
+	linkTarget string
+}
+
+func captureManagedPaths(paths ...string) ([]managedPathSnapshot, error) {
+	snapshots := make([]managedPathSnapshot, 0, len(paths))
+	for _, itemPath := range paths {
+		snapshot := managedPathSnapshot{path: itemPath}
+		info, err := os.Lstat(itemPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				snapshots = append(snapshots, snapshot)
+				continue
+			}
+			return nil, err
+		}
+		snapshot.exists = true
+		snapshot.mode = info.Mode()
+		if info.Mode()&os.ModeSymlink != 0 {
+			snapshot.symlink = true
+			snapshot.linkTarget, err = os.Readlink(itemPath)
+		} else {
+			snapshot.content, err = os.ReadFile(itemPath)
+		}
+		if err != nil {
+			return nil, err
+		}
+		snapshots = append(snapshots, snapshot)
+	}
+	return snapshots, nil
+}
+
+func restoreManagedPaths(snapshots []managedPathSnapshot) error {
+	var restoreErrors []error
+	for i := len(snapshots) - 1; i >= 0; i-- {
+		snapshot := snapshots[i]
+		if err := os.Remove(snapshot.path); err != nil && !os.IsNotExist(err) {
+			restoreErrors = append(restoreErrors, err)
+			continue
+		}
+		if !snapshot.exists {
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(snapshot.path), 0o755); err != nil {
+			restoreErrors = append(restoreErrors, err)
+			continue
+		}
+		if snapshot.symlink {
+			if err := os.Symlink(snapshot.linkTarget, snapshot.path); err != nil {
+				restoreErrors = append(restoreErrors, err)
+			}
+			continue
+		}
+		if err := utils.WriteFileAtomic(snapshot.path, snapshot.content, snapshot.mode.Perm()); err != nil {
+			restoreErrors = append(restoreErrors, err)
+		}
+	}
+	return errors.Join(restoreErrors...)
 }
 
 func ensureSSHDPrivilegeSeparationDir(path string) error {
@@ -524,10 +689,6 @@ func (u *userManager) Create(ctx context.Context, spec platform.SiteUserSpec) (i
 	if _, err := u.runner.Run(ctx, system.CommandRequest{Binary: "/bin/chmod", Args: []string{"755", spec.HomeDir}, Timeout: 5 * time.Second, AuditAction: "site_user.home.chmod"}); err != nil {
 		return 0, 0, err
 	}
-	allowed := filepath.Join(spec.HomeDir, ".deploycp_allowed_root")
-	if err := utils.WriteFileAtomic(allowed, []byte(spec.AllowedRoot+"\n"), 0o644); err != nil {
-		return 0, 0, err
-	}
 	return 0, 0, nil
 }
 
@@ -544,10 +705,16 @@ func (u *userManager) SyncHome(ctx context.Context, username, homeDir, allowedRo
 	}); err != nil {
 		return err
 	}
-	allowed := filepath.Join(homeDir, ".deploycp_allowed_root")
-	if err := utils.WriteFileAtomic(allowed, []byte(strings.TrimSpace(allowedRoot)+"\n"), 0o644); err != nil {
+	if _, err := u.runner.Run(ctx, system.CommandRequest{
+		Binary:      "/usr/sbin/usermod",
+		Args:        []string{"-a", "-G", restrictedTransferGroup, username},
+		Timeout:     15 * time.Second,
+		AuditAction: "site_user.transfer_group.member",
+	}); err != nil {
 		return err
 	}
+	_ = allowedRoot
+	_ = os.Remove(filepath.Join(homeDir, ".deploycp_allowed_root"))
 	return nil
 }
 
@@ -583,6 +750,15 @@ func (u *userManager) SetPassword(ctx context.Context, username, password string
 		Args:        []string{"-s", u.cfg.Paths.RestrictedShellPath, username},
 		Timeout:     10 * time.Second,
 		AuditAction: "site_user.shell.sync",
+	})
+	return err
+}
+func (u *userManager) Enable(ctx context.Context, username string) error {
+	_, err := u.runner.Run(ctx, system.CommandRequest{
+		Binary:      "/usr/sbin/usermod",
+		Args:        []string{"-U", "-s", u.cfg.Paths.RestrictedShellPath, username},
+		Timeout:     10 * time.Second,
+		AuditAction: "site_user.enable",
 	})
 	return err
 }

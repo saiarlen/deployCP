@@ -1,0 +1,161 @@
+package restrictedtransfer
+
+import (
+	"bytes"
+	"net"
+	"os"
+	"os/user"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"testing"
+
+	"github.com/pkg/sftp"
+)
+
+func TestBubblewrapShellOnlyMountsPlatformHomeWritable(t *testing.T) {
+	root := t.TempDir()
+	home := filepath.Join(root, "platforms", "sites", "example")
+	runtimeRoot := filepath.Join(root, "core", "storage", "runtimes")
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(runtimeRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	args := buildBubblewrapArgs(&user.User{Username: "siteuser"}, 2001, 2001, home, runtimeRoot)
+	joined := strings.Join(args, " ")
+	for _, want := range []string{
+		"--bind " + home + " " + home,
+		"--ro-bind " + runtimeRoot + " " + runtimeRoot,
+		"/usr/bin/setpriv --reuid=2001 --regid=2001 --init-groups",
+		"--cap-drop ALL --cap-add CAP_SETUID --cap-add CAP_SETGID",
+		"--symlink ../run /var/run",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("sandbox arguments do not contain %q:\n%s", want, joined)
+		}
+	}
+	if strings.Contains(joined, "--bind / /") || strings.Contains(joined, "--ro-bind / /") {
+		t.Fatalf("sandbox must not expose the host root: %s", joined)
+	}
+	if strings.Contains(joined, "--bounding-set=-all") || strings.Contains(joined, "--no-new-privs") {
+		t.Fatalf("sandbox must preserve the narrowly scoped sudo service-control path: %s", joined)
+	}
+}
+
+func TestSplitShellCommandPreservesQuotedSCPPath(t *testing.T) {
+	got, err := splitShellCommand(`scp -pt 'folder/file with spaces.txt'`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"scp", "-pt", "folder/file with spaces.txt"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("tokens = %#v, want %#v", got, want)
+	}
+}
+
+func TestChrootSCPPathCannotEscapeRoot(t *testing.T) {
+	for _, input := range []string{"/etc/passwd", "../../etc/passwd", "/srv/sites/example/../../other"} {
+		got := chrootSCPPath(input, "/srv/sites/example")
+		if !strings.HasPrefix(got, "/") || strings.Contains(got, "..") {
+			t.Fatalf("unsafe chroot path %q from %q", got, input)
+		}
+	}
+	if got := chrootSCPPath("/srv/sites/example/htdocs/app.txt", "/srv/sites/example"); got != "/htdocs/app.txt" {
+		t.Fatalf("home-relative path = %q", got)
+	}
+}
+
+func TestReceiveSCPSupportsFilenameWithSpaces(t *testing.T) {
+	target := t.TempDir()
+	input := bytes.NewBufferString("C0644 5 file with spaces.txt\nhello\x00")
+	var output bytes.Buffer
+	err := receiveSCP(scpServerOptions{mode: 't', targetDir: true, path: target}, input, &output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(filepath.Join(target, "file with spaces.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "hello" {
+		t.Fatalf("content = %q", content)
+	}
+	if got := output.Bytes(); !bytes.Equal(got, []byte{0, 0, 0}) {
+		t.Fatalf("acks = %v", got)
+	}
+}
+
+func TestReceiveSCPRecursiveDirectory(t *testing.T) {
+	target := t.TempDir()
+	input := bytes.NewBufferString("D0755 0 folder\nC0644 6 nested.txt\nnested\x00E\n")
+	var output bytes.Buffer
+	err := receiveSCP(scpServerOptions{mode: 't', targetDir: true, recursive: true, path: target}, input, &output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(filepath.Join(target, "folder", "nested.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "nested" {
+		t.Fatalf("content = %q", content)
+	}
+}
+
+func TestSendSCPFileProtocol(t *testing.T) {
+	filePath := filepath.Join(t.TempDir(), "download.txt")
+	if err := os.WriteFile(filePath, []byte("download"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	input := bytes.NewReader([]byte{0, 0, 0})
+	var output bytes.Buffer
+	if err := sendSCP(scpServerOptions{mode: 'f', path: filePath}, input, &output); err != nil {
+		t.Fatal(err)
+	}
+	if got := output.String(); !strings.HasPrefix(got, "C0640 8 download.txt\n") || !strings.Contains(got, "download\x00") {
+		t.Fatalf("unexpected SCP source protocol: %q", got)
+	}
+}
+
+func TestVirtualPathUsesChrootNamespace(t *testing.T) {
+	if got := filepath.ToSlash(virtualPath("../../etc/passwd")); got != "/etc/passwd" {
+		t.Fatalf("virtual path = %q", got)
+	}
+}
+
+func TestSFTPServerConfinesTraversalToVirtualRoot(t *testing.T) {
+	root := t.TempDir()
+	serverConn, clientConn := net.Pipe()
+	fs := &chrootFS{originalHome: "/srv/sites/example", root: root}
+	server := sftp.NewRequestServer(serverConn, sftp.Handlers{FileGet: fs, FilePut: fs, FileCmd: fs, FileList: fs})
+	serverDone := make(chan error, 1)
+	go func() { serverDone <- server.Serve() }()
+
+	client, err := sftp.NewClientPipe(clientConn, clientConn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := client.Create("../../outside.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.Write([]byte("confined")); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "outside.txt")); err != nil {
+		t.Fatalf("traversal path was not confined inside root: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(root), "outside.txt")); !os.IsNotExist(err) {
+		t.Fatalf("SFTP traversal created a file outside the virtual root: %v", err)
+	}
+
+	_ = client.Close()
+	_ = server.Close()
+	_ = clientConn.Close()
+	<-serverDone
+}

@@ -234,7 +234,7 @@ func (h *WebsiteHandler) ShowByID(c *fiber.Ctx, id uint) error {
 		"Title":                item.Name,
 		"PlatformKind":         "website",
 		"PrimaryDomain":        primaryDomain,
-		"DomainScheme":         websiteDomainScheme(scopedSSL),
+		"DomainScheme":         domainSchemeFor(primaryDomain, scopedSSL),
 		"ServerAddress":        serverAddress,
 		"Item":                 item,
 		"PhpCfg":               phpCfg,
@@ -1547,15 +1547,31 @@ func websiteSSLItems(item *models.Website, all []models.SSLCertificate) []models
 	return out
 }
 
-func websiteDomainScheme(items []models.SSLCertificate) string {
+func domainSchemeFor(domain string, items []models.SSLCertificate) string {
+	domain = strings.ToLower(strings.TrimSpace(domain))
 	for _, cert := range items {
-		if strings.EqualFold(strings.TrimSpace(cert.Status), "active") &&
+		if strings.ToLower(strings.TrimSpace(cert.Domain)) == domain &&
+			strings.EqualFold(strings.TrimSpace(cert.Status), "active") &&
 			strings.TrimSpace(cert.CertPath) != "" &&
 			strings.TrimSpace(cert.KeyPath) != "" {
 			return "https"
 		}
 	}
 	return "http"
+}
+
+func applyWebsiteDomainSSLState(site *models.Website, items []models.SSLCertificate) {
+	if site == nil {
+		return
+	}
+	site.SSLReady = false
+	for i := range site.Domains {
+		ready := domainSchemeFor(site.Domains[i].Domain, items) == "https"
+		site.Domains[i].SSLReady = ready
+		if ready {
+			site.SSLReady = true
+		}
+	}
 }
 
 func (h *WebsiteHandler) websiteDatabaseItem(websiteID, dbID uint) (*models.Website, *models.DatabaseConnection, error) {
