@@ -855,6 +855,18 @@ func (s *WebsiteService) ensureWebsiteFilesystem(ctx context.Context, site *mode
 				memberNames[strings.TrimSpace(item.Username)] = struct{}{}
 			}
 		}
+		// Older SSH users and users created from the global SSH view can have
+		// a platform home without a WebsiteID. Include only users whose home
+		// or allowed root exactly matches this platform, so they receive the
+		// same shared-directory access without gaining access to other sites.
+		if users, err := s.siteUsers.List(); err == nil {
+			for _, item := range users {
+				if !siteUserUsesPlatformHome(item, platformHome) || strings.TrimSpace(item.Username) == "" {
+					continue
+				}
+				memberNames[strings.TrimSpace(item.Username)] = struct{}{}
+			}
+		}
 	}
 	if s.ftpUsers != nil {
 		if items, err := s.ftpUsers.ListByWebsite(site.ID); err == nil {
@@ -877,6 +889,20 @@ func (s *WebsiteService) ensureWebsiteFilesystem(ctx context.Context, site *mode
 		}
 	}
 	return nil
+}
+
+func siteUserUsesPlatformHome(item models.SiteUser, platformHome string) bool {
+	platformHome = filepath.Clean(strings.TrimSpace(platformHome))
+	if platformHome == "." || platformHome == "" {
+		return false
+	}
+	for _, candidate := range []string{item.HomeDirectory, item.AllowedRoot} {
+		candidate = strings.TrimSpace(candidate)
+		if candidate != "" && filepath.Clean(candidate) == platformHome {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *WebsiteService) writeNginxConfig(ctx context.Context, site *models.Website) error {

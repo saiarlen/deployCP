@@ -55,6 +55,29 @@ func TestNginxTransactionRestoresPreviousConfigOnValidationFailure(t *testing.T)
 	}
 }
 
+func TestSiteUserUsesPlatformHome(t *testing.T) {
+	platformHome := "/home/deploycp/platforms/sites/example.test"
+	cases := []struct {
+		name string
+		user models.SiteUser
+		want bool
+	}{
+		{name: "matching home", user: models.SiteUser{HomeDirectory: platformHome}, want: true},
+		{name: "matching allowed root", user: models.SiteUser{AllowedRoot: platformHome}, want: true},
+		{name: "cleaned matching home", user: models.SiteUser{HomeDirectory: platformHome + "/."}, want: true},
+		{name: "different platform", user: models.SiteUser{HomeDirectory: "/home/deploycp/platforms/sites/other.test"}, want: false},
+		{name: "nested directory", user: models.SiteUser{HomeDirectory: platformHome + "/htdocs"}, want: false},
+		{name: "empty paths", user: models.SiteUser{}, want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := siteUserUsesPlatformHome(tc.user, platformHome); got != tc.want {
+				t.Fatalf("siteUserUsesPlatformHome() = %t, want %t", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestUpdatePhpSettingsRewritesNginxSocket(t *testing.T) {
 	tmp := t.TempDir()
 	cfg := &config.Config{}
