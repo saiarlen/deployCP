@@ -323,6 +323,13 @@ export GOCACHE="${GOCACHE:-$XDG_CACHE_HOME/go-build}"
 export GOPATH="${GOPATH:-$XDG_DATA_HOME/go}"
 mkdir -p "$GOCACHE" "$GOPATH/pkg/mod" >/dev/null 2>&1 || true
 export HISTFILE="$state_root/.bash_history"
+systemctl() {
+  if [ -z "${DEPLOYCP_RUNTIME_CONTROL_SOCKET:-}" ]; then
+    echo "DeployCP runtime control is unavailable in this session." >&2
+    return 1
+  fi
+  /usr/local/libexec/deploycp-transfer runtime-control "$DEPLOYCP_RUNTIME_CONTROL_SOCKET" "$@"
+}
 PS1='\u@\h:\w\$ '
 cd "$HOME"
 `

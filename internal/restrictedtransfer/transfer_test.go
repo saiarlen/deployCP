@@ -90,6 +90,19 @@ func TestNormalizedGroupIDsFiltersInvalidValuesAndDuplicates(t *testing.T) {
 	}
 }
 
+func TestRuntimeControlRequestAllowsOnlySafeOwnServiceActions(t *testing.T) {
+	for _, request := range []runtimeControlRequest{{Action: "restart", Unit: "deploycp-app-example-com"}, {Action: "status", Unit: "deploycp-app-example-com"}} {
+		if !validRuntimeControlRequest(request) {
+			t.Fatalf("request %#v should be allowed", request)
+		}
+	}
+	for _, request := range []runtimeControlRequest{{Action: "enable", Unit: "deploycp-app-example-com"}, {Action: "restart", Unit: "ssh.service"}, {Action: "restart", Unit: "deploycp-app-x;id"}} {
+		if validRuntimeControlRequest(request) {
+			t.Fatalf("request %#v should be rejected", request)
+		}
+	}
+}
+
 func TestSplitShellCommandPreservesQuotedSCPPath(t *testing.T) {
 	got, err := splitShellCommand(`scp -pt 'folder/file with spaces.txt'`)
 	if err != nil {

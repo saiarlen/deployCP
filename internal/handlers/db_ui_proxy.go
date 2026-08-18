@@ -79,6 +79,10 @@ func proxyToolRequestWithHeaders(c *fiber.Ctx, baseURL string, fallbackQuery url
 		return fiber.NewError(fiber.StatusBadGateway, err.Error())
 	}
 	copyRequestHeaders(c, req)
+	// Adminer enables PHP output compression for its bundled ?file= assets.
+	// Keep the upstream representation uncompressed so this proxy can forward
+	// the body and headers verbatim.
+	configureDatabaseUIProxyEncoding(req)
 	if isAdminerAssetRequest(c) {
 		req.Header.Del("If-Modified-Since")
 		req.Header.Del("If-None-Match")
@@ -116,6 +120,10 @@ func proxyToolRequestWithHeaders(c *fiber.Ctx, baseURL string, fallbackQuery url
 		return fiber.NewError(fiber.StatusBadGateway, fmt.Sprintf("database UI helper response failed: %v", err))
 	}
 	return c.Send(responseBody)
+}
+
+func configureDatabaseUIProxyEncoding(req *http.Request) {
+	req.Header.Set("Accept-Encoding", "identity")
 }
 
 func buildProxyTarget(c *fiber.Ctx, baseURL string, fallbackQuery url.Values) (*url.URL, error) {

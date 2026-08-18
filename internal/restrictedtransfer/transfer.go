@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"os/user"
@@ -20,18 +21,126 @@ import (
 )
 
 const (
-	SFTPCommand       = "restricted-sftp"
-	SCPCommand        = "restricted-scp"
-	ShellCommand      = "restricted-shell"
-	SandboxConfigPath = "/etc/deploycp/restricted-shell.json"
-	ShellRCPath       = "/usr/local/libexec/deploycp-shell.rc"
+	SFTPCommand                  = "restricted-sftp"
+	SCPCommand                   = "restricted-scp"
+	ShellCommand                 = "restricted-shell"
+	RuntimeControlCommand        = "runtime-control"
+	SandboxConfigPath            = "/etc/deploycp/restricted-shell.json"
+	ShellRCPath                  = "/usr/local/libexec/deploycp-shell.rc"
+	restrictedTransferHelperPath = "/usr/local/libexec/deploycp-transfer"
 )
+
+type runtimeControlRequest struct {
+	Action string `json:"action"`
+	Unit   string `json:"unit"`
+}
+type runtimeControlResponse struct {
+	Output string `json:"output"`
+	Error  string `json:"error,omitempty"`
+}
+
+func runRuntimeControlClient(args []string, stdout, stderr io.Writer) error {
+	if len(args) < 3 {
+		return errors.New("usage: runtime-control <socket> <action> <service>")
+	}
+	conn, err := net.Dial("unix", args[0])
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	if err := json.NewEncoder(conn).Encode(runtimeControlRequest{Action: args[1], Unit: args[2]}); err != nil {
+		return err
+	}
+	var response runtimeControlResponse
+	if err := json.NewDecoder(conn).Decode(&response); err != nil {
+		return err
+	}
+	if response.Output != "" {
+		_, _ = io.WriteString(stdout, response.Output)
+	}
+	if response.Error != "" {
+		_, _ = io.WriteString(stderr, response.Error+"\n")
+		return errors.New(response.Error)
+	}
+	return nil
+}
+
+func serveRuntimeControl(listener net.Listener, username string, done <-chan struct{}) {
+	for {
+		if unixListener, ok := listener.(*net.UnixListener); ok {
+			_ = unixListener.SetDeadline(time.Now().Add(time.Second))
+		}
+		conn, err := listener.Accept()
+		if err != nil {
+			select {
+			case <-done:
+				return
+			default:
+				continue
+			}
+		}
+		go handleRuntimeControl(conn, username)
+	}
+}
+
+func handleRuntimeControl(conn net.Conn, username string) {
+	defer conn.Close()
+	var request runtimeControlRequest
+	if err := json.NewDecoder(io.LimitReader(conn, 4096)).Decode(&request); err != nil {
+		return
+	}
+	response := runtimeControlResponse{}
+	if !validRuntimeControlRequest(request) {
+		response.Error = "only start, stop, restart, status, and is-active are allowed for DeployCP app services"
+	} else if !runtimeServiceOwnedBy(request.Unit, username) {
+		response.Error = "service is not assigned to this platform user"
+	} else {
+		binary, _ := exec.LookPath("systemctl")
+		if binary == "" {
+			binary = "/bin/systemctl"
+		}
+		output, err := exec.Command(binary, request.Action, request.Unit).CombinedOutput()
+		response.Output = string(output)
+		if err != nil {
+			response.Error = strings.TrimSpace(err.Error())
+		}
+	}
+	_ = json.NewEncoder(conn).Encode(response)
+}
+
+func validRuntimeControlRequest(request runtimeControlRequest) bool {
+	if !strings.HasPrefix(request.Unit, "deploycp-app-") || strings.ContainsAny(request.Unit, " \t\r\n/") {
+		return false
+	}
+	for _, r := range request.Unit {
+		if !(r == '-' || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')) {
+			return false
+		}
+	}
+	switch request.Action {
+	case "start", "stop", "restart", "status", "is-active":
+		return true
+	}
+	return false
+}
+
+func runtimeServiceOwnedBy(unit, username string) bool {
+	binary, _ := exec.LookPath("systemctl")
+	if binary == "" {
+		binary = "/bin/systemctl"
+	}
+	output, err := exec.Command(binary, "show", "--property=User", "--value", unit).Output()
+	return err == nil && strings.TrimSpace(string(output)) == username
+}
 
 // Run handles the privileged transfer-only commands before the main
 // application is initialized. The caller must be the managed sudo rule.
 func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) (bool, error) {
-	if len(args) == 0 || (args[0] != SFTPCommand && args[0] != SCPCommand && args[0] != ShellCommand) {
+	if len(args) == 0 || (args[0] != SFTPCommand && args[0] != SCPCommand && args[0] != ShellCommand && args[0] != RuntimeControlCommand) {
 		return false, nil
+	}
+	if args[0] == RuntimeControlCommand {
+		return true, runRuntimeControlClient(args[1:], stdout, stderr)
 	}
 	account, uid, gid, err := lookupSudoAccount()
 	if err != nil {
@@ -159,7 +268,30 @@ func serveRestrictedShell(account *user.User, uid, gid int, stdin io.Reader, std
 	if err != nil {
 		return fmt.Errorf("resolve restricted shell groups: %w", err)
 	}
-	args := buildBubblewrapArgs(account, uid, gid, groupIDs, home, runtimeRoot)
+	controlDir, err := os.MkdirTemp("/run", "deploycp-runtime-")
+	if err != nil {
+		return fmt.Errorf("create runtime control directory: %w", err)
+	}
+	defer os.RemoveAll(controlDir)
+	if err := os.Chmod(controlDir, 0o711); err != nil {
+		return err
+	}
+	controlPath := filepath.Join(controlDir, "control.sock")
+	listener, err := net.Listen("unix", controlPath)
+	if err != nil {
+		return fmt.Errorf("create runtime control socket: %w", err)
+	}
+	defer listener.Close()
+	if err := os.Chown(controlPath, uid, gid); err != nil {
+		return err
+	}
+	if err := os.Chmod(controlPath, 0o600); err != nil {
+		return err
+	}
+	done := make(chan struct{})
+	defer close(done)
+	go serveRuntimeControl(listener, account.Username, done)
+	args := buildBubblewrapArgs(account, uid, gid, groupIDs, home, runtimeRoot, controlDir, controlPath)
 	command := exec.Command(bwrap, args...)
 	command.Stdin = stdin
 	command.Stdout = stdout
@@ -200,7 +332,7 @@ func normalizedGroupIDs(rawIDs []string) []string {
 	return groupIDs
 }
 
-func buildBubblewrapArgs(account *user.User, uid, gid int, groupIDs []string, home, runtimeRoot string) []string {
+func buildBubblewrapArgs(account *user.User, uid, gid int, groupIDs []string, home, runtimeRoot string, controlPaths ...string) []string {
 	term := strings.TrimSpace(os.Getenv("TERM"))
 	if term == "" || strings.ContainsAny(term, " \t\r\n/") {
 		term = "xterm-256color"
@@ -232,6 +364,9 @@ func buildBubblewrapArgs(account *user.User, uid, gid int, groupIDs []string, ho
 		"--setenv", "PATH", "/usr/local/bin:/usr/bin:/bin",
 		"--setenv", "TERM", term,
 		"--setenv", "LANG", "C.UTF-8",
+	}
+	if len(controlPaths) == 2 {
+		args = append(args, "--setenv", "DEPLOYCP_RUNTIME_CONTROL_SOCKET", controlPaths[1], "--dir", "/usr/local", "--dir", "/usr/local/libexec", "--ro-bind", restrictedTransferHelperPath, restrictedTransferHelperPath, "--bind", controlPaths[0], controlPaths[0])
 	}
 	for _, source := range []string{"/usr", "/bin", "/sbin", "/lib", "/lib64"} {
 		if _, err := os.Stat(source); err == nil {
