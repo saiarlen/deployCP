@@ -541,7 +541,6 @@ func managedSSHDConfig(shellPath string) (string, error) {
 	return fmt.Sprintf(`Match Group %s
 	PasswordAuthentication yes
 	KbdInteractiveAuthentication yes
-	AuthenticationMethods any
 	DisableForwarding yes
     ForceCommand %s
 

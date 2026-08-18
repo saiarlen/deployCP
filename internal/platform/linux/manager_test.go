@@ -54,6 +54,9 @@ func TestManagedSSHDConfigForcesEverySiteUserRequestThroughDispatcher(t *testing
 	if strings.HasPrefix(config, "PasswordAuthentication") {
 		t.Fatal("password authentication must not be enabled globally")
 	}
+	if strings.Contains(config, "AuthenticationMethods") {
+		t.Fatal("restricted SSH relies on OpenSSH's default authentication method; an explicit value is not portable")
+	}
 }
 
 func TestEnsureManagedSSHDIncludeIsFirstAndIdempotent(t *testing.T) {
