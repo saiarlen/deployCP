@@ -14,6 +14,7 @@ import (
 	"github.com/pkg/sftp"
 
 	"deploycp/internal/config"
+	"deploycp/internal/models"
 	"deploycp/internal/platform"
 	"deploycp/internal/repositories"
 )
@@ -298,16 +299,8 @@ func (s *PreflightService) restrictedShellSmokeTest(ctx context.Context) (string
 	if err != nil {
 		return "", fmt.Errorf("list SSH users: %w", err)
 	}
-	username := ""
-	homeDirectory := ""
-	for i := range users {
-		if users[i].IsActive && users[i].SSHEnabled && strings.TrimSpace(users[i].Username) != "" {
-			username = strings.TrimSpace(users[i].Username)
-			homeDirectory = filepath.Clean(strings.TrimSpace(users[i].HomeDirectory))
-			break
-		}
-	}
-	if username == "" {
+	users = activeSSHUsers(users)
+	if len(users) == 0 {
 		return "", nil
 	}
 	sudo := firstExecutable("sudo", "/usr/bin/sudo", "/bin/sudo")
@@ -318,16 +311,38 @@ func (s *PreflightService) restrictedShellSmokeTest(ctx context.Context) (string
 	if shellPath == "." || !filepath.IsAbs(shellPath) {
 		return "", fmt.Errorf("restricted shell path is invalid")
 	}
+	for _, item := range users {
+		if err := restrictedShellSmokeTestUser(ctx, sudo, shellPath, item); err != nil {
+			return "", err
+		}
+	}
+	return fmt.Sprintf("interactive SSH, SFTP, and legacy SCP launched successfully for %d SSH user(s)", len(users)), nil
+}
+
+func activeSSHUsers(users []models.SiteUser) []models.SiteUser {
+	active := make([]models.SiteUser, 0, len(users))
+	for _, item := range users {
+		if !item.IsActive || !item.SSHEnabled || strings.TrimSpace(item.Username) == "" {
+			continue
+		}
+		active = append(active, item)
+	}
+	return active
+}
+
+func restrictedShellSmokeTestUser(ctx context.Context, sudo, shellPath string, item models.SiteUser) error {
+	username := strings.TrimSpace(item.Username)
+	homeDirectory := filepath.Clean(strings.TrimSpace(item.HomeDirectory))
 	testCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	cmd := restrictedShellTestCommand(testCtx, sudo, username, shellPath, "")
 	cmd.Stdin = strings.NewReader("exit\n")
 	output, err := cmd.CombinedOutput()
 	cancel()
 	if testCtx.Err() == context.DeadlineExceeded {
-		return "", fmt.Errorf("restricted SSH sandbox timed out for %s", username)
+		return fmt.Errorf("restricted SSH sandbox timed out for %s", username)
 	}
 	if err != nil {
-		return "", fmt.Errorf("restricted SSH sandbox failed for %s: %s", username, commandFailureDetail(err, output))
+		return fmt.Errorf("restricted SSH sandbox failed for %s: %s", username, commandFailureDetail(err, output))
 	}
 
 	sftpCtx, cancelSFTP := context.WithTimeout(ctx, 20*time.Second)
@@ -335,18 +350,18 @@ func (s *PreflightService) restrictedShellSmokeTest(ctx context.Context) (string
 	sftpStdout, err := sftpCmd.StdoutPipe()
 	if err != nil {
 		cancelSFTP()
-		return "", fmt.Errorf("prepare SFTP smoke test for %s: %w", username, err)
+		return fmt.Errorf("prepare SFTP smoke test for %s: %w", username, err)
 	}
 	sftpStdin, err := sftpCmd.StdinPipe()
 	if err != nil {
 		cancelSFTP()
-		return "", fmt.Errorf("prepare SFTP input for %s: %w", username, err)
+		return fmt.Errorf("prepare SFTP input for %s: %w", username, err)
 	}
 	var sftpStderr bytes.Buffer
 	sftpCmd.Stderr = &sftpStderr
 	if err := sftpCmd.Start(); err != nil {
 		cancelSFTP()
-		return "", fmt.Errorf("start SFTP smoke test for %s: %w", username, err)
+		return fmt.Errorf("start SFTP smoke test for %s: %w", username, err)
 	}
 	sftpClient, err := sftp.NewClientPipe(sftpStdout, sftpStdin)
 	if err == nil {
@@ -357,17 +372,17 @@ func (s *PreflightService) restrictedShellSmokeTest(ctx context.Context) (string
 	timedOut := sftpCtx.Err() == context.DeadlineExceeded
 	cancelSFTP()
 	if timedOut {
-		return "", fmt.Errorf("SFTP smoke test timed out for %s", username)
+		return fmt.Errorf("SFTP smoke test timed out for %s", username)
 	}
 	if err != nil {
-		return "", fmt.Errorf("SFTP smoke test failed for %s: %w: %s", username, err, strings.TrimSpace(sftpStderr.String()))
+		return fmt.Errorf("SFTP smoke test failed for %s: %w: %s", username, err, strings.TrimSpace(sftpStderr.String()))
 	}
 	if waitErr != nil {
-		return "", fmt.Errorf("SFTP helper failed for %s: %s", username, commandFailureDetail(waitErr, sftpStderr.Bytes()))
+		return fmt.Errorf("SFTP helper failed for %s: %s", username, commandFailureDetail(waitErr, sftpStderr.Bytes()))
 	}
 
 	if homeDirectory == "." || !filepath.IsAbs(homeDirectory) {
-		return "", fmt.Errorf("SSH home directory is invalid for %s", username)
+		return fmt.Errorf("SSH home directory is invalid for %s", username)
 	}
 	smokeName := fmt.Sprintf(".deploycp-scp-smoke-%d", time.Now().UnixNano())
 	smokePath := filepath.Join(homeDirectory, smokeName)
@@ -379,18 +394,18 @@ func (s *PreflightService) restrictedShellSmokeTest(ctx context.Context) (string
 	scpTimedOut := scpCtx.Err() == context.DeadlineExceeded
 	cancelSCP()
 	if scpTimedOut {
-		return "", fmt.Errorf("legacy SCP smoke test timed out for %s", username)
+		return fmt.Errorf("legacy SCP smoke test timed out for %s", username)
 	}
 	if scpErr != nil {
-		return "", fmt.Errorf("legacy SCP smoke test failed for %s: %s", username, commandFailureDetail(scpErr, scpOutput))
+		return fmt.Errorf("legacy SCP smoke test failed for %s: %s", username, commandFailureDetail(scpErr, scpOutput))
 	}
 	if info, err := os.Stat(smokePath); err != nil || info.Size() != 0 {
 		if err == nil {
 			err = fmt.Errorf("unexpected smoke file size %d", info.Size())
 		}
-		return "", fmt.Errorf("legacy SCP did not write inside %s home: %w", username, err)
+		return fmt.Errorf("legacy SCP did not write inside %s home: %w", username, err)
 	}
-	return "interactive SSH, SFTP, and legacy SCP launched successfully for " + username, nil
+	return nil
 }
 
 func restrictedShellTestCommand(ctx context.Context, sudo, username, shellPath, originalCommand string) *exec.Cmd {

@@ -824,18 +824,22 @@ func (u *userManager) SyncSharedAccess(ctx context.Context, root, primaryUser, g
 		}
 	}
 	if primary := strings.TrimSpace(primaryUser); primary != "" {
-		_, _ = u.runner.Run(ctx, system.CommandRequest{
+		if _, err := u.runner.Run(ctx, system.CommandRequest{
 			Binary:      "/bin/chown",
 			Args:        []string{primary + ":" + groupName, root},
 			Timeout:     10 * time.Second,
 			AuditAction: "site_user.shared.chown_root",
-		})
-		_, _ = u.runner.Run(ctx, system.CommandRequest{
+		}); err != nil {
+			return err
+		}
+		if _, err := u.runner.Run(ctx, system.CommandRequest{
 			Binary:      "/usr/bin/find",
 			Args:        []string{root, "-user", "root", "-exec", "/bin/chown", primary + ":" + groupName, "{}", "+"},
 			Timeout:     60 * time.Second,
 			AuditAction: "site_user.shared.chown_root_owned",
-		})
+		}); err != nil {
+			return err
+		}
 	}
 	if _, err := u.runner.Run(ctx, system.CommandRequest{
 		Binary:      "/bin/chgrp",
