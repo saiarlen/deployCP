@@ -169,9 +169,10 @@
           <button type="button" class="platform-copy-action" data-copy-value="{{ Status.App.ServiceName }}" data-copy-success="Service name copied">Copy</button>
         </div>
         <div class="mt-2 flex items-center gap-2 min-w-0">
-          <span class="font-mono text-xs truncate">{{ Ops.RuntimeCommand }}</span>
-          <button type="button" class="platform-copy-action" data-copy-value="{{ Ops.RuntimeCommand }}" data-copy-success="Restart command copied">Copy</button>
+          <span class="font-mono text-xs truncate">systemctl restart {{ Status.App.ServiceName }}</span>
+          <button type="button" class="platform-copy-action" data-copy-value="systemctl restart {{ Status.App.ServiceName }}" data-copy-success="Platform SSH restart command copied">Copy</button>
         </div>
+        <p class="mt-2 text-xs opacity-60">Platform SSH: use this command without <span class="font-mono">sudo</span>. Only this platform service can be controlled.</p>
       </div>
       <div class="rounded-md border border-[var(--border)] p-3">
         <p class="text-xs uppercase tracking-wide opacity-70">Execution Mode</p>
@@ -1544,10 +1545,11 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
           <button type="button" class="platform-copy-action" data-copy-value="{{ LinkedApp.ServiceName }}" data-copy-success="Service name copied">Copy</button>
         </div>
         <div class="runtime-copy-row">
-          <span class="runtime-copy-label">SSH command</span>
-          <code>{{ Ops.RuntimeCommand }}</code>
-          <button type="button" class="platform-copy-action" data-copy-value="{{ Ops.RuntimeCommand }}" data-copy-success="Restart command copied">Copy</button>
+          <span class="runtime-copy-label">Platform SSH</span>
+          <code>systemctl restart {{ LinkedApp.ServiceName }}</code>
+          <button type="button" class="platform-copy-action" data-copy-value="systemctl restart {{ LinkedApp.ServiceName }}" data-copy-success="Platform SSH restart command copied">Copy</button>
         </div>
+        <p class="mt-2 text-xs opacity-60">Run without <span class="font-mono">sudo</span>. Start, stop, restart, status, and is-active are limited to this platform service.</p>
       </div>
     </div>
 
