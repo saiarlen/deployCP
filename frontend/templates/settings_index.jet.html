@@ -111,15 +111,11 @@
             {{ else if UpdateView.LastCheckedAt != "" }}
               Last checked: {{ UpdateView.LastCheckedAt }}
             {{ else }}
-              Click check updates to compare this installed version against the latest GitHub release.
+              Open the updater to check this host against the latest GitHub release.
             {{ end }}
           </div>
           <div class="flex flex-wrap gap-2">
-            <button type="button" class="btn app-update-check-btn" id="check-updates-btn" {{ if UpdateView.IsDev }}disabled{{ end }}>
-              <span class="app-update-check-spinner hidden" id="check-updates-spinner" aria-hidden="true"></span>
-              <span id="check-updates-label">Check Updates</span>
-            </button>
-            <a href="/updates" class="btn btn-primary {{ if !UpdateView.UpdateAvailable }}hidden{{ end }}" id="update-now-btn">Update Now</a>
+            <a href="/updates" class="btn btn-primary">Open updater</a>
           </div>
         </div>
       </section>
@@ -1059,58 +1055,6 @@ $(function () {
     $row.toggle(!shown);
     $(this).text(shown ? 'View Details' : 'Hide Details');
   });
-
-  var checkUpdatesBtn = document.getElementById('check-updates-btn');
-  var checkUpdatesSpinner = document.getElementById('check-updates-spinner');
-  var checkUpdatesLabel = document.getElementById('check-updates-label');
-  var updateNowBtn = document.getElementById('update-now-btn');
-  var updateStatusText = document.getElementById('app-update-status-text');
-  if (checkUpdatesBtn && updateStatusText) {
-    checkUpdatesBtn.addEventListener('click', function () {
-      checkUpdatesBtn.disabled = true;
-      var oldText = checkUpdatesLabel ? checkUpdatesLabel.textContent : 'Check Updates';
-      checkUpdatesBtn.classList.add('is-loading');
-      if (checkUpdatesSpinner) checkUpdatesSpinner.classList.remove('hidden');
-      if (checkUpdatesLabel) checkUpdatesLabel.textContent = 'Checking...';
-      fetch('/updates/check', {
-        method: 'POST',
-        headers: {
-          'Accept': 'application/json',
-          'X-CSRF-Token': '{{ CSRFToken }}'
-        }
-      })
-        .then(function (resp) {
-          return resp.json().then(function (data) {
-            if (!resp.ok) throw new Error(data.error || 'Unable to check updates');
-            return data;
-          });
-        })
-        .then(function (data) {
-          if (data.is_dev) {
-            updateStatusText.textContent = 'Development mode is active. Release update checks are disabled for this build.';
-            if (updateNowBtn) updateNowBtn.classList.add('hidden');
-            return;
-          }
-          if (data.update_available) {
-            updateStatusText.textContent = 'New version available: ' + (data.latest_version || 'latest release') + '. Open the updater to install it.';
-            if (updateNowBtn) updateNowBtn.classList.remove('hidden');
-          } else {
-            updateStatusText.textContent = 'This host is already on the latest available release.';
-            if (updateNowBtn) updateNowBtn.classList.add('hidden');
-          }
-        })
-        .catch(function (err) {
-          updateStatusText.textContent = err.message || 'Unable to check updates.';
-          if (updateNowBtn) updateNowBtn.classList.add('hidden');
-        })
-        .finally(function () {
-          checkUpdatesBtn.disabled = false;
-          checkUpdatesBtn.classList.remove('is-loading');
-          if (checkUpdatesSpinner) checkUpdatesSpinner.classList.add('hidden');
-          if (checkUpdatesLabel) checkUpdatesLabel.textContent = oldText;
-        });
-    });
-  }
 
   $('#service-search').on('input', function () {
     var term = ($(this).val() || '').toLowerCase().trim();

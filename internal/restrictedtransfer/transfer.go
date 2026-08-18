@@ -255,9 +255,10 @@ func buildBubblewrapArgs(account *user.User, uid, gid int, groupIDs []string, ho
 	// Bubblewrap creates missing intermediate target directories itself. Those
 	// implicit ancestors can be non-traversable after credentials change even
 	// when the mounted home itself is correctly owned. Declare every ancestor
-	// explicitly before binding the home so a site user can resolve $HOME.
+	// explicitly before binding the home and force it to be traversable so a
+	// site user can resolve $HOME even if the privileged helper has umask 0077.
 	for _, parent := range sandboxHomeParents(home) {
-		args = append(args, "--dir", parent)
+		args = append(args, "--dir", parent, "--chmod", "0755", parent)
 	}
 	args = append(args,
 		"--bind", home, home,

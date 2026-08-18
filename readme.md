@@ -39,7 +39,7 @@ curl -fsSL https://raw.githubusercontent.com/saiarlen/deployCP/main/scripts/linu
 curl -fsSL https://raw.githubusercontent.com/saiarlen/deployCP/main/scripts/linux/install-remote.sh | sudo bash -s -- --update
 ```
 
-Dashboard update uses the same release/update path. A successful in-panel update already runs host bootstrap and managed-resource reconciliation as part of the update flow, so you normally do not need to run `bootstrap-host` or `reconcile-managed` manually after it finishes.
+Dashboard update refreshes the DeployCP binary, UI assets, and restricted SSH bridge, then validates the host. It deliberately does not reconcile existing websites, applications, firewall rules, FTP configuration, or site users; use `bootstrap-host` or `reconcile-managed` manually only when you intentionally want those repairs.
 
 **Uninstall:**
 

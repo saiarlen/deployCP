@@ -176,6 +176,7 @@ func Build() (*Application, error) {
 	store := session.New(session.Config{
 		Storage:        storage.New(storage.Config{Database: cfg.Database.SQLitePath, Table: "fiber_sessions"}),
 		KeyLookup:      "cookie:" + cfg.Security.SessionCookieName,
+		CookiePath:     "/",
 		CookieHTTPOnly: true,
 		CookieSecure:   false,
 		CookieSameSite: "Lax",

@@ -41,6 +41,9 @@ func TestBubblewrapShellOnlyMountsPlatformHomeWritable(t *testing.T) {
 		if strings.Index(joined, "--dir "+parent) > strings.Index(joined, "--bind "+home+" "+home) {
 			t.Fatalf("sandbox home ancestor %s must be created before the home bind:\n%s", parent, joined)
 		}
+		if !strings.Contains(joined, "--chmod 0755 "+parent) {
+			t.Fatalf("sandbox home ancestor %s must be explicitly traversable:\n%s", parent, joined)
+		}
 	}
 	if strings.Index(joined, "--dir /etc") > strings.Index(joined, "--ro-bind /etc/passwd /etc/passwd") {
 		t.Fatalf("sandbox /etc must be created before individual account-file binds:\n%s", joined)

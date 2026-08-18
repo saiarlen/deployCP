@@ -1,18 +1,25 @@
 package middleware
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
+	"gorm.io/gorm"
 
 	"deploycp/internal/models"
 	"deploycp/internal/repositories"
 )
 
+const authLookupUnavailableKey = "deploycp_auth_lookup_unavailable"
+
 func AuthRequired(sm *SessionManager) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		uid, err := sm.GetUserID(c)
-		if err != nil || uid == 0 || c.Locals("auth_user") == nil {
+		if err != nil || c.Locals(authLookupUnavailableKey) == true {
+			return fiber.NewError(fiber.StatusServiceUnavailable, "authentication is temporarily unavailable; retry shortly")
+		}
+		if uid == 0 || c.Locals("auth_user") == nil {
 			_ = sm.Clear(c)
 			return c.Redirect("/login")
 		}
@@ -23,9 +30,25 @@ func AuthRequired(sm *SessionManager) fiber.Handler {
 
 func InjectAuthUser(sm *SessionManager, users *repositories.UserRepository, access *repositories.UserPlatformAccessRepository) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		uid, _ := sm.GetUserID(c)
+		uid, err := sm.GetUserID(c)
+		if err != nil {
+			// A transient session-store error must never destroy a valid login.
+			c.Locals(authLookupUnavailableKey, true)
+			return c.Next()
+		}
 		if uid != 0 {
-			if u, err := users.FindByID(uid); err == nil && u.IsActive {
+			u, err := users.FindByID(uid)
+			if err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					_ = sm.Clear(c)
+				} else {
+					// Database restarts, migrations, and short SQLite locks are retryable.
+					// Preserve the session cookie so the user remains signed in afterwards.
+					c.Locals(authLookupUnavailableKey, true)
+				}
+				return c.Next()
+			}
+			if u.IsActive {
 				c.Locals("auth_user", u)
 				role := normalizeUserRole(u)
 				c.Locals("auth_user_role", role)

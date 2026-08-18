@@ -1,16 +1,37 @@
 <div class="card update-page-card">
   <div class="update-page-head">
     <div>
-      <div class="badge badge-neutral">System Updates</div>
-      <h2 class="update-page-title">DeployCP updater</h2>
-      <p class="update-page-subtitle">Checks the installed release against GitHub, shows update state, and runs the packaged host update flow.</p>
+      <div class="badge badge-neutral">Controlled release update</div>
+      <h2 class="update-page-title">Update DeployCP</h2>
+      <p class="update-page-subtitle">One update runs package validation, service reconciliation, restart, and host health checks in order.</p>
     </div>
     <div class="update-page-actions">
-      <button id="update-install-btn" type="button" class="btn btn-primary" {{ if !UpdateView.UpdateAvailable || UpdateView.State == "running" || UpdateView.IsDev }}disabled{{ end }}>
-        {{ if UpdateView.State == "running" }}Update Running{{ else }}Pull And Install Update{{ end }}
+      <span id="update-state-pill" class="update-state-pill" data-state="{{ UpdateView.State }}">{{ UpdateView.State }}</span>
+      <button id="update-install-btn" type="button" class="btn btn-primary" data-update-available="{{ UpdateView.UpdateAvailable }}" {{ if !UpdateView.CheckEnabled || UpdateView.State == "running" || UpdateView.State == "queued" || UpdateView.IsDev }}disabled{{ end }}>
+        <i data-lucide="download"></i><span id="update-install-label">{{ if UpdateView.State == "running" || UpdateView.State == "queued" }}Update running{{ else if UpdateView.UpdateAvailable }}Install update{{ else }}Check for updates{{ end }}</span>
       </button>
     </div>
   </div>
+
+  <section class="update-run-status" aria-live="polite">
+    <div class="update-run-copy">
+      <span class="update-eyebrow" id="update-phase">{{ if UpdateView.Phase != "" }}{{ UpdateView.Phase }}{{ else }}Ready{{ end }}</span>
+      <strong id="update-message-title">Checking update status</strong>
+      <p id="update-message-body">Preparing the current update information.</p>
+    </div>
+    <div class="update-progress" role="progressbar" aria-label="Update progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ UpdateView.Progress }}">
+      <div class="update-progress-track"><span id="update-progress-bar" style="width: {{ UpdateView.Progress }}%"></span></div>
+      <div class="update-progress-meta"><span id="update-progress-label">{{ UpdateView.Progress }}% complete</span><span id="update-target-version">{{ if UpdateView.TargetVersion != "" }}Target {{ UpdateView.TargetVersion }}{{ end }}</span></div>
+    </div>
+  </section>
+
+  <ol class="update-stepper" id="update-stepper" aria-label="Update stages">
+    <li data-stage="0"><span class="update-step-index">1</span><span><strong>Download</strong><small>Fetch release package</small></span></li>
+    <li data-stage="1"><span class="update-step-index">2</span><span><strong>Verify</strong><small>Check package integrity</small></span></li>
+    <li data-stage="2"><span class="update-step-index">3</span><span><strong>Install</strong><small>Prepare new release</small></span></li>
+    <li data-stage="3"><span class="update-step-index">4</span><span><strong>Reconcile</strong><small>Restore managed services</small></span></li>
+    <li data-stage="4"><span class="update-step-index">5</span><span><strong>Validate</strong><small>Health checks and sign-off</small></span></li>
+  </ol>
 
   <div class="update-summary-grid">
     <div class="metric-card">
@@ -22,7 +43,7 @@
       <strong id="update-latest-version">{{ if UpdateView.LatestVersion != "" }}{{ UpdateView.LatestVersion }}{{ else }}Unknown{{ end }}</strong>
     </div>
     <div class="metric-card">
-      <span class="metric-label">Status</span>
+      <span class="metric-label">Last result</span>
       <strong id="update-state">{{ UpdateView.State }}</strong>
     </div>
     <div class="metric-card">
@@ -31,26 +52,10 @@
     </div>
   </div>
 
-  <div class="callout {{ if UpdateView.UpdateAvailable }}warn{{ else }}ok{{ end }}" id="update-message-box">
-    <strong id="update-message-title">{{ if UpdateView.UpdateAvailable }}Update available{{ else }}Update status{{ end }}</strong>
-    <p id="update-message-body">
-      {{ if UpdateView.IsDev }}
-        Development mode is active. Live release updates are disabled while the panel is running as a dev build.
-      {{ else if UpdateView.UpdateAvailable }}
-        A newer release is available. Start the updater to download the latest GitHub release and install it on this host.
-      {{ else }}
-        This host is already aligned with the latest known release, or no newer release has been detected yet.
-      {{ end }}
-    </p>
-  </div>
-
-  <div class="update-terminal-wrap">
-    <div class="update-terminal-head">
-      <span>Update Terminal</span>
-      <span id="update-target-version">{{ if UpdateView.TargetVersion != "" }}Target {{ UpdateView.TargetVersion }}{{ end }}</span>
-    </div>
+  <details class="update-terminal-wrap" id="update-log-details">
+    <summary class="update-terminal-head"><span>View diagnostic log</span><span>Use this only if the update stops</span></summary>
     <pre id="update-terminal" class="update-terminal">{{ if UpdateView.Log != "" }}{{ UpdateView.Log }}{{ else }}Waiting for updater output...{{ end }}</pre>
-  </div>
+  </details>
 </div>
 
 <script>
@@ -64,10 +69,19 @@
     var messageTitle = document.getElementById('update-message-title');
     var messageBody = document.getElementById('update-message-body');
     var targetEl = document.getElementById('update-target-version');
+    var phaseEl = document.getElementById('update-phase');
+    var progressEl = document.querySelector('.update-progress');
+    var progressBar = document.getElementById('update-progress-bar');
+    var progressLabel = document.getElementById('update-progress-label');
+    var statePill = document.getElementById('update-state-pill');
+    var installLabel = document.getElementById('update-install-label');
+    var stepEls = Array.prototype.slice.call(document.querySelectorAll('#update-stepper [data-stage]'));
+    var logDetails = document.getElementById('update-log-details');
     var csrfToken = '{{ CSRFToken }}';
     var pollTimer = null;
     var restartWaitMode = false;
     var pollFailures = 0;
+    var lastLog = terminalEl.textContent;
 
     function schedulePoll(delayMs) {
       if (pollTimer) {
@@ -80,21 +94,79 @@
       messageTitle.textContent = 'Panel restarting';
       messageBody.textContent = message || 'DeployCP is restarting to complete the update. This page will reconnect automatically when the service is back.';
       stateEl.textContent = 'restarting';
+      if (phaseEl) phaseEl.textContent = 'Restarting DeployCP';
+      if (statePill) statePill.textContent = 'restarting';
+      if (statePill) statePill.dataset.state = 'running';
+      renderWorkflow('running', 82);
       if (installBtn) {
         installBtn.disabled = true;
-        installBtn.textContent = 'Update Running';
+        if (installLabel) installLabel.textContent = 'Update running';
       }
+    }
+
+    function setCheckMessage() {
+      messageTitle.textContent = 'Checking for updates';
+      messageBody.textContent = 'Comparing this host with the latest available DeployCP release.';
+      if (phaseEl) phaseEl.textContent = 'Checking release availability';
+      if (statePill) {
+        statePill.textContent = 'checking';
+        statePill.dataset.state = 'queued';
+      }
+      renderWorkflow('queued', 5);
+      if (installBtn) {
+        installBtn.disabled = true;
+        if (installLabel) installLabel.textContent = 'Checking for updates';
+      }
+    }
+
+    function activeStage(progress) {
+      if (progress < 24) return 0;
+      if (progress < 46) return 1;
+      if (progress < 65) return 2;
+      if (progress < 88) return 3;
+      return 4;
+    }
+
+    function renderWorkflow(state, rawProgress) {
+      var progress = Math.max(0, Math.min(100, Number(rawProgress) || 0));
+      var stage = activeStage(progress);
+      if (progressBar) progressBar.style.width = progress + '%';
+      if (progressEl) progressEl.setAttribute('aria-valuenow', String(progress));
+      if (progressLabel) progressLabel.textContent = state === 'failed' ? 'Update stopped — see diagnostic log' : progress + '% complete';
+      stepEls.forEach(function (item, index) {
+        item.classList.remove('is-active', 'is-complete', 'is-failed');
+        if (state === 'success') {
+          item.classList.add('is-complete');
+        } else if (state === 'failed') {
+          if (index < stage) item.classList.add('is-complete');
+          if (index === stage) item.classList.add('is-failed');
+        } else if (state === 'running' || state === 'queued') {
+          if (index < stage) item.classList.add('is-complete');
+          if (index === stage) item.classList.add('is-active');
+        }
+      });
     }
 
     function renderStatus(data) {
       restartWaitMode = data.state === 'running' || data.state === 'queued';
       pollFailures = 0;
       stateEl.textContent = data.state || 'idle';
+      if (statePill) {
+        statePill.textContent = data.state || 'idle';
+        statePill.dataset.state = data.state || 'idle';
+      }
       currentEl.textContent = data.display_version || data.current_version || 'dev';
       latestEl.textContent = data.latest_version || 'Unknown';
       checkedEl.textContent = data.last_checked_at || 'Never';
-      terminalEl.textContent = data.log && data.log.trim() ? data.log : 'Waiting for updater output...';
+      var nextLog = data.log && data.log.trim() ? data.log : 'Waiting for updater output...';
+      if (nextLog !== lastLog) {
+        terminalEl.textContent = nextLog;
+        lastLog = nextLog;
+        if (logDetails && logDetails.open) terminalEl.scrollTop = terminalEl.scrollHeight;
+      }
       targetEl.textContent = data.target_version ? 'Target ' + data.target_version : '';
+      if (phaseEl) phaseEl.textContent = data.phase || 'Ready';
+      renderWorkflow(data.state || 'idle', data.progress || 0);
 
       if (data.is_dev) {
         messageTitle.textContent = 'Development mode';
@@ -102,6 +174,13 @@
       } else if (data.state === 'running') {
         messageTitle.textContent = 'Update running';
         messageBody.textContent = data.message || 'DeployCP is currently pulling and installing the update.';
+      } else if (data.state === 'failed') {
+        messageTitle.textContent = 'Update stopped';
+        messageBody.textContent = data.message || 'The update did not complete. Open the diagnostic log for the exact blocker.';
+        if (logDetails) logDetails.open = true;
+      } else if (data.state === 'success') {
+        messageTitle.textContent = 'Update completed';
+        messageBody.textContent = data.message || 'DeployCP restarted and passed its post-update checks.';
       } else if (data.update_available) {
         messageTitle.textContent = 'Update available';
         messageBody.textContent = data.message || 'A newer release is available for this host.';
@@ -111,8 +190,12 @@
       }
 
       if (installBtn) {
-        installBtn.disabled = !!data.is_dev || data.state === 'running' || !data.update_available;
-        installBtn.textContent = data.state === 'running' ? 'Update Running' : 'Pull And Install Update';
+        var isBusy = data.state === 'running' || data.state === 'queued';
+        installBtn.dataset.updateAvailable = data.update_available ? 'true' : 'false';
+        installBtn.disabled = !!data.is_dev || !data.check_enabled || isBusy;
+        if (installLabel) {
+          installLabel.textContent = isBusy ? 'Update running' : (data.update_available ? 'Install update' : 'Check for updates');
+        }
       }
 
       if (data.state === 'running' || data.state === 'queued') {
@@ -123,6 +206,15 @@
     }
 
     function parseJSONResponse(resp) {
+      var responsePath = '';
+      try {
+        responsePath = new URL(resp.url, window.location.origin).pathname;
+      } catch (_) {}
+      if (resp.redirected && responsePath === '/login') {
+        var authError = new Error('Your session expired while DeployCP was restarting.');
+        authError.code = 'AUTH_REQUIRED';
+        throw authError;
+      }
       var contentType = (resp.headers.get('content-type') || '').toLowerCase();
       if (contentType.indexOf('application/json') !== -1) {
         return resp.json().then(function (data) {
@@ -143,6 +235,13 @@
       });
     }
 
+    function redirectToLoginIfRequired(err) {
+      if (!err || err.code !== 'AUTH_REQUIRED') return false;
+      restartWaitMode = false;
+      window.location.assign('/login');
+      return true;
+    }
+
     function poll() {
       fetch('/updates/status', {
         cache: 'no-store',
@@ -152,6 +251,7 @@
         .then(parseJSONResponse)
         .then(renderStatus)
         .catch(function (err) {
+          if (redirectToLoginIfRequired(err)) return;
           pollFailures += 1;
           if (restartWaitMode) {
             setRestartMessage('DeployCP is temporarily offline while the new release is being installed. Waiting for the service to return...');
@@ -168,6 +268,30 @@
 
     if (installBtn) {
       installBtn.addEventListener('click', function () {
+        if (installBtn.dataset.updateAvailable !== 'true') {
+          setCheckMessage();
+          fetch('/updates/check', {
+            method: 'POST',
+            cache: 'no-store',
+            credentials: 'same-origin',
+            headers: {
+              'Accept': 'application/json',
+              'X-CSRF-Token': csrfToken
+            }
+          })
+            .then(parseJSONResponse)
+            .then(renderStatus)
+            .catch(function (err) {
+              if (redirectToLoginIfRequired(err)) return;
+              messageTitle.textContent = 'Update check unavailable';
+              messageBody.textContent = (err && err.message) || 'Unable to check for a new release.';
+              if (installBtn) {
+                installBtn.disabled = false;
+                if (installLabel) installLabel.textContent = 'Check for updates';
+              }
+            });
+          return;
+        }
         installBtn.disabled = true;
         restartWaitMode = true;
         pollFailures = 0;
@@ -187,6 +311,7 @@
             schedulePoll(12000);
           })
           .catch(function (err) {
+            if (redirectToLoginIfRequired(err)) return;
             var message = err && err.message ? err.message : '';
             if (!message || /failed to fetch|networkerror|load failed|non-json|html page|server error/i.test(message)) {
               setRestartMessage('The updater request was interrupted while DeployCP was restarting. Waiting for the service to come back...');
@@ -197,7 +322,7 @@
             messageTitle.textContent = 'Update error';
             messageBody.textContent = message || 'Unable to start update.';
             installBtn.disabled = false;
-            installBtn.textContent = 'Pull And Install Update';
+            if (installLabel) installLabel.textContent = 'Install update';
             schedulePoll(4000);
           });
       });

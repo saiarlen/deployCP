@@ -16,6 +16,7 @@ import (
 
 	"deploycp/internal/config"
 	"deploycp/internal/repositories"
+	"deploycp/internal/utils"
 )
 
 const (
@@ -27,10 +28,11 @@ const (
 )
 
 type UpdateService struct {
-	cfg      *config.Config
-	settings *repositories.SettingRepository
-	audit    *AuditService
-	checkMu  sync.Mutex
+	cfg       *config.Config
+	settings  *repositories.SettingRepository
+	audit     *AuditService
+	checkMu   sync.Mutex
+	installMu sync.Mutex
 }
 
 type UpdateView struct {
@@ -50,6 +52,8 @@ type UpdateView struct {
 	LogPath         string `json:"log_path"`
 	Log             string `json:"log"`
 	UnitName        string `json:"unit_name"`
+	Phase           string `json:"phase"`
+	Progress        int    `json:"progress"`
 }
 
 type githubRelease struct {
@@ -144,11 +148,15 @@ func (s *UpdateService) CheckNow(ctx context.Context) error {
 }
 
 func (s *UpdateService) StartInstall(actor *uint, ip string) error {
+	s.installMu.Lock()
+	defer s.installMu.Unlock()
+
 	if !s.CheckEnabled() {
 		return fmt.Errorf("updates are unavailable in development mode")
 	}
 	view := s.FullView()
-	if view.State == "running" {
+	job := s.readJobState()
+	if updateIsActive(job.State) && !isStaleQueuedUpdate(job, time.Now().UTC()) {
 		return fmt.Errorf("an update is already running")
 	}
 	target := strings.TrimSpace(view.LatestVersion)
@@ -260,7 +268,45 @@ func (s *UpdateService) readView(includeLog bool) UpdateView {
 	if view.State == "" {
 		view.State = "idle"
 	}
+	view.Phase, view.Progress = updateProgress(view.State, view.Log)
 	return view
+}
+
+func updateProgress(state, log string) (string, int) {
+	state = strings.ToLower(strings.TrimSpace(state))
+	content := strings.ToLower(log)
+	switch state {
+	case "queued":
+		return "Queued", 5
+	case "success":
+		return "Complete", 100
+	case "failed":
+		phase, progress := updateRunningProgress(content)
+		return "Stopped during " + strings.ToLower(phase), progress
+	case "running":
+		return updateRunningProgress(content)
+	default:
+		return "Ready", 0
+	}
+}
+
+func updateRunningProgress(content string) (string, int) {
+	switch {
+	case strings.Contains(content, "update completed successfully"):
+		return "Complete", 100
+	case strings.Contains(content, "verify-host") || strings.Contains(content, "[ok] platform_mode"):
+		return "Verifying host health", 90
+	case strings.Contains(content, "restricted ssh bridge refreshed"):
+		return "Refreshing restricted SSH access", 60
+	case strings.Contains(content, "database migrations") || strings.Contains(content, "restricted shell prepared"):
+		return "Preparing the new release", 52
+	case strings.Contains(content, "verifying deploycp-"):
+		return "Verifying package integrity", 32
+	case strings.Contains(content, "downloading deploycp-"):
+		return "Downloading release package", 16
+	default:
+		return "Starting update", 8
+	}
 }
 
 func (s *UpdateService) syncInstalledVersion() {
@@ -361,7 +407,30 @@ func (s *UpdateService) writeJobState(state updateJobState) error {
 		"LATEST_VERSION=" + strings.TrimSpace(state.LatestVersion),
 		"",
 	}, "\n")
-	return os.WriteFile(s.statusFilePath(), []byte(content), 0o644)
+	return utils.WriteFileAtomic(s.statusFilePath(), []byte(content), 0o644)
+}
+
+func updateIsActive(state string) bool {
+	switch strings.ToLower(strings.TrimSpace(state)) {
+	case "queued", "running":
+		return true
+	default:
+		return false
+	}
+}
+
+// A systemd job normally changes queued to running within seconds. If the host
+// rebooted or the panel crashed before systemd-run launched it, allow a new
+// update after the queue record has clearly expired instead of blocking forever.
+func isStaleQueuedUpdate(state updateJobState, now time.Time) bool {
+	if !strings.EqualFold(strings.TrimSpace(state.State), "queued") {
+		return false
+	}
+	startedAt, err := time.Parse(time.RFC3339, strings.TrimSpace(state.StartedAt))
+	if err != nil {
+		return false
+	}
+	return now.Sub(startedAt) > 2*time.Minute
 }
 
 func (s *UpdateService) readLogTail(maxBytes int64) string {

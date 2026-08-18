@@ -23,7 +23,9 @@ timestamp() {
 write_status() {
   local state="$1"
   local message="$2"
-  cat >"$STATUS_PATH" <<EOF
+  local tmp_path
+  tmp_path="$(mktemp "${STATUS_PATH}.tmp.XXXXXX")"
+  cat >"$tmp_path" <<EOF
 STATE=${state}
 MESSAGE=${message}
 CURRENT_VERSION=${CURRENT_VERSION}
@@ -34,6 +36,8 @@ LOG_PATH=${LOG_PATH}
 UNIT_NAME=${UNIT_NAME}
 LATEST_VERSION=${TARGET_VERSION}
 EOF
+  chmod 0644 "$tmp_path"
+  mv -f "$tmp_path" "$STATUS_PATH"
 }
 
 log() {

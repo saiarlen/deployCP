@@ -86,6 +86,21 @@ func (s *HostLifecycleService) Bootstrap(ctx context.Context, actor *uint, ip st
 	return result, nil
 }
 
+// PrepareUpdate refreshes only DeployCP's own restricted SSH bridge after a
+// binary update. It intentionally does not reconcile site users, FTP, nginx,
+// websites, applications, firewall rules, or any other platform state.
+func (s *HostLifecycleService) PrepareUpdate(ctx context.Context) (*HostLifecycleResult, error) {
+	result := &HostLifecycleResult{}
+	if s.platform == nil || strings.TrimSpace(s.cfg.Paths.RestrictedShellPath) == "" {
+		return result, nil
+	}
+	if err := s.platform.Users().EnsureRestrictedShell(ctx, s.cfg.Paths.RestrictedShellPath); err != nil {
+		return result, err
+	}
+	result.Steps = append(result.Steps, "restricted SSH bridge refreshed")
+	return result, nil
+}
+
 func (s *HostLifecycleService) TeardownManaged(ctx context.Context, actor *uint, ip string) (*HostLifecycleResult, error) {
 	result := &HostLifecycleResult{}
 	add := func(msg string) { result.Steps = append(result.Steps, msg) }

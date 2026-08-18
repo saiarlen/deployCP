@@ -118,6 +118,18 @@ func main() {
 			fmt.Println(step)
 		}
 		return
+	case "prepare-update":
+		if app.HostLifecycle == nil {
+			log.Fatalf("host lifecycle service unavailable")
+		}
+		result, err := app.HostLifecycle.PrepareUpdate(context.Background())
+		if err != nil {
+			log.Fatalf("prepare-update failed: %v", err)
+		}
+		for _, step := range result.Steps {
+			fmt.Println(step)
+		}
+		return
 	case "teardown-managed":
 		if app.HostLifecycle == nil {
 			log.Fatalf("host lifecycle service unavailable")
@@ -159,7 +171,7 @@ func main() {
 		}
 		return
 	default:
-		log.Fatalf("unknown command %q (supported: serve, bootstrap-host, teardown-managed, verify-host, reconcile-managed, runtime restart, deploy, health-check)", cmd)
+		log.Fatalf("unknown command %q (supported: serve, bootstrap-host, prepare-update, teardown-managed, verify-host, reconcile-managed, runtime restart, deploy, health-check)", cmd)
 	}
 	addr := fmt.Sprintf("%s:%d", app.Config.App.Host, app.Config.App.Port)
 	log.Printf("%s running on %s", app.Config.App.Name, addr)
