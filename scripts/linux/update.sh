@@ -302,12 +302,28 @@ prepare_update_rollback() {
     ROLLBACK_DATABASE="$configured_db"
     ROLLBACK_DATABASE_OWNER="$(stat -c '%u:%g' "$configured_db")"
     ROLLBACK_DATABASE_MODE="$(stat -c '%a' "$configured_db")"
-    sqlite3 "$configured_db" ".backup '${ROLLBACK_DIR}/deploycp.sqlite'"
   fi
   if systemctl is-active --quiet "${SERVICE_NAME}"; then
     PANEL_WAS_ACTIVE=1
   fi
   ROLLBACK_READY=1
+}
+
+backup_rollback_database() {
+  [[ -n "$ROLLBACK_DATABASE" ]] || return 0
+  echo "Creating consistent SQLite rollback snapshot" >&2
+  local attempt
+  for attempt in 1 2 3; do
+    if sqlite3 -cmd ".timeout 10000" "$ROLLBACK_DATABASE" ".backup '${ROLLBACK_DIR}/deploycp.sqlite'"; then
+      return 0
+    fi
+    if [[ "$attempt" -lt 3 ]]; then
+      echo "SQLite rollback snapshot is busy; retrying (${attempt}/3)" >&2
+      sleep 1
+    fi
+  done
+  echo "unable to create a consistent SQLite rollback snapshot" >&2
+  return 1
 }
 
 finish_update() {
@@ -503,8 +519,10 @@ install_backup_tool_packages "$pkg_manager"
 trap finish_update EXIT
 prepare_update_rollback
 if [[ "$PANEL_WAS_ACTIVE" -eq 1 ]]; then
+  echo "Stopping DeployCP panel for update" >&2
   systemctl stop "${SERVICE_NAME}"
 fi
+backup_rollback_database
 mv -f "${CORE_DIR}/bin/${BIN_NAME}.new" "${CORE_DIR}/bin/${BIN_NAME}"
 stage_release_assets
 ensure_bundled_adminer
