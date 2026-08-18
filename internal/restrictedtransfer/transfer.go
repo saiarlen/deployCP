@@ -59,7 +59,6 @@ func runRuntimeControlClient(args []string, stdout, stderr io.Writer) error {
 		_, _ = io.WriteString(stdout, response.Output)
 	}
 	if response.Error != "" {
-		_, _ = io.WriteString(stderr, response.Error+"\n")
 		return errors.New(response.Error)
 	}
 	return nil
