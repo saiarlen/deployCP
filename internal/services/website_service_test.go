@@ -282,3 +282,24 @@ func TestNormalizePHPAdditionalDirectivesRejectsInvalidLines(t *testing.T) {
 		t.Fatalf("expected missing equals syntax to be rejected")
 	}
 }
+
+func TestClientMaxBodySizeFromNginxConfig(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		content string
+		want    string
+		ok      bool
+	}{
+		{name: "manual server directive", content: "server {\n  client_max_body_size 256m;\n}", want: "256M", ok: true},
+		{name: "nested location directive", content: "server {\n  location /uploads {\n    client_max_body_size 1G;\n  }\n}", ok: false},
+		{name: "invalid zero value", content: "client_max_body_size 0;", ok: false},
+		{name: "missing directive", content: "server { listen 80; }", ok: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, ok := ClientMaxBodySizeFromNginxConfig(test.content)
+			if got != test.want || ok != test.ok {
+				t.Fatalf("ClientMaxBodySizeFromNginxConfig() = (%q, %t), want (%q, %t)", got, ok, test.want, test.ok)
+			}
+		})
+	}
+}

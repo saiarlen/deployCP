@@ -50,6 +50,13 @@ type WebsiteInput struct {
 	Enabled              bool
 }
 
+var clientMaxBodySizePattern = regexp.MustCompile(`^[1-9][0-9]{0,5}([kKmMgG])?$`)
+var clientMaxBodySizeDirectivePattern = regexp.MustCompile(`(?i)^\s*client_max_body_size(?:\s|$)`)
+var clientMaxBodySizeConfigPattern = regexp.MustCompile(`(?i)^\s*client_max_body_size\s+([1-9][0-9]{0,5}(?:[kmg])?)\s*;`)
+var nginxServerBlockPattern = regexp.MustCompile(`(?i)^\s*server\s*\{`)
+
+const DefaultClientMaxBodySize = "5M"
+
 type PhpSettingsData struct {
 	MemoryLimit          string `json:"memory_limit"`
 	MaxExecutionTime     string `json:"max_execution_time"`
@@ -286,6 +293,7 @@ func (s *WebsiteService) Create(ctx context.Context, in WebsiteInput, actor *uin
 		PHPVersion:           in.PHPVersion,
 		ProxyTarget:          in.ProxyTarget,
 		CustomDirectives:     in.CustomDirectives,
+		ClientMaxBodySize:    DefaultClientMaxBodySize,
 		MaintenanceBypassIPs: in.MaintenanceBypassIPs,
 		SiteUserID:           in.SiteUserID,
 		Enabled:              in.Enabled,
@@ -471,6 +479,95 @@ func (s *WebsiteService) ToggleEnabled(ctx context.Context, id uint, enabled boo
 		return err
 	}
 	s.audit.Record(actor, "website.toggle", "website", fmt.Sprintf("%d", id), ip, map[string]bool{"enabled": enabled})
+	return nil
+}
+
+func (s *WebsiteService) UpdateClientMaxBodySize(ctx context.Context, id uint, value string, actor *uint, ip string) error {
+	value = strings.ToUpper(strings.TrimSpace(value))
+	if !clientMaxBodySizePattern.MatchString(value) {
+		return fmt.Errorf("upload limit must be a positive size such as 5M or 1G")
+	}
+	site, err := s.repo.Find(id)
+	if err != nil {
+		return err
+	}
+	site.ClientMaxBodySize = value
+	// The structured setting owns this directive.  Remove a legacy value from
+	// custom directives so regenerated configurations never contain two limits.
+	site.CustomDirectives = withoutClientMaxBodySizeDirective(site.CustomDirectives)
+	if err := s.repo.Update(site, domainsFromModel(site.Domains)); err != nil {
+		return err
+	}
+	if err := s.writeNginxConfig(ctx, site); err != nil {
+		return err
+	}
+	s.audit.Record(actor, "website.upload_limit.update", "website", fmt.Sprintf("%d", id), ip, map[string]string{"client_max_body_size": value})
+	return nil
+}
+
+func withoutClientMaxBodySizeDirective(directives string) string {
+	lines := strings.Split(directives, "\n")
+	kept := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if clientMaxBodySizeDirectivePattern.MatchString(line) {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	return strings.TrimSpace(strings.Join(kept, "\n"))
+}
+
+// ClientMaxBodySizeFromNginxConfig returns a valid server-level upload limit
+// from the advanced Vhost editor. Location-level values deliberately do not
+// qualify because they must not become a platform-wide setting on regeneration.
+func ClientMaxBodySizeFromNginxConfig(content string) (string, bool) {
+	depth := 0
+	serverDepth := -1
+	for _, rawLine := range strings.Split(content, "\n") {
+		line := strings.TrimSpace(strings.SplitN(rawLine, "#", 2)[0])
+		if line == "" {
+			continue
+		}
+		if serverDepth >= 0 && depth == serverDepth {
+			matches := clientMaxBodySizeConfigPattern.FindStringSubmatch(line)
+			if len(matches) == 2 {
+				value := strings.ToUpper(matches[1])
+				if clientMaxBodySizePattern.MatchString(value) {
+					return value, true
+				}
+			}
+		}
+		if serverDepth < 0 && nginxServerBlockPattern.MatchString(line) {
+			serverDepth = depth + 1
+		}
+		depth += strings.Count(line, "{") - strings.Count(line, "}")
+		if serverDepth >= 0 && depth < serverDepth {
+			serverDepth = -1
+		}
+	}
+	return "", false
+}
+
+// SyncClientMaxBodySizeFromNginxConfig preserves a value saved with the
+// advanced Vhost editor without regenerating that editor's content.
+func (s *WebsiteService) SyncClientMaxBodySizeFromNginxConfig(id uint, content string, actor *uint, ip string) error {
+	value, ok := ClientMaxBodySizeFromNginxConfig(content)
+	if !ok {
+		return nil
+	}
+	site, err := s.repo.Find(id)
+	if err != nil {
+		return err
+	}
+	if site.ClientMaxBodySize == value && !clientMaxBodySizeDirectivePattern.MatchString(site.CustomDirectives) {
+		return nil
+	}
+	site.ClientMaxBodySize = value
+	site.CustomDirectives = withoutClientMaxBodySizeDirective(site.CustomDirectives)
+	if err := s.repo.Update(site, domainsFromModel(site.Domains)); err != nil {
+		return err
+	}
+	s.audit.Record(actor, "website.upload_limit.sync", "website", fmt.Sprintf("%d", id), ip, map[string]string{"client_max_body_size": value})
 	return nil
 }
 

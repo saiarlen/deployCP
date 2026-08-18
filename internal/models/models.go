@@ -65,6 +65,7 @@ type Website struct {
 	PHPVersion           string `gorm:"size:16"`
 	ProxyTarget          string `gorm:"size:255"`
 	CustomDirectives     string `gorm:"type:text"`
+	ClientMaxBodySize    string `gorm:"size:16;not null;default:5M"`
 	MaintenanceBypassIPs string `gorm:"type:text"`
 	PhpSettings          string `gorm:"type:text"` // JSON blob for PHP tuning
 	Enabled              bool   `gorm:"not null;default:true"`

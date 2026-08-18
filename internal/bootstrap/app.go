@@ -657,6 +657,7 @@ func (a *Application) registerRoutes() {
 	secured.Post("/websites/:id/manage/redis/:rid/password", a.WebsiteHandler.ManageUpdateRedisPassword)
 	secured.Post("/websites/:id/manage/redis/:rid/delete", a.WebsiteHandler.ManageDeleteRedis)
 	secured.Post("/websites/:id/manage/vhost", adminOnly, a.WebsiteHandler.ManageSaveVhost)
+	secured.Post("/websites/:id/manage/upload-limit", adminOnly, a.WebsiteHandler.ManageUpdateUploadLimit)
 	secured.Post("/websites/:id/manage/cron-jobs", a.WebsiteHandler.ManageCreateCronJob)
 	secured.Post("/websites/:id/manage/cron-jobs/:cid/delete", a.WebsiteHandler.ManageDeleteCronJob)
 	secured.Post("/websites/:id/manage/varnish", a.WebsiteHandler.ManageUpdateVarnish)

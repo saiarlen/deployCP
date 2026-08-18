@@ -2040,6 +2040,17 @@ if (typeof lucide !== 'undefined') lucide.createIcons();
 
 <!-- ═══════════ Vhost ═══════════ -->
 <div class="manage-panel" data-panel="vhost">
+  <div class="surface p-5 mb-5">
+    <h3 class="text-sm font-semibold mb-2">Upload / Request Body Limit</h3>
+    <p class="text-sm opacity-70 mb-4">Nginx rejects larger requests with 413. This setting applies only to this platform. Use values such as 5M or 1G.</p>
+    <form action="/websites/{{ Item.ID }}/manage/upload-limit" method="post" class="flex flex-wrap items-end gap-3">
+      <input type="hidden" name="_csrf" value="{{ CSRFToken }}">
+      <label class="block text-sm font-medium">Maximum body size
+        <input class="field mt-2 font-mono" name="client_max_body_size" value="{{ if Item.ClientMaxBodySize }}{{ Item.ClientMaxBodySize }}{{ else }}5M{{ end }}" pattern="[1-9][0-9]{0,5}[kKmMgG]?" required>
+      </label>
+      <button class="btn btn-primary" type="submit">Save upload limit</button>
+    </form>
+  </div>
   <div class="surface p-5">
     <h3 class="text-sm font-semibold mb-4">Nginx Vhost Configuration</h3>
     <form action="/websites/{{ Item.ID }}/manage/vhost" method="post">

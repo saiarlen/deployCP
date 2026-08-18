@@ -1459,7 +1459,24 @@ func (h *WebsiteHandler) ManageSaveVhost(c *fiber.Ctx) error {
 				return c.Redirect(platformURLWithTab("website", id, "vhost"))
 			}
 		}
+		if err := h.service.SyncClientMaxBodySizeFromNginxConfig(id, content, currentUserID(c), c.IP()); err != nil {
+			h.base.Sessions.SetFlash(c, "Vhost saved, but the upload-limit setting could not be synchronized: "+err.Error())
+			return c.Redirect(platformURLWithTab("website", id, "vhost"))
+		}
 		h.base.Sessions.SetFlash(c, "Vhost config saved")
+	}
+	return c.Redirect(platformURLWithTab("website", id, "vhost"))
+}
+
+func (h *WebsiteHandler) ManageUpdateUploadLimit(c *fiber.Ctx) error {
+	id, err := repositories.ParseID(c.Params("id"))
+	if err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+	if err := h.service.UpdateClientMaxBodySize(c.Context(), id, c.FormValue("client_max_body_size"), currentUserID(c), c.IP()); err != nil {
+		h.base.Sessions.SetFlash(c, err.Error())
+	} else {
+		h.base.Sessions.SetFlash(c, "Upload limit updated and nginx reloaded")
 	}
 	return c.Redirect(platformURLWithTab("website", id, "vhost"))
 }

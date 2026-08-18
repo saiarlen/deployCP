@@ -64,3 +64,28 @@ func TestBuildWebsiteConfigIgnoresInactiveCertificate(t *testing.T) {
 		t.Fatalf("inactive certificate enabled HTTPS:\n%s", generated.Content)
 	}
 }
+
+func TestBuildWebsiteConfigUsesStructuredUploadLimitOnlyOncePerServer(t *testing.T) {
+	site := &models.Website{
+		Name:              "example",
+		RootPath:          "/srv/example/htdocs",
+		Type:              "static",
+		Enabled:           true,
+		ClientMaxBodySize: "1G",
+		CustomDirectives:  "client_max_body_size 8M;\nadd_header X-Platform example;",
+		AccessLogPath:     "/srv/example/logs/access.log",
+		ErrorLogPath:      "/srv/example/logs/error.log",
+		Domains:           []models.WebsiteDomain{{Domain: "example.com", Primary: true}},
+	}
+	generated := BuildWebsiteConfig(&config.Config{}, site, WebsiteConfigOptions{})
+
+	if got := strings.Count(generated.Content, "client_max_body_size"); got != 1 {
+		t.Fatalf("expected one generated upload limit, got %d:\n%s", got, generated.Content)
+	}
+	if !strings.Contains(generated.Content, "client_max_body_size 1G;") {
+		t.Fatalf("structured upload limit missing:\n%s", generated.Content)
+	}
+	if strings.Contains(generated.Content, "client_max_body_size 8M;") {
+		t.Fatalf("legacy custom upload limit was not removed:\n%s", generated.Content)
+	}
+}

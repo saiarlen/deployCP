@@ -13,6 +13,7 @@ import (
 
 	"deploycp/internal/config"
 	"deploycp/internal/models"
+	"deploycp/internal/services"
 	"deploycp/internal/utils"
 )
 
@@ -84,6 +85,9 @@ func migrate(cfg *config.Config, db *gorm.DB) error {
 	if err := reconcilePlatformColumns(db); err != nil {
 		return err
 	}
+	if err := syncWebsiteUploadLimitsFromNginx(cfg, db); err != nil {
+		return err
+	}
 	if err := reconcileSecretColumns(cfg, db); err != nil {
 		return err
 	}
@@ -91,6 +95,32 @@ func migrate(cfg *config.Config, db *gorm.DB) error {
 		return err
 	}
 	return mergeLegacyAppsIntoPlatforms(db)
+}
+
+// syncWebsiteUploadLimitsFromNginx keeps an existing manual Vhost value when
+// DeployCP first introduces the managed upload-limit setting.
+func syncWebsiteUploadLimitsFromNginx(cfg *config.Config, db *gorm.DB) error {
+	var sites []models.Website
+	if err := db.Find(&sites).Error; err != nil {
+		return fmt.Errorf("load platforms for upload-limit migration: %w", err)
+	}
+	for _, site := range sites {
+		content, err := os.ReadFile(filepath.Join(cfg.Paths.NginxAvailableDir, site.Name+".conf"))
+		if err != nil {
+			continue
+		}
+		value, ok := services.ClientMaxBodySizeFromNginxConfig(string(content))
+		if !ok {
+			continue
+		}
+		if site.ClientMaxBodySize == value {
+			continue
+		}
+		if err := db.Model(&models.Website{}).Where("id = ?", site.ID).Update("client_max_body_size", value).Error; err != nil {
+			return fmt.Errorf("preserve upload limit for platform %d: %w", site.ID, err)
+		}
+	}
+	return nil
 }
 
 func reconcileSecretColumns(cfg *config.Config, db *gorm.DB) error {
@@ -178,6 +208,7 @@ func reconcilePlatformColumns(db *gorm.DB) error {
 		"PHPVersion",
 		"ProxyTarget",
 		"CustomDirectives",
+		"ClientMaxBodySize",
 		"MaintenanceBypassIPs",
 		"PhpSettings",
 		"Enabled",

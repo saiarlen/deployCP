@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 
@@ -44,6 +45,9 @@ var cloudflareIPs = []string{
 	"2a06:98c0::/29",
 	"2c0f:f248::/32",
 }
+
+var clientMaxBodySizePattern = regexp.MustCompile(`^[1-9][0-9]{0,5}([kKmMgG])?$`)
+var clientMaxBodySizeDirectivePattern = regexp.MustCompile(`(?i)^\s*client_max_body_size(?:\s|$)`)
 
 type WebsiteConfigOptions struct {
 	Certificates      map[string]*models.SSLCertificate
@@ -122,6 +126,9 @@ func renderServerContent(body *strings.Builder, site *models.Website, opts Websi
 		}
 		body.WriteString("    real_ip_header CF-Connecting-IP;\n")
 		body.WriteString("    real_ip_recursive on;\n")
+	}
+	if limit := strings.TrimSpace(site.ClientMaxBodySize); clientMaxBodySizePattern.MatchString(limit) {
+		body.WriteString(fmt.Sprintf("    client_max_body_size %s;\n", limit))
 	}
 	body.WriteString("    location ~ /\\. { deny all; }\n")
 	for _, block := range opts.IPBlocks {
@@ -207,7 +214,7 @@ func renderServerContent(body *strings.Builder, site *models.Website, opts Websi
 	if strings.TrimSpace(site.CustomDirectives) != "" {
 		body.WriteString("\n    # Custom directives\n")
 		for _, line := range strings.Split(site.CustomDirectives, "\n") {
-			if strings.TrimSpace(line) == "" {
+			if strings.TrimSpace(line) == "" || clientMaxBodySizeDirectivePattern.MatchString(line) {
 				continue
 			}
 			body.WriteString("    " + line + "\n")
