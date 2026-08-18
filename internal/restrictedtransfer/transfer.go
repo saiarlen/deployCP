@@ -252,8 +252,14 @@ func buildBubblewrapArgs(account *user.User, uid, gid int, groupIDs []string, ho
 	if info, err := os.Stat(runtimeRoot); err == nil && info.IsDir() {
 		args = append(args, "--ro-bind", runtimeRoot, runtimeRoot)
 	}
+	// Bubblewrap creates missing intermediate target directories itself. Those
+	// implicit ancestors can be non-traversable after credentials change even
+	// when the mounted home itself is correctly owned. Declare every ancestor
+	// explicitly before binding the home so a site user can resolve $HOME.
+	for _, parent := range sandboxHomeParents(home) {
+		args = append(args, "--dir", parent)
+	}
 	args = append(args,
-		"--dir", filepath.Dir(home),
 		"--bind", home, home,
 		"--chdir", home,
 		// setpriv uses these two capabilities only long enough to assume the
@@ -277,6 +283,22 @@ func buildBubblewrapArgs(account *user.User, uid, gid int, groupIDs []string, ho
 		"/bin/bash", "--noprofile", "--rcfile", ShellRCPath, "-i",
 	)
 	return args
+}
+
+func sandboxHomeParents(home string) []string {
+	parent := filepath.Dir(filepath.Clean(home))
+	if parent == "." || parent == "/" || !filepath.IsAbs(parent) {
+		return nil
+	}
+	parents := make([]string, 0, 4)
+	for parent != "/" && parent != "." {
+		parents = append(parents, parent)
+		parent = filepath.Dir(parent)
+	}
+	for left, right := 0, len(parents)-1; left < right; left, right = left+1, right-1 {
+		parents[left], parents[right] = parents[right], parents[left]
+	}
+	return parents
 }
 
 type stdioReadWriteCloser struct {

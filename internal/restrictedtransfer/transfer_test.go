@@ -25,21 +25,22 @@ func TestBubblewrapShellOnlyMountsPlatformHomeWritable(t *testing.T) {
 	}
 	args := buildBubblewrapArgs(&user.User{Username: "siteuser"}, 2001, 2001, []string{"2001", "2201"}, home, runtimeRoot)
 	joined := strings.Join(args, " ")
-	for _, want := range []string{
+	for _, want := range append([]string{
 		"--dir /etc",
-		"--dir " + filepath.Dir(home),
 		"--bind " + home + " " + home,
 		"--ro-bind " + runtimeRoot + " " + runtimeRoot,
 		"/usr/bin/setpriv --reuid=2001 --regid=2001 --groups=2001,2201",
 		"--cap-drop ALL --cap-add CAP_SETUID --cap-add CAP_SETGID",
 		"--symlink ../run /var/run",
-	} {
+	}, prefixedDirArgs(sandboxHomeParents(home))...) {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("sandbox arguments do not contain %q:\n%s", want, joined)
 		}
 	}
-	if strings.Index(joined, "--dir "+filepath.Dir(home)) > strings.Index(joined, "--bind "+home+" "+home) {
-		t.Fatalf("sandbox home parent must be created before the home bind:\n%s", joined)
+	for _, parent := range sandboxHomeParents(home) {
+		if strings.Index(joined, "--dir "+parent) > strings.Index(joined, "--bind "+home+" "+home) {
+			t.Fatalf("sandbox home ancestor %s must be created before the home bind:\n%s", parent, joined)
+		}
 	}
 	if strings.Index(joined, "--dir /etc") > strings.Index(joined, "--ro-bind /etc/passwd /etc/passwd") {
 		t.Fatalf("sandbox /etc must be created before individual account-file binds:\n%s", joined)
@@ -53,6 +54,22 @@ func TestBubblewrapShellOnlyMountsPlatformHomeWritable(t *testing.T) {
 	if strings.Contains(joined, "--init-groups") {
 		t.Fatalf("sandbox must pass host-resolved supplementary groups directly: %s", joined)
 	}
+}
+
+func TestSandboxHomeParentsIncludesEveryAncestorInOrder(t *testing.T) {
+	got := sandboxHomeParents("/home/deploycp/platforms/sites/example.test")
+	want := []string{"/home", "/home/deploycp", "/home/deploycp/platforms", "/home/deploycp/platforms/sites"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("sandbox home parents = %#v, want %#v", got, want)
+	}
+}
+
+func prefixedDirArgs(paths []string) []string {
+	args := make([]string, 0, len(paths))
+	for _, path := range paths {
+		args = append(args, "--dir "+path)
+	}
+	return args
 }
 
 func TestBubblewrapShellClearsSupplementaryGroupsWhenNoneExist(t *testing.T) {
