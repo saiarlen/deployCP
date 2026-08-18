@@ -23,14 +23,14 @@ func TestBubblewrapShellOnlyMountsPlatformHomeWritable(t *testing.T) {
 	if err := os.MkdirAll(runtimeRoot, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	args := buildBubblewrapArgs(&user.User{Username: "siteuser"}, 2001, 2001, home, runtimeRoot)
+	args := buildBubblewrapArgs(&user.User{Username: "siteuser"}, 2001, 2001, []string{"2001", "2201"}, home, runtimeRoot)
 	joined := strings.Join(args, " ")
 	for _, want := range []string{
 		"--dir /etc",
 		"--dir " + filepath.Dir(home),
 		"--bind " + home + " " + home,
 		"--ro-bind " + runtimeRoot + " " + runtimeRoot,
-		"/usr/bin/setpriv --reuid=2001 --regid=2001 --init-groups",
+		"/usr/bin/setpriv --reuid=2001 --regid=2001 --groups=2001,2201",
 		"--cap-drop ALL --cap-add CAP_SETUID --cap-add CAP_SETGID",
 		"--symlink ../run /var/run",
 	} {
@@ -49,6 +49,24 @@ func TestBubblewrapShellOnlyMountsPlatformHomeWritable(t *testing.T) {
 	}
 	if strings.Contains(joined, "--bounding-set=-all") || strings.Contains(joined, "--no-new-privs") {
 		t.Fatalf("sandbox must preserve the narrowly scoped sudo service-control path: %s", joined)
+	}
+	if strings.Contains(joined, "--init-groups") {
+		t.Fatalf("sandbox must pass host-resolved supplementary groups directly: %s", joined)
+	}
+}
+
+func TestBubblewrapShellClearsSupplementaryGroupsWhenNoneExist(t *testing.T) {
+	args := buildBubblewrapArgs(&user.User{Username: "siteuser"}, 2001, 2001, nil, "/home/siteuser", "/srv/runtimes")
+	if !strings.Contains(strings.Join(args, " "), "--clear-groups") {
+		t.Fatalf("sandbox must clear supplementary groups when the account has none: %s", strings.Join(args, " "))
+	}
+}
+
+func TestNormalizedGroupIDsFiltersInvalidValuesAndDuplicates(t *testing.T) {
+	got := normalizedGroupIDs([]string{"2001", "invalid", "2201", "2001", "-1"})
+	want := []string{"2001", "2201"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("normalized group IDs = %#v, want %#v", got, want)
 	}
 }
 

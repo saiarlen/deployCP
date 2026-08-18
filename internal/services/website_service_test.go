@@ -31,6 +31,29 @@ type nginxOnlyAdapter struct {
 
 func (a nginxOnlyAdapter) Nginx() platform.NginxManager { return a.manager }
 
+type sharedAccessRecorder struct {
+	platform.UserManager
+	root    string
+	owner   string
+	group   string
+	members []string
+}
+
+func (r *sharedAccessRecorder) SyncSharedAccess(_ context.Context, root, primaryUser, groupName string, members []string) error {
+	r.root = root
+	r.owner = primaryUser
+	r.group = groupName
+	r.members = append([]string(nil), members...)
+	return nil
+}
+
+type usersOnlyAdapter struct {
+	platform.Adapter
+	users platform.UserManager
+}
+
+func (a usersOnlyAdapter) Users() platform.UserManager { return a.users }
+
 func TestNginxTransactionRestoresPreviousConfigOnValidationFailure(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "site.conf")
 	if err := os.WriteFile(configPath, []byte("old config\n"), 0o644); err != nil {
@@ -75,6 +98,61 @@ func TestSiteUserUsesPlatformHome(t *testing.T) {
 				t.Fatalf("siteUserUsesPlatformHome() = %t, want %t", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestSelectSharedAccessOwnerUsesScopedUserWhenNoPrimaryExists(t *testing.T) {
+	if got := selectSharedAccessOwner("", "launchpadmainusr"); got != "launchpadmainusr" {
+		t.Fatalf("owner without primary = %q", got)
+	}
+	if got := selectSharedAccessOwner("primaryuser", "launchpadmainusr"); got != "primaryuser" {
+		t.Fatalf("owner with primary = %q", got)
+	}
+}
+
+func TestEnsureWebsiteFilesystemAssignsPathScopedUserWithoutPrimary(t *testing.T) {
+	tmp := t.TempDir()
+	db, err := gorm.Open(sqlite.Open(filepath.Join(tmp, "deploycp.sqlite")), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&models.Website{}, &models.SiteUser{}, &models.FTPUser{}); err != nil {
+		t.Fatalf("migrate db: %v", err)
+	}
+	repos := repositories.New(db)
+	platformHome := filepath.Join(tmp, "sites", "example.test")
+	site := &models.Website{Name: "example.test", RootPath: filepath.Join(platformHome, "htdocs"), Type: "static"}
+	if err := db.Create(site).Error; err != nil {
+		t.Fatalf("create platform: %v", err)
+	}
+	if err := repos.SiteUsers.Create(&models.SiteUser{
+		Username:      "launchpadmainusr",
+		HomeDirectory: platformHome,
+		AllowedRoot:   platformHome,
+		Shell:         "/usr/local/bin/deploycp-rshell",
+		IsActive:      true,
+		SSHEnabled:    true,
+	}); err != nil {
+		t.Fatalf("create path-scoped user: %v", err)
+	}
+	recorder := &sharedAccessRecorder{}
+	svc := &WebsiteService{
+		cfg:       &config.Config{Paths: config.PathsConfig{RestrictedShellPath: "/usr/local/bin/deploycp-rshell"}},
+		siteUsers: repos.SiteUsers,
+		ftpUsers:  repos.FTPUsers,
+		adapter:   usersOnlyAdapter{users: recorder},
+	}
+	if err := svc.ensureWebsiteFilesystem(context.Background(), site); err != nil {
+		t.Fatalf("ensure platform filesystem: %v", err)
+	}
+	if recorder.owner != "launchpadmainusr" {
+		t.Fatalf("shared access owner = %q", recorder.owner)
+	}
+	if recorder.root != platformHome || recorder.group != websiteSharedGroup(site.ID) {
+		t.Fatalf("shared access target = root %q group %q", recorder.root, recorder.group)
+	}
+	if len(recorder.members) != 1 || recorder.members[0] != "launchpadmainusr" {
+		t.Fatalf("shared access members = %#v", recorder.members)
 	}
 }
 

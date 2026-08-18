@@ -818,6 +818,7 @@ func (s *WebsiteService) ensureWebsiteFilesystem(ctx context.Context, site *mode
 		return err
 	}
 	memberNames := map[string]struct{}{}
+	sharedAccessOwner := ""
 	siteUser := site.SiteUser
 	if siteUser == nil && site.SiteUserID != nil && *site.SiteUserID > 0 && s.siteUsers != nil {
 		if item, err := s.siteUsers.Find(*site.SiteUserID); err == nil {
@@ -826,6 +827,7 @@ func (s *WebsiteService) ensureWebsiteFilesystem(ctx context.Context, site *mode
 		}
 	}
 	if siteUser != nil && strings.TrimSpace(siteUser.Username) != "" {
+		sharedAccessOwner = strings.TrimSpace(siteUser.Username)
 		expectedHome := platformHome
 		expectedAllowedRoot := platformHome
 		needsSync := filepath.Clean(strings.TrimSpace(siteUser.HomeDirectory)) != filepath.Clean(expectedHome) ||
@@ -852,7 +854,9 @@ func (s *WebsiteService) ensureWebsiteFilesystem(ctx context.Context, site *mode
 				if strings.TrimSpace(item.Username) == "" {
 					continue
 				}
-				memberNames[strings.TrimSpace(item.Username)] = struct{}{}
+				username := strings.TrimSpace(item.Username)
+				memberNames[username] = struct{}{}
+				sharedAccessOwner = selectSharedAccessOwner(sharedAccessOwner, username)
 			}
 		}
 		// Older SSH users and users created from the global SSH view can have
@@ -864,7 +868,9 @@ func (s *WebsiteService) ensureWebsiteFilesystem(ctx context.Context, site *mode
 				if !siteUserUsesPlatformHome(item, platformHome) || strings.TrimSpace(item.Username) == "" {
 					continue
 				}
-				memberNames[strings.TrimSpace(item.Username)] = struct{}{}
+				username := strings.TrimSpace(item.Username)
+				memberNames[username] = struct{}{}
+				sharedAccessOwner = selectSharedAccessOwner(sharedAccessOwner, username)
 			}
 		}
 	}
@@ -878,13 +884,13 @@ func (s *WebsiteService) ensureWebsiteFilesystem(ctx context.Context, site *mode
 			}
 		}
 	}
-	if siteUser != nil && strings.TrimSpace(siteUser.Username) != "" {
+	if sharedAccessOwner != "" {
 		members := make([]string, 0, len(memberNames))
 		for username := range memberNames {
 			members = append(members, username)
 		}
 		sort.Strings(members)
-		if err := s.adapter.Users().SyncSharedAccess(ctx, platformHome, siteUser.Username, websiteSharedGroup(site.ID), members); err != nil {
+		if err := s.adapter.Users().SyncSharedAccess(ctx, platformHome, sharedAccessOwner, websiteSharedGroup(site.ID), members); err != nil {
 			return err
 		}
 	}
@@ -903,6 +909,14 @@ func siteUserUsesPlatformHome(item models.SiteUser, platformHome string) bool {
 		}
 	}
 	return false
+}
+
+func selectSharedAccessOwner(current, candidate string) string {
+	current = strings.TrimSpace(current)
+	if current != "" {
+		return current
+	}
+	return strings.TrimSpace(candidate)
 }
 
 func (s *WebsiteService) writeNginxConfig(ctx context.Context, site *models.Website) error {

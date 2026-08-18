@@ -155,7 +155,11 @@ func serveRestrictedShell(account *user.User, uid, gid int, stdin io.Reader, std
 	if _, err := exec.LookPath("setpriv"); err != nil {
 		return errors.New("setpriv is required for interactive platform SSH")
 	}
-	args := buildBubblewrapArgs(account, uid, gid, home, runtimeRoot)
+	groupIDs, err := supplementaryGroupIDs(account)
+	if err != nil {
+		return fmt.Errorf("resolve restricted shell groups: %w", err)
+	}
+	args := buildBubblewrapArgs(account, uid, gid, groupIDs, home, runtimeRoot)
 	command := exec.Command(bwrap, args...)
 	command.Stdin = stdin
 	command.Stdout = stdout
@@ -167,7 +171,36 @@ func serveRestrictedShell(account *user.User, uid, gid int, stdin io.Reader, std
 	return nil
 }
 
-func buildBubblewrapArgs(account *user.User, uid, gid int, home, runtimeRoot string) []string {
+func supplementaryGroupIDs(account *user.User) ([]string, error) {
+	if account == nil {
+		return nil, errors.New("restricted shell account is unavailable")
+	}
+	rawIDs, err := account.GroupIds()
+	if err != nil {
+		return nil, err
+	}
+	return normalizedGroupIDs(rawIDs), nil
+}
+
+func normalizedGroupIDs(rawIDs []string) []string {
+	seen := make(map[string]struct{}, len(rawIDs))
+	groupIDs := make([]string, 0, len(rawIDs))
+	for _, raw := range rawIDs {
+		value, convErr := strconv.Atoi(raw)
+		if convErr != nil || value < 0 {
+			continue
+		}
+		id := strconv.Itoa(value)
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		groupIDs = append(groupIDs, id)
+	}
+	return groupIDs
+}
+
+func buildBubblewrapArgs(account *user.User, uid, gid int, groupIDs []string, home, runtimeRoot string) []string {
 	term := strings.TrimSpace(os.Getenv("TERM"))
 	if term == "" || strings.ContainsAny(term, " \t\r\n/") {
 		term = "xterm-256color"
@@ -232,7 +265,13 @@ func buildBubblewrapArgs(account *user.User, uid, gid int, home, runtimeRoot str
 		"/usr/bin/setpriv",
 		fmt.Sprintf("--reuid=%d", uid),
 		fmt.Sprintf("--regid=%d", gid),
-		"--init-groups",
+	)
+	if len(groupIDs) == 0 {
+		args = append(args, "--clear-groups")
+	} else {
+		args = append(args, "--groups="+strings.Join(groupIDs, ","))
+	}
+	args = append(args,
 		"--inh-caps=-all",
 		"--ambient-caps=-all",
 		"/bin/bash", "--noprofile", "--rcfile", ShellRCPath, "-i",
